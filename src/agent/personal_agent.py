@@ -81,9 +81,10 @@ class PersonalAgent:
 
         # Retrieve similar cases
         rag_examples = "No similar cases available."
+        rag_raw = []
         if self.retriever and emotion_driver:
-            results = self.retriever.search(emotion_driver, top_k=20)
-            rag_examples = self.retriever.format_examples(results, max_examples=10)
+            rag_raw = self.retriever.search(emotion_driver, top_k=20)
+            rag_examples = self.retriever.format_examples(rag_raw, max_examples=10)
 
         trait_text = build_trait_summary(self.profile)
         prompt = callm_prompt(
@@ -95,10 +96,24 @@ class PersonalAgent:
         )
 
         logger.debug(f"CALLM: Calling LLM for user {self.study_id}")
-        result = self.llm.generate_structured(prompt=prompt)
+        # Get raw response before structured parsing
+        raw_response = self.llm.generate(prompt=prompt)
+        from src.think.parser import parse_prediction
+        result = parse_prediction(raw_response)
+
+        # Comprehensive trace
         result["_version"] = "callm"
         result["_prompt_length"] = len(prompt)
-        result["_emotion_driver"] = emotion_driver[:200]
+        result["_emotion_driver"] = emotion_driver
+        result["_full_prompt"] = prompt
+        result["_full_response"] = raw_response
+        result["_rag_top5"] = [
+            {"text": r.get("text", "")[:200], "similarity": r.get("similarity", 0),
+             "PANAS_Pos": r.get("PANAS_Pos"), "PANAS_Neg": r.get("PANAS_Neg")}
+            for r in rag_raw[:5]
+        ]
+        result["_memory_excerpt"] = self.memory_doc[:500] if self.memory_doc else ""
+        result["_trait_summary"] = trait_text
         return result
 
     def _run_v1(self, sensing_day, date_str: str) -> dict[str, Any]:

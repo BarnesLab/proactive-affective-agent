@@ -75,7 +75,7 @@ class AutonomousWorkflow:
         logger.debug("V2 Round 1: Initial overview")
         response_r1 = self.llm.generate(prompt=prompt_r1, system_prompt=system)
         llm_calls += 1
-        trace.append({"round": 1, "prompt_len": len(prompt_r1), "response": response_r1[:500]})
+        trace.append({"round": 1, "prompt_len": len(prompt_r1), "prompt": prompt_r1, "response": response_r1})
 
         # Check if Round 1 already has a JSON prediction
         result = self._try_parse_prediction(response_r1)
@@ -83,6 +83,10 @@ class AutonomousWorkflow:
             result["_version"] = "v2"
             result["_llm_calls"] = llm_calls
             result["_trace"] = trace
+            result["_sensing_summary"] = sensing_summary
+            result["_memory_excerpt"] = memory_doc[:500] if memory_doc else ""
+            result["_trait_summary"] = trait_text
+            result["_system_prompt"] = system
             return result
 
         # Round 2+: Handle requests
@@ -111,13 +115,17 @@ class AutonomousWorkflow:
             logger.debug(f"V2 Round {round_num}: Follow-up")
             prev_response = self.llm.generate(prompt=full_prompt, system_prompt=system)
             llm_calls += 1
-            trace.append({"round": round_num, "request": request, "response": prev_response[:500]})
+            trace.append({"round": round_num, "request": request, "prompt": full_prompt, "response": prev_response})
 
             result = self._try_parse_prediction(prev_response)
             if result:
                 result["_version"] = "v2"
                 result["_llm_calls"] = llm_calls
                 result["_trace"] = trace
+                result["_sensing_summary"] = sensing_summary
+                result["_memory_excerpt"] = memory_doc[:500] if memory_doc else ""
+                result["_trait_summary"] = trait_text
+                result["_system_prompt"] = system
                 return result
 
         # If we got here, force parse the last response
@@ -127,6 +135,10 @@ class AutonomousWorkflow:
         result["_llm_calls"] = llm_calls
         result["_trace"] = trace
         result["_forced_parse"] = True
+        result["_sensing_summary"] = sensing_summary
+        result["_memory_excerpt"] = memory_doc[:500] if memory_doc else ""
+        result["_trait_summary"] = trait_text
+        result["_system_prompt"] = system
         return result
 
     def _try_parse_prediction(self, response: str) -> dict[str, Any] | None:

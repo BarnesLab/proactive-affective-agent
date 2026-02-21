@@ -62,14 +62,18 @@ class StructuredWorkflow:
 
         # Step 3: Single LLM call
         logger.debug("V1: Calling LLM with sensing + memory context")
-        result = self.llm.generate_structured(
-            prompt=prompt,
-            system_prompt=system,
-        )
+        raw_response = self.llm.generate(prompt=prompt, system_prompt=system)
+        from src.think.parser import parse_prediction
+        result = parse_prediction(raw_response)
 
-        # Add trace info
+        # Comprehensive trace
         result["_version"] = "v1"
         result["_prompt_length"] = len(prompt) + len(system)
-        result["_sensing_summary"] = sensing_summary[:500]
+        result["_sensing_summary"] = sensing_summary
+        result["_full_prompt"] = prompt
+        result["_system_prompt"] = system
+        result["_full_response"] = raw_response
+        result["_memory_excerpt"] = memory_doc[:500] if memory_doc else ""
+        result["_trait_summary"] = trait_text
 
         return result
