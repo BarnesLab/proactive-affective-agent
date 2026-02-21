@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Main entry point for the pilot study: 3 versions × 5 users.
+"""Main entry point for the pilot study.
 
 Usage:
-    # Full pilot (all 3 versions)
-    python scripts/run_pilot.py --version all --group 1 --max-ema 30
+    # Full pilot (all 3 versions, sequential)
+    python scripts/run_pilot.py --version all --users 2,34,56,78,90
+
+    # Single version (for parallel execution)
+    python scripts/run_pilot.py --version callm --users 2,34,56,78,90
+    python scripts/run_pilot.py --version v1 --users 2,34,56,78,90
+    python scripts/run_pilot.py --version v2 --users 2,34,56,78,90
 
     # Dry run (no LLM calls, test pipeline)
     python scripts/run_pilot.py --version all --dry-run
-
-    # Single version
-    python scripts/run_pilot.py --version v1 --max-ema 5
-
-    # Specific users
-    python scripts/run_pilot.py --users 2,34,56,78,90 --version callm
 """
 
 import argparse
@@ -20,7 +19,6 @@ import logging
 import sys
 from pathlib import Path
 
-# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -35,14 +33,6 @@ def main():
     parser.add_argument(
         "--version", type=str, default="all",
         help="Which version to run: callm, v1, v2, or all (default: all)"
-    )
-    parser.add_argument(
-        "--group", type=int, default=1,
-        help="Cross-validation group number (1-5, default: 1)"
-    )
-    parser.add_argument(
-        "--max-ema", type=int, default=30,
-        help="Max EMA entries per user (default: 30)"
     )
     parser.add_argument(
         "--users", type=str, default=None,
@@ -106,8 +96,6 @@ def main():
     simulator = PilotSimulator(
         loader=loader,
         output_dir=output_dir,
-        group=args.group,
-        max_ema=args.max_ema,
         pilot_user_ids=pilot_user_ids,
         dry_run=args.dry_run,
         model=args.model,
@@ -115,20 +103,21 @@ def main():
     )
 
     # Setup (load data)
-    logging.info(f"Setting up pilot study...")
+    logging.info("Setting up pilot study...")
     logging.info(f"  Versions: {versions}")
-    logging.info(f"  Group: {args.group}")
-    logging.info(f"  Max EMA/user: {args.max_ema}")
     logging.info(f"  Users: {pilot_user_ids or 'auto-select'}")
     logging.info(f"  Dry run: {args.dry_run}")
+    logging.info(f"  Model: {args.model}")
     logging.info(f"  Output: {output_dir}")
 
     simulator.setup()
 
-    # Auto-select users if not specified
-    if pilot_user_ids is None and simulator._users_data:
+    # Show selected users
+    if simulator._users_data:
         selected = [u["study_id"] for u in simulator._users_data]
+        total_entries = sum(len(u["ema_entries"]) for u in simulator._users_data)
         logging.info(f"  Selected users: {selected}")
+        logging.info(f"  Total EMA entries: {total_entries}")
 
     # Run
     results = simulator.run_all(versions=versions)
@@ -148,6 +137,10 @@ def main():
             print(f"  Mean Balanced Accuracy: {agg['mean_balanced_accuracy']:.3f}")
         if agg.get("mean_f1") is not None:
             print(f"  Mean F1: {agg['mean_f1']:.3f}")
+        if agg.get("personal_threshold_mean_ba") is not None:
+            print(f"  Personal Threshold BA: {agg['personal_threshold_mean_ba']:.3f}")
+        if agg.get("personal_threshold_mean_f1") is not None:
+            print(f"  Personal Threshold F1: {agg['personal_threshold_mean_f1']:.3f}")
 
     print(f"\nResults saved to: {output_dir}")
 

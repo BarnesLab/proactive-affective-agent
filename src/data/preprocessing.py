@@ -195,23 +195,23 @@ def get_user_trait_profile(baseline_df: pd.DataFrame, study_id: int) -> UserProf
 
 def prepare_pilot_data(
     loader,
-    group: int = 1,
-    pilot_user_ids: list[int] | None = None,
-    max_ema: int = 30,
+    pilot_user_ids: list[int],
+    ema_df: pd.DataFrame | None = None,
 ) -> list[dict[str, Any]]:
     """Prepare structured pilot data for selected users.
 
     Args:
         loader: DataLoader instance.
-        group: Cross-validation group number.
-        pilot_user_ids: Specific user IDs to use. If None, uses first 5 from test set.
-        max_ema: Maximum EMA entries per user.
+        pilot_user_ids: Specific user IDs to use.
+        ema_df: Pre-loaded EMA DataFrame (all users). If None, loads via load_all_ema().
 
     Returns:
         List of dicts, one per user, with keys:
         - study_id, profile, memory, ema_entries (list of Series), sensing_days (list of SensingDay)
     """
-    test_df = loader.load_split(group, "test")
+    if ema_df is None:
+        ema_df = loader.load_all_ema()
+
     sensing_dfs = loader.load_all_sensing()
 
     try:
@@ -219,14 +219,11 @@ def prepare_pilot_data(
     except FileNotFoundError:
         baseline_df = pd.DataFrame()
 
-    if pilot_user_ids is None:
-        pilot_user_ids = sorted(test_df["Study_ID"].unique().tolist())[:5]
-
     users_data = []
     for sid in pilot_user_ids:
-        user_ema = test_df[test_df["Study_ID"] == sid].sort_values("timestamp_local")
-        if len(user_ema) > max_ema:
-            user_ema = user_ema.head(max_ema)
+        user_ema = ema_df[ema_df["Study_ID"] == sid].sort_values("timestamp_local")
+        if user_ema.empty:
+            continue
 
         profile = get_user_trait_profile(baseline_df, sid) if not baseline_df.empty else UserProfile(study_id=sid)
         memory = loader.load_memory_for_user(sid)

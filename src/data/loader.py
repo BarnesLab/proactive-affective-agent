@@ -51,6 +51,47 @@ class DataLoader:
         df["date_local"] = pd.to_datetime(df["date_local"]).dt.date
         return df
 
+    def load_all_ema(self) -> pd.DataFrame:
+        """Load ALL EMA data by combining all 5 test splits.
+
+        The 5 test splits are non-overlapping and together cover all 399 users.
+        Returns a single DataFrame with ~15,984 rows.
+        """
+        dfs = []
+        for group in range(1, 6):
+            path = self.splits_dir / f"group_{group}_test.csv"
+            if path.exists():
+                df = pd.read_csv(path)
+                dfs.append(df)
+        if not dfs:
+            raise FileNotFoundError("No test split files found in " + str(self.splits_dir))
+        combined = pd.concat(dfs, ignore_index=True)
+        combined["timestamp_local"] = pd.to_datetime(combined["timestamp_local"])
+        combined["date_local"] = pd.to_datetime(combined["date_local"]).dt.date
+        # Drop duplicates (should be none, but just in case)
+        combined = combined.drop_duplicates(subset=["Study_ID", "timestamp_local"])
+        return combined
+
+    def load_all_train(self) -> pd.DataFrame:
+        """Load ALL training data by combining all 5 train splits, deduplicated.
+
+        Used for the TF-IDF retriever — each user's entries appear in 4 of 5
+        training folds, so we deduplicate to get the full unique training set.
+        """
+        dfs = []
+        for group in range(1, 6):
+            path = self.splits_dir / f"group_{group}_train.csv"
+            if path.exists():
+                df = pd.read_csv(path)
+                dfs.append(df)
+        if not dfs:
+            raise FileNotFoundError("No train split files found")
+        combined = pd.concat(dfs, ignore_index=True)
+        combined["timestamp_local"] = pd.to_datetime(combined["timestamp_local"])
+        combined["date_local"] = pd.to_datetime(combined["date_local"]).dt.date
+        combined = combined.drop_duplicates(subset=["Study_ID", "timestamp_local"])
+        return combined
+
     def load_daily_ema(self) -> pd.DataFrame:
         """Load daily EMA survey data from cancer_survival directory."""
         path = self.ema_dir / "dailyEMAdata_cleaned_long_10-25-2024.csv"
@@ -132,12 +173,14 @@ class DataLoader:
                 docs[f.name] = f.read_text(encoding="utf-8")
         return docs
 
-    def get_user_ids(self, group: int | None = None) -> list[int]:
-        """Get list of Study_IDs, optionally filtered by group."""
-        if group is not None:
-            df = self.load_split(group, "test")
+    def get_user_ids(self) -> list[int]:
+        """Get list of all Study_IDs from the combined test data."""
+        try:
+            df = self.load_all_ema()
             return sorted(df["Study_ID"].unique().tolist())
-        # All from eligible IDs
+        except FileNotFoundError:
+            pass
+        # Fallback: eligible IDs
         path = self.cancer_dir / "eligibleIDs.csv"
         if path.exists():
             ids = pd.read_csv(path)

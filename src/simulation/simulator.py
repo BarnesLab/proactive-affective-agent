@@ -1,7 +1,8 @@
-"""PilotSimulator: runs the 5-user pilot study for CALLM, V1, and V2.
+"""PilotSimulator: runs the pilot study for CALLM, V1, and V2.
 
-Iterates users → EMA entries chronologically → calls agent.predict() →
+Iterates users -> EMA entries chronologically -> calls agent.predict() ->
 collects results. Supports checkpointing, dry-run mode, and per-user output.
+No group dependency: uses combined test data from all 5 splits.
 """
 
 from __future__ import annotations
@@ -26,14 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 class PilotSimulator:
-    """Runs the pilot study: 5 users × 30 EMA entries × 3 versions."""
+    """Runs the pilot study: N users x all EMA entries x specified versions."""
 
     def __init__(
         self,
         loader: DataLoader,
         output_dir: Path,
-        group: int = 1,
-        max_ema: int = 30,
         pilot_user_ids: list[int] | None = None,
         dry_run: bool = False,
         model: str = "sonnet",
@@ -41,8 +40,6 @@ class PilotSimulator:
     ) -> None:
         self.loader = loader
         self.output_dir = output_dir
-        self.group = group
-        self.max_ema = max_ema
         self.pilot_user_ids = pilot_user_ids
         self.dry_run = dry_run
         self.model = model
@@ -53,6 +50,7 @@ class PilotSimulator:
         # Will be populated during setup
         self._users_data: list[dict] = []
         self._sensing_dfs: dict[str, pd.DataFrame] = {}
+        self._all_ema: pd.DataFrame | None = None
         self._train_df: pd.DataFrame | None = None
         self._retriever: TFIDFRetriever | None = None
 
@@ -60,12 +58,16 @@ class PilotSimulator:
         """Load and prepare all data for the pilot."""
         logger.info("Loading pilot data...")
 
+        # Load all EMA data (combined from 5 test splits)
+        self._all_ema = self.loader.load_all_ema()
+        logger.info(f"Loaded {len(self._all_ema)} EMA entries, {self._all_ema['Study_ID'].nunique()} users")
+
         # Load sensing data
         self._sensing_dfs = self.loader.load_all_sensing()
         logger.info(f"Loaded {len(self._sensing_dfs)} sensing sources")
 
         # Load training data for TF-IDF retriever (CALLM)
-        self._train_df = self.loader.load_split(self.group, "train")
+        self._train_df = self.loader.load_all_train()
         logger.info(f"Loaded training data: {len(self._train_df)} entries")
 
         # Build TF-IDF retriever
@@ -73,12 +75,17 @@ class PilotSimulator:
         self._retriever.fit(self._train_df)
         logger.info("TF-IDF retriever fitted")
 
-        # Prepare per-user data
+        # Determine pilot users
+        if self.pilot_user_ids is None:
+            # Auto-select top 5 by EMA count
+            counts = self._all_ema.groupby("Study_ID").size()
+            self.pilot_user_ids = counts.nlargest(5).index.tolist()
+
+        # Prepare per-user data (all EMA entries, no cap)
         self._users_data = prepare_pilot_data(
             self.loader,
-            group=self.group,
             pilot_user_ids=self.pilot_user_ids,
-            max_ema=self.max_ema,
+            ema_df=self._all_ema,
         )
         logger.info(f"Prepared data for {len(self._users_data)} pilot users")
         for ud in self._users_data:
@@ -107,7 +114,8 @@ class PilotSimulator:
 
         for user_data in self._users_data:
             sid = user_data["study_id"]
-            logger.info(f"\n--- User {sid} ({version.upper()}) ---")
+            n_entries = len(user_data["ema_entries"])
+            logger.info(f"\n--- User {sid} ({version.upper()}, {n_entries} entries) ---")
 
             agent = PersonalAgent(
                 study_id=sid,
@@ -127,7 +135,7 @@ class PilotSimulator:
             ):
                 date_str = str(ema_row.get("date_local", ""))
 
-                logger.info(f"  Entry {i+1}/{len(user_data['ema_entries'])} ({date_str})")
+                logger.info(f"  Entry {i+1}/{n_entries} ({date_str})")
 
                 try:
                     pred = agent.predict(
@@ -158,7 +166,7 @@ class PilotSimulator:
             # Per-user metrics
             if user_preds:
                 try:
-                    per_user_metrics[sid] = compute_all(user_preds, user_gts)
+                    per_user_metrics[sid] = compute_all(user_preds, user_gts, user_meta)
                 except Exception as e:
                     logger.warning(f"  Metrics error for user {sid}: {e}")
 
@@ -177,11 +185,11 @@ class PilotSimulator:
             f"{version}_predictions.csv",
         )
 
-        # Compute overall metrics
+        # Compute overall metrics (with metadata for personal threshold)
         overall_metrics = {}
         if all_predictions:
             try:
-                overall_metrics = compute_all(all_predictions, all_ground_truths)
+                overall_metrics = compute_all(all_predictions, all_ground_truths, all_metadata)
             except Exception as e:
                 logger.error(f"Overall metrics error: {e}")
 

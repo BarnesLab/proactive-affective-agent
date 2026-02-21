@@ -1,6 +1,7 @@
 """Evaluation metrics: balanced accuracy, MAE, F1 for the pilot study.
 
 Computes metrics per-target and aggregated, comparing predictions to ground truth.
+Includes CHI paper personal threshold evaluation (per-user mean ± SD binary classification).
 """
 
 from __future__ import annotations
@@ -12,16 +13,37 @@ from sklearn.metrics import balanced_accuracy_score, f1_score, mean_absolute_err
 
 from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 
+# Maps continuous prediction fields to the raw EMA items used for personal threshold.
+# CHI paper: Individual_level_X_State is True when X > user_mean + user_sd (high)
+# or X < user_mean - user_sd (low, for negative items).
+# For aggregate PANAS scores, we threshold the predicted PANAS value.
+PERSONAL_THRESHOLD_MAP = {
+    "PANAS_Pos": {
+        "state_col": "Individual_level_PA_State",
+        "direction": "high",  # above threshold = True
+    },
+    "PANAS_Neg": {
+        "state_col": "Individual_level_NA_State",
+        "direction": "high",
+    },
+    "ER_desire": {
+        "state_col": "Individual_level_ER_desire_State",
+        "direction": "high",
+    },
+}
+
 
 def compute_all(
     predictions: list[dict],
     ground_truths: list[dict],
+    metadata: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Compute all metrics comparing predictions to ground truths.
 
     Args:
         predictions: List of prediction dicts (from LLM output).
         ground_truths: List of ground truth dicts (from EMA data).
+        metadata: Optional list of metadata dicts with study_id for per-user grouping.
 
     Returns:
         Nested dict with per-target and aggregate metrics.
@@ -30,6 +52,7 @@ def compute_all(
         "continuous": {},
         "binary": {},
         "availability": {},
+        "personal_threshold": {},
         "aggregate": {},
     }
 
@@ -64,10 +87,20 @@ def compute_all(
             "n": len(avail_true),
         }
 
+    # CHI paper personal threshold evaluation
+    if metadata:
+        results["personal_threshold"] = compute_personal_threshold(
+            predictions, ground_truths, metadata
+        )
+
     # Aggregate metrics
     all_mae = [v["mae"] for v in results["continuous"].values() if "mae" in v]
     all_ba = [v["balanced_accuracy"] for v in results["binary"].values() if "balanced_accuracy" in v]
     all_f1 = [v["f1"] for v in results["binary"].values() if "f1" in v]
+
+    pt = results.get("personal_threshold", {})
+    pt_ba_vals = [v["balanced_accuracy"] for v in pt.values() if isinstance(v, dict) and "balanced_accuracy" in v]
+    pt_f1_vals = [v["f1"] for v in pt.values() if isinstance(v, dict) and "f1" in v]
 
     results["aggregate"] = {
         "mean_mae": float(np.mean(all_mae)) if all_mae else None,
@@ -75,7 +108,93 @@ def compute_all(
         "mean_f1": float(np.mean(all_f1)) if all_f1 else None,
         "n_continuous_evaluated": len(all_mae),
         "n_binary_evaluated": len(all_ba),
+        "personal_threshold_mean_ba": float(np.mean(pt_ba_vals)) if pt_ba_vals else None,
+        "personal_threshold_mean_f1": float(np.mean(pt_f1_vals)) if pt_f1_vals else None,
     }
+
+    return results
+
+
+def compute_personal_threshold(
+    predictions: list[dict],
+    ground_truths: list[dict],
+    metadata: list[dict],
+) -> dict[str, Any]:
+    """CHI paper personal threshold evaluation.
+
+    For each continuous target (PANAS_Pos, PANAS_Neg, ER_desire):
+    1. Group predictions by user (study_id from metadata)
+    2. For each user, compute mean and SD of their PREDICTED values
+    3. Classify: predicted > mean + SD → True (high state)
+    4. Compare against ground truth binary state column
+
+    Returns per-target results with balanced accuracy and F1.
+    """
+    results = {}
+
+    for cont_target, mapping in PERSONAL_THRESHOLD_MAP.items():
+        state_col = mapping["state_col"]
+        direction = mapping["direction"]
+
+        # Group by user
+        user_preds: dict[int, list] = {}
+        user_gts: dict[int, list] = {}
+        user_gt_states: dict[int, list] = {}
+
+        for pred, gt, meta in zip(predictions, ground_truths, metadata):
+            sid = meta.get("study_id")
+            pred_val = pred.get(cont_target)
+            gt_state = gt.get(state_col)
+
+            if sid is None or pred_val is None or gt_state is None:
+                continue
+
+            try:
+                pv = float(pred_val)
+            except (ValueError, TypeError):
+                continue
+
+            gt_bool = _to_bool(gt_state)
+            if gt_bool is None:
+                continue
+
+            user_preds.setdefault(sid, []).append(pv)
+            user_gt_states.setdefault(sid, []).append(gt_bool)
+
+        # Now compute per-user thresholds and aggregate
+        all_pt_true = []
+        all_pt_pred = []
+
+        for sid in user_preds:
+            pvals = np.array(user_preds[sid])
+            gt_states = user_gt_states[sid]
+
+            if len(pvals) < 3:  # need enough data for meaningful threshold
+                continue
+
+            user_mean = np.mean(pvals)
+            user_sd = np.std(pvals)
+
+            if user_sd < 1e-6:  # no variance
+                continue
+
+            # Apply threshold: above mean+SD → True
+            if direction == "high":
+                pt_pred = [bool(v > user_mean + user_sd) for v in pvals]
+            else:
+                pt_pred = [bool(v < user_mean - user_sd) for v in pvals]
+
+            all_pt_true.extend(gt_states)
+            all_pt_pred.extend(pt_pred)
+
+        if len(all_pt_true) >= 2 and len(set(all_pt_true)) > 1:
+            results[cont_target] = {
+                "balanced_accuracy": float(balanced_accuracy_score(all_pt_true, all_pt_pred)),
+                "f1": float(f1_score(all_pt_true, all_pt_pred, zero_division=0)),
+                "n": len(all_pt_true),
+                "n_users": len(user_preds),
+                "state_col": state_col,
+            }
 
     return results
 
