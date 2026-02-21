@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PredictionOutput",
+  "description": "Prediction of emotional states and availability for a cancer survivor",
+  "type": "object",
+  "properties": {
+    "PANAS_Pos": {
+      "type": "number",
+      "description": "Predicted positive affect score (0-30 scale)",
+      "minimum": 0,
+      "maximum": 30
+    },
+    "PANAS_Neg": {
+      "type": "number",
+      "description": "Predicted negative affect score (0-30 scale)",
+      "minimum": 0,
+      "maximum": 30
+    },
+    "ER_desire": {
+      "type": "number",
+      "description": "Predicted emotion regulation desire (0-10 scale)",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "Individual_level_PA_State": {
+      "type": "boolean",
+      "description": "Is positive affect unusually HIGH for this individual?"
+    },
+    "Individual_level_NA_State": {
+      "type": "boolean",
+      "description": "Is negative affect unusually HIGH for this individual?"
+    },
+    "Individual_level_happy_State": {
+      "type": "boolean",
+      "description": "Is happiness unusually high/low for this individual?"
+    },
+    "Individual_level_sad_State": {
+      "type": "boolean",
+      "description": "Is sadness unusually high for this individual?"
+    },
+    "Individual_level_afraid_State": {
+      "type": "boolean",
+      "description": "Is fear unusually high for this individual?"
+    },
+    "Individual_level_miserable_State": {
+      "type": "boolean",
+      "description": "Is misery unusually high for this individual?"
+    },
+    "Individual_level_worried_State": {
+      "type": "boolean",
+      "description": "Is worry unusually high for this individual?"
+    },
+    "Individual_level_cheerful_State": {
+      "type": "boolean",
+      "description": "Is cheerfulness at an unusual level for this individual?"
+    },
+    "Individual_level_pleased_State": {
+      "type": "boolean",
+      "description": "Is feeling pleased at an unusual level for this individual?"
+    },
+    "Individual_level_grateful_State": {
+      "type": "boolean",
+      "description": "Is gratitude at an unusual level for this individual?"
+    },
+    "Individual_level_lonely_State": {
+      "type": "boolean",
+      "description": "Is loneliness unusually high for this individual?"
+    },
+    "Individual_level_interactions_quality_State": {
+      "type": "boolean",
+      "description": "Is interaction quality at an unusual level for this individual?"
+    },
+    "Individual_level_pain_State": {
+      "type": "boolean",
+      "description": "Is pain unusually high for this individual?"
+    },
+    "Individual_level_forecasting_State": {
+      "type": "boolean",
+      "description": "Is forecasting at an unusual level for this individual?"
+    },
+    "Individual_level_ER_desire_State": {
+      "type": "boolean",
+      "description": "Is emotion regulation desire unusually high for this individual?"
+    },
+    "INT_availability": {
+      "type": "string",
+      "description": "Is the user available for an intervention? (yes/no)",
+      "enum": ["yes", "no"]
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Brief explanation of the reasoning behind predictions"
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Overall confidence in predictions (0.0 to 1.0)",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "required": [
+    "PANAS_Pos", "PANAS_Neg", "ER_desire",
+    "Individual_level_PA_State", "Individual_level_NA_State",
+    "Individual_level_happy_State", "Individual_level_sad_State",
+    "Individual_level_afraid_State", "Individual_level_miserable_State",
+    "Individual_level_worried_State", "Individual_level_cheerful_State",
+    "Individual_level_pleased_State", "Individual_level_grateful_State",
+    "Individual_level_lonely_State",
+    "Individual_level_interactions_quality_State",
+    "Individual_level_pain_State", "Individual_level_forecasting_State",
+    "Individual_level_ER_desire_State",
+    "INT_availability",
+    "reasoning", "confidence"
+  ]
+}

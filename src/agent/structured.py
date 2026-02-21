@@ -1,52 +1,75 @@
-"""V1 Structured Workflow: fixed Sense → Retrieve → Reason → Decide pipeline.
+"""V1 Structured Workflow: sensing data → memory → single LLM call → prediction.
 
-Every prediction follows the same 4 steps in order. Reproducible and debuggable.
+For the pilot: simplified from 4-step to a single LLM call with all context
+pre-assembled. The LLM does step-by-step reasoning within one call.
 """
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+import logging
+from typing import Any
 
-if TYPE_CHECKING:
-    from src.agent.personal_agent import PersonalAgent
+from src.think.llm_client import ClaudeCodeClient
+from src.think.prompts import (
+    build_trait_summary,
+    format_sensing_summary,
+    v1_prompt,
+    v1_system_prompt,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class StructuredWorkflow:
-    """Fixed agentic workflow: sense → retrieve_memory → reason → decide."""
+    """V1: Fixed pipeline — assemble context, single LLM call, parse output."""
 
-    def __init__(self, agent: PersonalAgent) -> None:
-        self.agent = agent
+    def __init__(
+        self,
+        llm_client: ClaudeCodeClient,
+    ) -> None:
+        self.llm = llm_client
 
-    def run(self, sensing_data: dict, context: dict | None = None) -> dict:
-        """Execute the full 4-step pipeline.
+    def run(
+        self,
+        sensing_day,
+        memory_doc: str,
+        profile,
+        date_str: str = "",
+    ) -> dict[str, Any]:
+        """Execute V1 prediction pipeline.
+
+        Args:
+            sensing_day: SensingDay dataclass (or None).
+            memory_doc: Pre-generated memory document text.
+            profile: UserProfile dataclass.
+            date_str: Date string for context.
 
         Returns:
-            Dict with predictions, reasoning trace, and decision.
+            Dict with predictions + metadata.
         """
-        sensed = self.sense(sensing_data)
-        memory = self.retrieve_memory(sensed, context)
-        reasoning = self.reason(sensed, memory, context)
-        decision = self.decide(reasoning)
+        # Step 1: Format sensing data
+        sensing_summary = format_sensing_summary(sensing_day)
 
-        return {
-            "sensed": sensed,
-            "memory": memory,
-            "reasoning": reasoning,
-            "decision": decision,
-        }
+        # Step 2: Build prompt with all context
+        trait_text = build_trait_summary(profile)
+        prompt = v1_prompt(
+            sensing_summary=sensing_summary,
+            memory_doc=memory_doc,
+            trait_profile=trait_text,
+            date_str=date_str,
+        )
+        system = v1_system_prompt()
 
-    def sense(self, sensing_data: dict) -> dict:
-        """Step 1: Summarize available sensing features for the current time window."""
-        raise NotImplementedError
+        # Step 3: Single LLM call
+        logger.debug("V1: Calling LLM with sensing + memory context")
+        result = self.llm.generate_structured(
+            prompt=prompt,
+            system_prompt=system,
+        )
 
-    def retrieve_memory(self, sensed: dict, context: dict | None = None) -> dict:
-        """Step 2: Query user's personal memory for relevant past patterns."""
-        raise NotImplementedError
+        # Add trace info
+        result["_version"] = "v1"
+        result["_prompt_length"] = len(prompt) + len(system)
+        result["_sensing_summary"] = sensing_summary[:500]
 
-    def reason(self, sensed: dict, memory: dict, context: dict | None = None) -> dict:
-        """Step 3: LLM interprets sensing + memory → predicts emotional state and receptivity."""
-        raise NotImplementedError
-
-    def decide(self, reasoning: dict) -> dict:
-        """Step 4: Based on predictions and confidence, decide whether to intervene."""
-        raise NotImplementedError
+        return result

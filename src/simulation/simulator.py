@@ -1,52 +1,289 @@
-"""DataSimulator: replays historical data chronologically per user.
+"""PilotSimulator: runs the 5-user pilot study for CALLM, V1, and V2.
 
-For each user, iterates through study days and EMA windows (morning, afternoon, evening).
-At each window:
-  1. Feeds available sensing data to the agent (only past data)
-  2. Agent makes predictions
-  3. Delivers EMA ground truth for self-evaluation
+Iterates users → EMA entries chronologically → calls agent.predict() →
+collects results. Supports checkpointing, dry-run mode, and per-user output.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+import json
+import logging
+import time
+from pathlib import Path
+from typing import Any
 
-if TYPE_CHECKING:
-    import pandas as pd
-    from src.agent.personal_agent import PersonalAgent
+import pandas as pd
+
+from src.agent.personal_agent import PersonalAgent
+from src.data.loader import DataLoader
+from src.data.preprocessing import align_sensing_to_ema, get_user_trait_profile, prepare_pilot_data
+from src.evaluation.metrics import compute_all
+from src.evaluation.reporter import Reporter
+from src.remember.retriever import TFIDFRetriever
+from src.think.llm_client import ClaudeCodeClient
+
+logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SimulationConfig:
-    """Configuration for a simulation run."""
+class PilotSimulator:
+    """Runs the pilot study: 5 users × 30 EMA entries × 3 versions."""
 
-    user_ids: list[str]
-    agent_version: str  # "v1" or "v2"
-    sensing_lookback_hours: int = 4
+    def __init__(
+        self,
+        loader: DataLoader,
+        output_dir: Path,
+        group: int = 1,
+        max_ema: int = 30,
+        pilot_user_ids: list[int] | None = None,
+        dry_run: bool = False,
+        model: str = "sonnet",
+        delay: float = 2.0,
+    ) -> None:
+        self.loader = loader
+        self.output_dir = output_dir
+        self.group = group
+        self.max_ema = max_ema
+        self.pilot_user_ids = pilot_user_ids
+        self.dry_run = dry_run
+        self.model = model
+        self.delay = delay
+
+        self.reporter = Reporter(output_dir)
+
+        # Will be populated during setup
+        self._users_data: list[dict] = []
+        self._sensing_dfs: dict[str, pd.DataFrame] = {}
+        self._train_df: pd.DataFrame | None = None
+        self._retriever: TFIDFRetriever | None = None
+
+    def setup(self) -> None:
+        """Load and prepare all data for the pilot."""
+        logger.info("Loading pilot data...")
+
+        # Load sensing data
+        self._sensing_dfs = self.loader.load_all_sensing()
+        logger.info(f"Loaded {len(self._sensing_dfs)} sensing sources")
+
+        # Load training data for TF-IDF retriever (CALLM)
+        self._train_df = self.loader.load_split(self.group, "train")
+        logger.info(f"Loaded training data: {len(self._train_df)} entries")
+
+        # Build TF-IDF retriever
+        self._retriever = TFIDFRetriever()
+        self._retriever.fit(self._train_df)
+        logger.info("TF-IDF retriever fitted")
+
+        # Prepare per-user data
+        self._users_data = prepare_pilot_data(
+            self.loader,
+            group=self.group,
+            pilot_user_ids=self.pilot_user_ids,
+            max_ema=self.max_ema,
+        )
+        logger.info(f"Prepared data for {len(self._users_data)} pilot users")
+        for ud in self._users_data:
+            logger.info(f"  User {ud['study_id']}: {len(ud['ema_entries'])} EMA entries")
+
+    def run_version(self, version: str) -> dict[str, Any]:
+        """Run the pilot for a single version (callm/v1/v2).
+
+        Returns:
+            Dict with predictions, ground_truths, metadata, metrics.
+        """
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Running {version.upper()} on {len(self._users_data)} users")
+        logger.info(f"{'='*60}")
+
+        all_predictions = []
+        all_ground_truths = []
+        all_metadata = []
+        per_user_metrics = {}
+
+        llm_client = ClaudeCodeClient(
+            model=self.model,
+            dry_run=self.dry_run,
+            delay_between_calls=self.delay,
+        )
+
+        for user_data in self._users_data:
+            sid = user_data["study_id"]
+            logger.info(f"\n--- User {sid} ({version.upper()}) ---")
+
+            agent = PersonalAgent(
+                study_id=sid,
+                version=version,
+                llm_client=llm_client,
+                profile=user_data["profile"],
+                memory_doc=user_data["memory"],
+                retriever=self._retriever if version == "callm" else None,
+            )
+
+            user_preds = []
+            user_gts = []
+            user_meta = []
+
+            for i, (ema_row, sensing_day) in enumerate(
+                zip(user_data["ema_entries"], user_data["sensing_days"])
+            ):
+                date_str = str(ema_row.get("date_local", ""))
+
+                logger.info(f"  Entry {i+1}/{len(user_data['ema_entries'])} ({date_str})")
+
+                try:
+                    pred = agent.predict(
+                        ema_row=ema_row,
+                        sensing_day=sensing_day,
+                        date_str=date_str,
+                        sensing_dfs=self._sensing_dfs if version == "v2" else None,
+                    )
+                except Exception as e:
+                    logger.error(f"  Error predicting: {e}")
+                    pred = {"_error": str(e)}
+
+                # Extract ground truth
+                gt = _extract_ground_truth(ema_row)
+
+                # Save trace
+                trace_data = {k: v for k, v in pred.items() if k.startswith("_")}
+                if trace_data:
+                    self.reporter.save_trace(trace_data, sid, i, version)
+
+                # Clean prediction for evaluation
+                clean_pred = {k: v for k, v in pred.items() if not k.startswith("_")}
+
+                user_preds.append(clean_pred)
+                user_gts.append(gt)
+                user_meta.append({"study_id": sid, "entry_idx": i, "date": date_str})
+
+            # Per-user metrics
+            if user_preds:
+                try:
+                    per_user_metrics[sid] = compute_all(user_preds, user_gts)
+                except Exception as e:
+                    logger.warning(f"  Metrics error for user {sid}: {e}")
+
+            all_predictions.extend(user_preds)
+            all_ground_truths.extend(user_gts)
+            all_metadata.extend(user_meta)
+
+            # Checkpoint: save after each user
+            self._checkpoint(version, all_predictions, all_ground_truths, all_metadata)
+
+            logger.info(f"  User {sid} done. Total LLM calls: {llm_client.call_count}")
+
+        # Save final outputs
+        self.reporter.save_predictions_csv(
+            all_predictions, all_ground_truths, all_metadata,
+            f"{version}_predictions.csv",
+        )
+
+        # Compute overall metrics
+        overall_metrics = {}
+        if all_predictions:
+            try:
+                overall_metrics = compute_all(all_predictions, all_ground_truths)
+            except Exception as e:
+                logger.error(f"Overall metrics error: {e}")
+
+        return {
+            "version": version,
+            "predictions": all_predictions,
+            "ground_truths": all_ground_truths,
+            "metadata": all_metadata,
+            "metrics": overall_metrics,
+            "per_user_metrics": per_user_metrics,
+            "total_llm_calls": llm_client.call_count,
+        }
+
+    def run_all(self, versions: list[str] | None = None) -> dict[str, Any]:
+        """Run all specified versions sequentially and generate comparison report.
+
+        Args:
+            versions: List of versions to run. Default: ["callm", "v1", "v2"].
+
+        Returns:
+            Dict with per-version results and comparison metrics.
+        """
+        if versions is None:
+            versions = ["callm", "v1", "v2"]
+
+        results = {}
+        version_metrics = {}
+
+        for version in versions:
+            result = self.run_version(version)
+            results[version] = result
+            if result["metrics"]:
+                version_metrics[version] = result["metrics"]
+
+        # Generate comparison outputs
+        if len(version_metrics) > 1:
+            self.reporter.save_comparison_table(version_metrics)
+            self.reporter.save_metrics_json(version_metrics, "comparison_metrics.json")
+
+        # Save per-user metrics
+        per_user = {v: r.get("per_user_metrics", {}) for v, r in results.items()}
+        self.reporter.save_metrics_json(per_user, "per_user_metrics.json")
+
+        logger.info(f"\n{'='*60}")
+        logger.info("PILOT COMPLETE")
+        logger.info(f"Output directory: {self.output_dir}")
+        for v, r in results.items():
+            logger.info(f"  {v}: {r['total_llm_calls']} LLM calls")
+        logger.info(f"{'='*60}")
+
+        return results
+
+    def _checkpoint(
+        self,
+        version: str,
+        predictions: list[dict],
+        ground_truths: list[dict],
+        metadata: list[dict],
+    ) -> None:
+        """Save intermediate checkpoint."""
+        checkpoint_dir = self.output_dir / "checkpoints"
+        checkpoint_dir.mkdir(exist_ok=True)
+        path = checkpoint_dir / f"{version}_checkpoint.json"
+        with open(path, "w") as f:
+            json.dump({
+                "version": version,
+                "n_entries": len(predictions),
+                "predictions": predictions,
+                "ground_truths": ground_truths,
+                "metadata": metadata,
+            }, f, default=str)
 
 
-class DataSimulator:
-    """Replays historical data chronologically, driving agent predictions and evaluations."""
+def _extract_ground_truth(ema_row) -> dict[str, Any]:
+    """Extract ground truth targets from an EMA row (pandas Series)."""
+    from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 
-    def __init__(self, config: SimulationConfig) -> None:
-        self.config = config
-        self.agents: dict[str, PersonalAgent] = {}
+    gt = {}
 
-    def setup_agents(self) -> None:
-        """Initialize a PersonalAgent for each user."""
-        raise NotImplementedError
+    # Continuous
+    for target in CONTINUOUS_TARGETS:
+        val = ema_row.get(target)
+        if pd.notna(val):
+            gt[target] = float(val)
+        else:
+            gt[target] = None
 
-    def run(self) -> dict:
-        """Run full simulation across all users and days. Returns evaluation results."""
-        raise NotImplementedError
+    # Binary states
+    for target in BINARY_STATE_TARGETS:
+        val = ema_row.get(target)
+        if pd.notna(val):
+            if isinstance(val, bool):
+                gt[target] = val
+            elif isinstance(val, str):
+                gt[target] = val.lower().strip() in ("true", "1", "yes")
+            else:
+                gt[target] = bool(val)
+        else:
+            gt[target] = None
 
-    def run_user(self, user_id: str) -> dict:
-        """Run simulation for a single user. Returns per-user results."""
-        raise NotImplementedError
+    # Availability
+    avail = ema_row.get("INT_availability")
+    gt["INT_availability"] = str(avail).lower().strip() if pd.notna(avail) else None
 
-    def _process_ema_window(
-        self, user_id: str, day: str, window: str
-    ) -> dict:
-        """Process one EMA window: gather sensing → agent predicts → deliver ground truth."""
-        raise NotImplementedError
+    return gt

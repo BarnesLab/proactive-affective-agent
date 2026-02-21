@@ -1,50 +1,297 @@
-"""All prompt templates for agent reasoning.
+"""Prompt templates for all three agent versions: CALLM, V1, V2.
 
-Centralized prompt management. Each prompt is a function that takes
-structured inputs and returns a formatted prompt string.
+Each function builds a complete prompt string from structured inputs.
+All versions share the same JSON output schema.
 """
 
 from __future__ import annotations
 
+from typing import Any
 
-# --- V1 Structured Workflow Prompts ---
+# Shared output format instructions
+OUTPUT_FORMAT = """
+You must respond with ONLY a JSON object (no markdown, no extra text) with these exact fields:
 
-def sensing_summary_prompt(features: dict, context: dict | None = None) -> str:
-    """Prompt to summarize sensing features into a natural language description."""
-    raise NotImplementedError
+{
+  "PANAS_Pos": <number 0-30, predicted positive affect>,
+  "PANAS_Neg": <number 0-30, predicted negative affect>,
+  "ER_desire": <number 0-10, predicted emotion regulation desire>,
+  "Individual_level_PA_State": <boolean, is positive affect unusually high for this person?>,
+  "Individual_level_NA_State": <boolean, is negative affect unusually high for this person?>,
+  "Individual_level_happy_State": <boolean>,
+  "Individual_level_sad_State": <boolean>,
+  "Individual_level_afraid_State": <boolean>,
+  "Individual_level_miserable_State": <boolean>,
+  "Individual_level_worried_State": <boolean>,
+  "Individual_level_cheerful_State": <boolean>,
+  "Individual_level_pleased_State": <boolean>,
+  "Individual_level_grateful_State": <boolean>,
+  "Individual_level_lonely_State": <boolean>,
+  "Individual_level_interactions_quality_State": <boolean>,
+  "Individual_level_pain_State": <boolean>,
+  "Individual_level_forecasting_State": <boolean>,
+  "Individual_level_ER_desire_State": <boolean>,
+  "INT_availability": <"yes" or "no", is user available for intervention?>,
+  "reasoning": <string, brief explanation of your predictions>,
+  "confidence": <number 0-1, your confidence in these predictions>
+}
+
+The "_State" fields indicate whether each measure is at an UNUSUAL level for this individual
+compared to their typical baseline. True = unusual/elevated, False = typical.
+""".strip()
+
+CONTEXT_NOTE = """
+Context: This is a cancer survivorship study. Participants are cancer survivors whose
+emotional states and wellbeing are tracked via Ecological Momentary Assessment (EMA) surveys
+multiple times daily. Your task is to predict their current emotional state and whether
+they would be available for a just-in-time adaptive intervention.
+""".strip()
 
 
-def reasoning_prompt(
-    sensing_summary: str,
-    memory_context: str,
-    user_profile: str | None = None,
+# --- CALLM Baseline (CHI paper approach: diary text + RAG) ---
+
+def callm_prompt(
+    emotion_driver: str,
+    rag_examples: str,
+    memory_doc: str,
+    trait_profile: str,
+    date_str: str = "",
 ) -> str:
-    """Prompt for the main reasoning step: predict emotional state and receptivity.
+    """Build the CALLM baseline prompt (reactive, diary-text based).
 
-    Takes sensing summary + memory context → outputs structured predictions.
+    The CALLM approach from the CHI paper:
+    1. Takes the user's diary text (emotion_driver)
+    2. Retrieves similar cases from training data via TF-IDF
+    3. Uses memory document for user context
+    4. Makes predictions in a single LLM call
     """
-    raise NotImplementedError
+    return f"""{CONTEXT_NOTE}
+
+You are predicting the emotional state of a cancer survivor based on their diary entry.
+
+## User Profile
+{trait_profile}
+
+## User Memory (longitudinal emotional trajectory)
+{memory_doc[:3000] if memory_doc else "No memory document available."}
+
+## Current Diary Entry{f' ({date_str})' if date_str else ''}
+"{emotion_driver}"
+
+## Similar Cases from Other Participants
+These are diary entries from other participants with similar emotional expressions,
+along with their actual emotional outcomes. Use these as reference:
+
+{rag_examples}
+
+## Task
+Based on the diary entry, similar cases, and this user's history, predict their
+current emotional state. Consider:
+- What emotions does the diary text express?
+- How do similar cases typically score?
+- What is this user's typical baseline?
+
+{OUTPUT_FORMAT}"""
 
 
-def decision_prompt(predictions: dict, confidence: dict) -> str:
-    """Prompt for the intervention decision step."""
-    raise NotImplementedError
+# --- V1 Structured (sensing data + fixed pipeline) ---
+
+def v1_system_prompt() -> str:
+    """System prompt for V1 structured workflow."""
+    return f"""{CONTEXT_NOTE}
+
+You are an AI agent that predicts cancer survivors' emotional states from passive sensing data.
+You follow a structured pipeline: analyze sensing data → consider user history → reason → predict.
+
+{OUTPUT_FORMAT}"""
 
 
-def self_eval_prompt(prediction: dict, ground_truth: dict) -> str:
-    """Prompt for self-evaluation after receiving EMA ground truth."""
-    raise NotImplementedError
+def v1_prompt(
+    sensing_summary: str,
+    memory_doc: str,
+    trait_profile: str,
+    date_str: str = "",
+) -> str:
+    """Build the V1 structured prompt (sensing-based, single LLM call).
+
+    The V1 approach:
+    1. Receives pre-formatted sensing data summary
+    2. Considers memory document for longitudinal context
+    3. Follows step-by-step reasoning to predict
+    """
+    return f"""## User Profile
+{trait_profile}
+
+## User Memory (longitudinal emotional trajectory)
+{memory_doc[:3000] if memory_doc else "No memory document available."}
+
+## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
+{sensing_summary}
+
+## Instructions
+Analyze the sensing data step by step:
+
+1. **Sleep Analysis**: What do the sleep metrics suggest about rest quality?
+2. **Mobility & Activity**: What do GPS, motion, and screen data reveal about activity level?
+3. **Social Signals**: What do typing patterns and app usage suggest about social engagement?
+4. **Pattern Integration**: How do these signals combine? Are there concerning patterns?
+5. **User Context**: Given this user's history and traits, what would you predict?
+
+Based on your analysis, provide your predictions as JSON."""
 
 
-# --- V2 Autonomous Agent Prompts ---
+def format_sensing_summary(sensing_day) -> str:
+    """Convert a SensingDay object to a natural language summary for prompts."""
+    if sensing_day is None:
+        return "No sensing data available for this day."
 
-def autonomous_system_prompt(tools: list[str], user_context: str) -> str:
-    """System prompt for the autonomous agent with tool descriptions."""
-    raise NotImplementedError
+    data = sensing_day.to_summary_dict()
+    if not data:
+        return "No sensing data available for this day."
+
+    sections = []
+
+    # Sleep
+    sleep_parts = []
+    if data.get("accel_sleep_duration_min") is not None:
+        sleep_parts.append(f"Accelerometer-detected sleep: {data['accel_sleep_duration_min']:.0f} min")
+    if data.get("sleep_duration_min") is not None:
+        sleep_parts.append(f"Passive sleep detection: {data['sleep_duration_min']:.0f} min")
+    if data.get("android_sleep_min") is not None:
+        status = f" ({data['android_sleep_status']})" if data.get("android_sleep_status") else ""
+        sleep_parts.append(f"Android sleep: {data['android_sleep_min']:.0f} min{status}")
+    if sleep_parts:
+        sections.append("**Sleep:**\n" + "\n".join(f"  - {p}" for p in sleep_parts))
+
+    # Mobility / GPS
+    gps_parts = []
+    if data.get("travel_km") is not None:
+        gps_parts.append(f"Travel distance: {data['travel_km']:.1f} km")
+    if data.get("travel_minutes") is not None:
+        gps_parts.append(f"Travel time: {data['travel_minutes']:.0f} min")
+    if data.get("home_minutes") is not None:
+        gps_parts.append(f"Time at home: {data['home_minutes']:.0f} min")
+    if data.get("max_distance_from_home_km") is not None:
+        gps_parts.append(f"Max distance from home: {data['max_distance_from_home_km']:.1f} km")
+    if data.get("location_variance") is not None:
+        gps_parts.append(f"Location variance: {data['location_variance']:.4f}")
+    if gps_parts:
+        sections.append("**Mobility/GPS:**\n" + "\n".join(f"  - {p}" for p in gps_parts))
+
+    # Activity / Motion
+    activity_parts = []
+    if data.get("stationary_min") is not None:
+        activity_parts.append(f"Stationary: {data['stationary_min']:.0f} min")
+    if data.get("walking_min") is not None:
+        activity_parts.append(f"Walking: {data['walking_min']:.0f} min")
+    if data.get("automotive_min") is not None:
+        activity_parts.append(f"Driving: {data['automotive_min']:.0f} min")
+    if data.get("running_min") is not None and data["running_min"] > 0:
+        activity_parts.append(f"Running: {data['running_min']:.0f} min")
+    if data.get("cycling_min") is not None and data["cycling_min"] > 0:
+        activity_parts.append(f"Cycling: {data['cycling_min']:.0f} min")
+    if activity_parts:
+        sections.append("**Activity/Motion:**\n" + "\n".join(f"  - {p}" for p in activity_parts))
+
+    # Screen
+    screen_parts = []
+    if data.get("screen_minutes") is not None:
+        screen_parts.append(f"Total screen time: {data['screen_minutes']:.0f} min")
+    if data.get("screen_sessions") is not None:
+        screen_parts.append(f"Screen sessions: {data['screen_sessions']}")
+    if data.get("screen_max_session_min") is not None:
+        screen_parts.append(f"Longest session: {data['screen_max_session_min']:.0f} min")
+    if screen_parts:
+        sections.append("**Screen Usage:**\n" + "\n".join(f"  - {p}" for p in screen_parts))
+
+    # Keyboard / Typing
+    typing_parts = []
+    if data.get("words_typed") is not None:
+        typing_parts.append(f"Words typed: {data['words_typed']}")
+    if data.get("prop_positive") is not None:
+        typing_parts.append(f"Positive word ratio: {data['prop_positive']:.1%}")
+    if data.get("prop_negative") is not None:
+        typing_parts.append(f"Negative word ratio: {data['prop_negative']:.1%}")
+    if typing_parts:
+        sections.append("**Typing/Communication:**\n" + "\n".join(f"  - {p}" for p in typing_parts))
+
+    # App usage
+    if data.get("total_app_seconds") is not None:
+        app_section = f"**App Usage:**\n  - Total foreground time: {data['total_app_seconds'] / 60:.0f} min"
+        if data.get("top_apps"):
+            top = ", ".join(f"{name} ({sec:.0f}s)" for name, sec in data["top_apps"][:3])
+            app_section += f"\n  - Top apps: {top}"
+        sections.append(app_section)
+
+    return "\n\n".join(sections) if sections else "Minimal sensing data available."
 
 
-# --- Memory Update Prompts ---
+# --- V2 Autonomous (ReAct-style, multi-turn) ---
 
-def memory_update_prompt(current_memory: str, new_observation: str) -> str:
-    """Prompt to update user memory with new observations."""
-    raise NotImplementedError
+def v2_system_prompt(trait_profile: str) -> str:
+    """System prompt for V2 autonomous workflow."""
+    return f"""{CONTEXT_NOTE}
+
+You are an autonomous AI agent that predicts cancer survivors' emotional states.
+Unlike a fixed pipeline, you decide what information to examine and in what order.
+
+## User Profile
+{trait_profile}
+
+You will receive an initial overview of today's sensing data. After reviewing it,
+you may request deeper analysis of specific aspects. Think carefully about what
+signals are most informative for this particular user.
+
+When you're ready to make your final prediction, respond with ONLY a JSON object.
+
+{OUTPUT_FORMAT}"""
+
+
+def v2_initial_prompt(
+    sensing_summary: str,
+    memory_doc: str,
+    date_str: str = "",
+) -> str:
+    """Round 1: Initial overview for V2 autonomous agent."""
+    return f"""## Today's Sensing Overview{f' ({date_str})' if date_str else ''}
+{sensing_summary}
+
+## User Memory Summary
+{memory_doc[:2000] if memory_doc else "No memory document available."}
+
+Review this data and decide your next step. You have two options:
+
+**Option A**: If you need more detail about specific aspects, respond with:
+REQUEST: <what you want to examine>
+(e.g., "REQUEST: Compare today's sleep to this user's weekly average" or
+"REQUEST: What are the typical sensing patterns when this user is stressed?")
+
+**Option B**: If you have enough information to make predictions, respond with
+your JSON prediction directly.
+
+What would you like to do?"""
+
+
+def v2_followup_prompt(
+    additional_context: str,
+    round_num: int,
+) -> str:
+    """Round 2+: Provide requested context and ask for next step or final prediction."""
+    if round_num >= 3:
+        force = "\n\nYou must now provide your final prediction as JSON. No more requests."
+    else:
+        force = "\n\nYou may make one more request or provide your final JSON prediction."
+
+    return f"""Here is the additional information you requested:
+
+{additional_context}
+{force}"""
+
+
+# --- Shared helpers ---
+
+def build_trait_summary(profile) -> str:
+    """Build a concise trait summary string from a UserProfile."""
+    if profile is None:
+        return "No user profile available."
+    return profile.to_text()

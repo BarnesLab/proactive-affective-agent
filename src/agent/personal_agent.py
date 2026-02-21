@@ -1,78 +1,122 @@
-"""PersonalAgent: orchestrates V1 (structured) or V2 (autonomous) workflows.
+"""PersonalAgent: orchestrates CALLM, V1, or V2 workflows for a single user.
 
-Each participant gets their own PersonalAgent instance with:
-- Persistent memory (personal patterns, prediction history, learned thresholds)
-- Self-evaluation loop (compares predictions to EMA ground truth)
-- Access to shared knowledge (population norms, peer cases)
+Each user gets their own PersonalAgent. The agent delegates to the appropriate
+workflow based on the version parameter.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
+import logging
 from typing import Any
 
+from src.agent.autonomous import AutonomousWorkflow
+from src.agent.structured import StructuredWorkflow
+from src.data.schema import UserProfile
+from src.remember.retriever import TFIDFRetriever
+from src.think.llm_client import ClaudeCodeClient
+from src.think.prompts import build_trait_summary, callm_prompt, format_sensing_summary
 
-@dataclass
-class AgentState:
-    """Persistent state for a PersonalAgent."""
-
-    user_id: str
-    prediction_log: list[dict] = field(default_factory=list)
-    receptivity_history: list[dict] = field(default_factory=list)
-    learned_params: dict[str, Any] = field(default_factory=dict)
-    memory_path: Path | None = None
+logger = logging.getLogger(__name__)
 
 
 class PersonalAgent:
-    """Per-user agent that predicts emotional state and receptivity from sensing data."""
+    """Per-user agent that predicts emotional states using CALLM, V1, or V2."""
 
-    def __init__(self, user_id: str, version: str = "v1", state_dir: Path | None = None) -> None:
-        self.user_id = user_id
-        self.version = version  # "v1" or "v2"
-        self.state = AgentState(user_id=user_id)
-        self.state_dir = state_dir
+    def __init__(
+        self,
+        study_id: int,
+        version: str,
+        llm_client: ClaudeCodeClient,
+        profile: UserProfile | None = None,
+        memory_doc: str = "",
+        retriever: TFIDFRetriever | None = None,
+    ) -> None:
+        self.study_id = study_id
+        self.version = version  # "callm", "v1", "v2"
+        self.llm = llm_client
+        self.profile = profile or UserProfile(study_id=study_id)
+        self.memory_doc = memory_doc
+        self.retriever = retriever  # Only used by CALLM
 
-        self._workflow = self._init_workflow()
+        # Initialize workflow
+        if version == "v1":
+            self._v1 = StructuredWorkflow(llm_client)
+        elif version == "v2":
+            self._v2 = AutonomousWorkflow(llm_client)
 
-    def _init_workflow(self):
-        """Initialize the appropriate workflow (V1 or V2)."""
-        if self.version == "v1":
-            from src.agent.structured import StructuredWorkflow
-            return StructuredWorkflow(self)
+    def predict(
+        self,
+        ema_row=None,
+        sensing_day=None,
+        date_str: str = "",
+        sensing_dfs: dict | None = None,
+    ) -> dict[str, Any]:
+        """Make predictions for a single EMA entry.
+
+        Args:
+            ema_row: pandas Series of the EMA entry (needed for CALLM's emotion_driver).
+            sensing_day: SensingDay dataclass (needed for V1/V2).
+            date_str: Date string for context.
+            sensing_dfs: Full sensing DataFrames (for V2 deeper queries).
+
+        Returns:
+            Dict with predictions, metadata, and trace info.
+        """
+        if self.version == "callm":
+            return self._run_callm(ema_row, date_str)
+        elif self.version == "v1":
+            return self._run_v1(sensing_day, date_str)
         elif self.version == "v2":
-            from src.agent.autonomous import AutonomousWorkflow
-            return AutonomousWorkflow(self)
+            return self._run_v2(sensing_day, date_str, sensing_dfs)
         else:
-            raise ValueError(f"Unknown agent version: {self.version}")
+            raise ValueError(f"Unknown version: {self.version}")
 
-    def predict(self, sensing_data: dict, context: dict | None = None) -> dict:
-        """Make predictions for current EMA window.
+    def _run_callm(self, ema_row, date_str: str) -> dict[str, Any]:
+        """CALLM baseline: diary text + TF-IDF RAG + memory → single LLM call."""
+        emotion_driver = ""
+        if ema_row is not None:
+            emotion_driver = str(ema_row.get("emotion_driver", ""))
+            if emotion_driver == "nan" or not emotion_driver.strip():
+                emotion_driver = ""
 
-        Args:
-            sensing_data: Extracted sensing features for the lookback window.
-            context: Additional context (time of day, day of week, etc.)
+        # Retrieve similar cases
+        rag_examples = "No similar cases available."
+        if self.retriever and emotion_driver:
+            results = self.retriever.search(emotion_driver, top_k=20)
+            rag_examples = self.retriever.format_examples(results, max_examples=10)
 
-        Returns:
-            Dict with predicted emotional states and receptivity.
-        """
-        return self._workflow.run(sensing_data, context)
+        trait_text = build_trait_summary(self.profile)
+        prompt = callm_prompt(
+            emotion_driver=emotion_driver or "(No diary entry provided)",
+            rag_examples=rag_examples,
+            memory_doc=self.memory_doc,
+            trait_profile=trait_text,
+            date_str=date_str,
+        )
 
-    def receive_ground_truth(self, ema_response: dict) -> dict:
-        """Receive EMA ground truth and trigger self-evaluation.
+        logger.debug(f"CALLM: Calling LLM for user {self.study_id}")
+        result = self.llm.generate_structured(prompt=prompt)
+        result["_version"] = "callm"
+        result["_prompt_length"] = len(prompt)
+        result["_emotion_driver"] = emotion_driver[:200]
+        return result
 
-        Args:
-            ema_response: Actual EMA response with emotional state and receptivity labels.
+    def _run_v1(self, sensing_day, date_str: str) -> dict[str, Any]:
+        """V1 Structured: sensing data → single LLM call."""
+        return self._v1.run(
+            sensing_day=sensing_day,
+            memory_doc=self.memory_doc,
+            profile=self.profile,
+            date_str=date_str,
+        )
 
-        Returns:
-            Self-evaluation results (accuracy, confidence calibration, etc.)
-        """
-        raise NotImplementedError
-
-    def save_state(self) -> None:
-        """Persist agent state to disk."""
-        raise NotImplementedError
-
-    def load_state(self) -> None:
-        """Load agent state from disk."""
-        raise NotImplementedError
+    def _run_v2(self, sensing_day, date_str: str, sensing_dfs: dict | None) -> dict[str, Any]:
+        """V2 Autonomous: multi-turn ReAct agent."""
+        return self._v2.run(
+            sensing_day=sensing_day,
+            memory_doc=self.memory_doc,
+            profile=self.profile,
+            date_str=date_str,
+            sensing_dfs=sensing_dfs,
+            study_id=self.study_id,
+        )
