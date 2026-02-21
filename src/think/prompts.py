@@ -1,7 +1,14 @@
-"""Prompt templates for all three agent versions: CALLM, V1, V2.
+"""Prompt templates for all five agent versions: CALLM, V1, V2, V3, V4.
 
 Each function builds a complete prompt string from structured inputs.
 All versions share the same JSON output schema.
+
+Version matrix:
+  CALLM: diary + TF-IDF RAG (diary only) — CHI baseline
+  V1: sensing only — structured pipeline
+  V2: sensing only — autonomous reasoning
+  V3: diary + sensing + multimodal RAG — structured pipeline
+  V4: diary + sensing + multimodal RAG — autonomous reasoning
 """
 
 from __future__ import annotations
@@ -262,6 +269,128 @@ and situation. Consider:
 - Which sensing signals are most informative given this user's profile and history?
 - Are there unusual patterns compared to what you know about this user?
 - How do different signals corroborate or contradict each other?
+- What is the most likely emotional state given ALL available evidence?
+
+Think through the evidence, then provide your prediction as JSON."""
+
+
+# --- V3 Structured Full (diary + sensing + multimodal RAG) ---
+
+def v3_system_prompt() -> str:
+    """System prompt for V3 structured full workflow."""
+    return f"""{CONTEXT_NOTE}
+
+You are an AI agent that predicts cancer survivors' emotional states using BOTH
+their diary entry AND passive sensing data, enhanced by similar cases from other
+participants. You follow a structured 5-step pipeline.
+
+{OUTPUT_FORMAT}"""
+
+
+def v3_prompt(
+    emotion_driver: str,
+    sensing_summary: str,
+    rag_examples: str,
+    memory_doc: str,
+    trait_profile: str,
+    date_str: str = "",
+) -> str:
+    """Build the V3 structured full prompt (diary + sensing + multimodal RAG).
+
+    V3 combines all data modalities with a fixed step-by-step reasoning pipeline:
+    1. Diary analysis
+    2. Sensing analysis
+    3. Cross-modal consistency
+    4. Similar case comparison (RAG with diary + sensing)
+    5. Integrated prediction
+    """
+    return f"""## User Profile
+{trait_profile}
+
+## User Memory (longitudinal emotional trajectory)
+{memory_doc[:3000] if memory_doc else "No memory document available."}
+
+## Current Diary Entry{f' ({date_str})' if date_str else ''}
+"{emotion_driver}"
+
+## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
+{sensing_summary}
+
+## Similar Cases from Other Participants (diary + sensing)
+These are diary entries from other participants with similar emotional expressions,
+along with their sensing data and actual emotional outcomes:
+
+{rag_examples}
+
+## Instructions
+Analyze all available data following these 5 steps:
+
+1. **Diary Analysis**: What emotions and concerns does the diary text express?
+   Identify key emotional themes, coping language, and distress indicators.
+
+2. **Sensing Analysis**: What do the passive sensing signals reveal?
+   - Sleep patterns: rest quality and duration
+   - Mobility: activity level, time away from home
+   - Screen/typing: digital engagement patterns, sentiment in typing
+
+3. **Cross-Modal Consistency**: Do diary content and sensing data tell a consistent
+   story? Flag any discrepancies (e.g., diary reports feeling fine but sensing shows
+   disrupted sleep and low mobility).
+
+4. **Similar Case Comparison**: How do the retrieved cases with similar diary entries
+   compare? Do their sensing patterns and outcomes align with this user's data?
+
+5. **Integrated Prediction**: Synthesize all evidence — diary text, sensing signals,
+   cross-modal patterns, similar cases, and user history — into a final prediction.
+
+Based on your analysis, provide your predictions as JSON."""
+
+
+# --- V4 Autonomous Full (diary + sensing + multimodal RAG) ---
+
+def v4_system_prompt(trait_profile: str) -> str:
+    """System prompt for V4 autonomous full workflow."""
+    return f"""{CONTEXT_NOTE}
+
+You are an autonomous AI agent that predicts cancer survivors' emotional states.
+You receive diary text, passive sensing data, similar cases from other participants,
+and user history. You freely decide how to weigh and reason about all evidence.
+
+## User Profile
+{trait_profile}
+
+{OUTPUT_FORMAT}"""
+
+
+def v4_prompt(
+    emotion_driver: str,
+    sensing_summary: str,
+    rag_examples: str,
+    memory_doc: str,
+    date_str: str = "",
+) -> str:
+    """Single-call prompt for V4 autonomous agent with all data modalities."""
+    return f"""## Current Diary Entry{f' ({date_str})' if date_str else ''}
+"{emotion_driver}"
+
+## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
+{sensing_summary}
+
+## Similar Cases from Other Participants (diary + sensing + outcomes)
+{rag_examples}
+
+## User Memory (longitudinal emotional trajectory)
+{memory_doc[:3000] if memory_doc else "No memory document available."}
+
+## Instructions
+You have this user's diary entry, sensing data, similar cases, and history above.
+Reason autonomously — decide which signals and data modalities matter most for
+THIS specific user and situation. Consider:
+
+- Which combination of diary + sensing signals is most informative?
+- Are there unusual patterns compared to this user's history?
+- Do diary text and sensing data corroborate or contradict each other?
+- How do similar cases' outcomes inform your prediction?
 - What is the most likely emotional state given ALL available evidence?
 
 Think through the evidence, then provide your prediction as JSON."""

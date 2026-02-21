@@ -1,7 +1,14 @@
-"""PersonalAgent: orchestrates CALLM, V1, or V2 workflows for a single user.
+"""PersonalAgent: orchestrates CALLM, V1, V2, V3, V4 workflows for a single user.
 
 Each user gets their own PersonalAgent. The agent delegates to the appropriate
 workflow based on the version parameter.
+
+Version matrix:
+  CALLM: diary + TF-IDF RAG (diary only) — CHI baseline
+  V1: sensing only — structured pipeline
+  V2: sensing only — autonomous reasoning
+  V3: diary + sensing + multimodal RAG — structured pipeline
+  V4: diary + sensing + multimodal RAG — autonomous reasoning
 """
 
 from __future__ import annotations
@@ -10,9 +17,11 @@ import logging
 from typing import Any
 
 from src.agent.autonomous import AutonomousWorkflow
+from src.agent.autonomous_full import AutonomousFullWorkflow
 from src.agent.structured import StructuredWorkflow
+from src.agent.structured_full import StructuredFullWorkflow
 from src.data.schema import UserProfile
-from src.remember.retriever import TFIDFRetriever
+from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
 from src.think.llm_client import ClaudeCodeClient
 from src.think.prompts import build_trait_summary, callm_prompt, format_sensing_summary
 
@@ -20,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class PersonalAgent:
-    """Per-user agent that predicts emotional states using CALLM, V1, or V2."""
+    """Per-user agent that predicts emotional states using CALLM/V1/V2/V3/V4."""
 
     def __init__(
         self,
@@ -32,17 +41,23 @@ class PersonalAgent:
         retriever: TFIDFRetriever | None = None,
     ) -> None:
         self.study_id = study_id
-        self.version = version  # "callm", "v1", "v2"
+        self.version = version  # "callm", "v1", "v2", "v3", "v4"
         self.llm = llm_client
         self.profile = profile or UserProfile(study_id=study_id)
         self.memory_doc = memory_doc
-        self.retriever = retriever  # Only used by CALLM
+        self.retriever = retriever  # CALLM: TFIDFRetriever, V3/V4: MultiModalRetriever
 
         # Initialize workflow
         if version == "v1":
             self._v1 = StructuredWorkflow(llm_client)
         elif version == "v2":
             self._v2 = AutonomousWorkflow(llm_client)
+        elif version == "v3":
+            mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
+            self._v3 = StructuredFullWorkflow(llm_client, retriever=mm_retriever)
+        elif version == "v4":
+            mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
+            self._v4 = AutonomousFullWorkflow(llm_client, retriever=mm_retriever)
 
     def predict(
         self,
@@ -54,8 +69,8 @@ class PersonalAgent:
         """Make predictions for a single EMA entry.
 
         Args:
-            ema_row: pandas Series of the EMA entry (needed for CALLM's emotion_driver).
-            sensing_day: SensingDay dataclass (needed for V1/V2).
+            ema_row: pandas Series of the EMA entry (needed for CALLM/V3/V4's diary).
+            sensing_day: SensingDay dataclass (needed for V1/V2/V3/V4).
             date_str: Date string for context.
             sensing_dfs: Full sensing DataFrames (for V2 deeper queries).
 
@@ -68,6 +83,10 @@ class PersonalAgent:
             return self._run_v1(sensing_day, date_str)
         elif self.version == "v2":
             return self._run_v2(sensing_day, date_str, sensing_dfs)
+        elif self.version == "v3":
+            return self._run_v3(ema_row, sensing_day, date_str)
+        elif self.version == "v4":
+            return self._run_v4(ema_row, sensing_day, date_str)
         else:
             raise ValueError(f"Unknown version: {self.version}")
 
@@ -134,4 +153,24 @@ class PersonalAgent:
             date_str=date_str,
             sensing_dfs=sensing_dfs,
             study_id=self.study_id,
+        )
+
+    def _run_v3(self, ema_row, sensing_day, date_str: str) -> dict[str, Any]:
+        """V3 Structured Full: diary + sensing + multimodal RAG → structured pipeline."""
+        return self._v3.run(
+            ema_row=ema_row,
+            sensing_day=sensing_day,
+            memory_doc=self.memory_doc,
+            profile=self.profile,
+            date_str=date_str,
+        )
+
+    def _run_v4(self, ema_row, sensing_day, date_str: str) -> dict[str, Any]:
+        """V4 Autonomous Full: diary + sensing + multimodal RAG → autonomous reasoning."""
+        return self._v4.run(
+            ema_row=ema_row,
+            sensing_day=sensing_day,
+            memory_doc=self.memory_doc,
+            profile=self.profile,
+            date_str=date_str,
         )

@@ -1,4 +1,4 @@
-"""PilotSimulator: runs the pilot study for CALLM, V1, and V2.
+"""PilotSimulator: runs the pilot study for CALLM, V1, V2, V3, V4.
 
 Iterates users -> EMA entries chronologically -> calls agent.predict() ->
 collects results. Supports checkpointing, dry-run mode, and per-user output.
@@ -20,7 +20,7 @@ from src.data.loader import DataLoader
 from src.data.preprocessing import align_sensing_to_ema, get_user_trait_profile, prepare_pilot_data
 from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
-from src.remember.retriever import TFIDFRetriever
+from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
 from src.think.llm_client import ClaudeCodeClient
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class PilotSimulator:
         self._all_ema: pd.DataFrame | None = None
         self._train_df: pd.DataFrame | None = None
         self._retriever: TFIDFRetriever | None = None
+        self._mm_retriever: MultiModalRetriever | None = None
 
     def setup(self) -> None:
         """Load and prepare all data for the pilot."""
@@ -70,10 +71,15 @@ class PilotSimulator:
         self._train_df = self.loader.load_all_train()
         logger.info(f"Loaded training data: {len(self._train_df)} entries")
 
-        # Build TF-IDF retriever
+        # Build TF-IDF retriever (for CALLM)
         self._retriever = TFIDFRetriever()
         self._retriever.fit(self._train_df)
         logger.info("TF-IDF retriever fitted")
+
+        # Build MultiModal retriever (for V3/V4: diary search → return diary + sensing)
+        self._mm_retriever = MultiModalRetriever()
+        self._mm_retriever.fit(self._train_df, sensing_dfs=self._sensing_dfs)
+        logger.info("MultiModal retriever fitted")
 
         # Determine pilot users
         if self.pilot_user_ids is None:
@@ -126,13 +132,21 @@ class PilotSimulator:
 
             logger.info(f"\n--- User {sid} ({version.upper()}, {n_entries} entries) ---")
 
+            # Select retriever based on version
+            if version == "callm":
+                retriever = self._retriever
+            elif version in ("v3", "v4"):
+                retriever = self._mm_retriever
+            else:
+                retriever = None
+
             agent = PersonalAgent(
                 study_id=sid,
                 version=version,
                 llm_client=llm_client,
                 profile=user_data["profile"],
                 memory_doc=user_data["memory"],
-                retriever=self._retriever if version == "callm" else None,
+                retriever=retriever,
             )
 
             user_preds = []
@@ -155,7 +169,7 @@ class PilotSimulator:
                         ema_row=ema_row,
                         sensing_day=sensing_day,
                         date_str=date_str,
-                        sensing_dfs=self._sensing_dfs if version == "v2" else None,
+                        sensing_dfs=self._sensing_dfs if version in ("v2",) else None,
                     )
                 except Exception as e:
                     logger.error(f"  Error predicting: {e}")
@@ -231,7 +245,7 @@ class PilotSimulator:
             Dict with per-version results and comparison metrics.
         """
         if versions is None:
-            versions = ["callm", "v1", "v2"]
+            versions = ["callm", "v1", "v2", "v3", "v4"]
 
         results = {}
         version_metrics = {}

@@ -2,13 +2,13 @@
 """Main entry point for the pilot study.
 
 Usage:
-    # Full pilot (all 3 versions, sequential)
+    # Full pilot (all 5 versions, sequential)
     python scripts/run_pilot.py --version all --users 2,34,56,78,90
 
     # Single version (for parallel execution)
     python scripts/run_pilot.py --version callm --users 2,34,56,78,90
-    python scripts/run_pilot.py --version v1 --users 2,34,56,78,90
-    python scripts/run_pilot.py --version v2 --users 2,34,56,78,90
+    python scripts/run_pilot.py --version v3 --users 2,34,56,78,90
+    python scripts/run_pilot.py --version v4 --users 2,34,56,78,90
 
     # Dry run (no LLM calls, test pipeline)
     python scripts/run_pilot.py --version all --dry-run
@@ -28,11 +28,11 @@ from src.simulation.simulator import PilotSimulator
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run the pilot study: CALLM vs V1 vs V2"
+        description="Run the pilot study: CALLM vs V1 vs V2 vs V3 vs V4"
     )
     parser.add_argument(
         "--version", type=str, default="all",
-        help="Which version to run: callm, v1, v2, or all (default: all)"
+        help="Which version to run: callm, v1, v2, v3, v4, or all (default: all)"
     )
     parser.add_argument(
         "--users", type=str, default=None,
@@ -78,7 +78,7 @@ def main():
 
     # Parse versions
     if args.version == "all":
-        versions = ["callm", "v1", "v2"]
+        versions = ["callm", "v1", "v2", "v3", "v4"]
     else:
         versions = [v.strip() for v in args.version.split(",")]
 
