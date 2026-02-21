@@ -41,11 +41,20 @@ Predictions (emotional state + receptivity)
 Decision (intervene / wait / observe)
 ```
 
-## 3. Two Agent Architectures
+## 3. Three Agent Versions (Pilot)
+
+### 3.0 CALLM Baseline
+
+CHI paper reactive approach — uses diary text (`emotion_driver`) as input:
+
+1. **Retrieve**: TF-IDF similarity search over training set to find top-20 similar past cases
+2. **Reason**: LLM reads diary text + similar cases + user memory doc + trait profile → predicts
+
+This is the baseline to beat. It has a natural advantage on text-rich entries since the diary text directly reveals emotional state.
 
 ### 3.1 V1: Structured Agent
 
-Fixed 4-step pipeline, same every time:
+Fixed pipeline using passive sensing data only (no diary text):
 
 1. **Sense**: Extract and summarize available sensing features for the current time window
 2. **Retrieve Memory**: Query user's personal memory for relevant past patterns
@@ -95,9 +104,13 @@ Critical constraint: **The agent must never see future data.** At each decision 
 - EMA data: only *past* EMA responses (not the current one being predicted)
 - Memory: accumulated from past interactions only
 
-### 4.3 Train/Test Split
+### 4.3 Data
 
-Use pre-existing 5-fold splits. Agent builds memory on train users, then is evaluated on test users. For test users, agent starts cold (or with population priors) and must learn during the evaluation period.
+- 399 users, 15,984 EMA entries across 5 non-overlapping test splits (combined for evaluation)
+- 8 sensing streams as **daily aggregates** (one row per user per day, not raw streams)
+- 756 pre-generated memory documents
+- Baseline trait questionnaire (346 features)
+- LLM backend: Claude Code CLI (`claude -p --model sonnet`), Max subscription
 
 ## 5. Memory Architecture
 
@@ -117,7 +130,7 @@ Markdown document maintained per user, containing:
 
 ### 5.3 RAG (Retrieval-Augmented Generation)
 
-Pre-computed FAISS embeddings over 754 memory documents. Used for semantic similarity search — "find past situations similar to the current sensing pattern."
+TF-IDF retriever over training set `emotion_driver` texts. Used for CALLM version to find similar past cases by cosine similarity. (Original OpenAI embeddings are incompatible with Claude CLI backend.)
 
 ## 6. Self-Learning Loop
 
@@ -133,17 +146,20 @@ This creates a learning loop where the agent improves over a user's study partic
 
 ### 7.1 Metrics
 
-- **Balanced Accuracy (BA)**: For categorical predictions (receptivity yes/no, emotion categories)
-- **MAE**: For continuous predictions (valence, arousal scales)
-- **F1**: For receptivity prediction (class-imbalanced)
-- **Calibration**: Are confidence scores well-calibrated?
+Two evaluation approaches:
+
+**Regression (continuous targets)**:
+- **MAE**: For PANAS_Pos (0-30), PANAS_Neg (0-30), ER_desire (0-10)
+
+**Classification (binary states)**:
+- **Balanced Accuracy (BA)** and **F1**: For 15 Individual_level_*_State targets and INT_availability
+- **CHI paper personal threshold**: Per-user mean ± SD on predicted continuous values → binary classification → BA & F1
 
 ### 7.2 Comparisons
 
-- V1 (Structured) vs V2 (Autonomous)
-- Cold-start vs warm (with accumulated memory)
-- With vs without peer knowledge
-- Against CALLM baselines (where applicable)
+- CALLM (diary text, reactive) vs V1 (sensing, structured) vs V2 (sensing, autonomous)
+- Per-user analysis across 5 selected users (highest data coverage)
+- Personal threshold evaluation matching CHI paper methodology
 
 ## 8. Key Design Decisions
 
@@ -157,8 +173,8 @@ This creates a learning loop where the agent improves over a user's study partic
 
 ## 9. Open Questions
 
-- How much sensing data history is optimal per prediction? (Currently: 4h lookback)
-- Should V2 agent have access to raw sensing data or only extracted features?
+- Sensing data is daily aggregates — is sub-day granularity worth pursuing?
 - How to handle missing sensing data gracefully? (Common in real-world mobile sensing)
-- What intervention content is most appropriate? (Currently using templates)
-- How to fairly compare V1 and V2 given V2's variable compute cost?
+- Can V1/V2 beat CALLM despite lacking direct emotional text input?
+- How to fairly compare V1 and V2 given V2's variable compute cost (2-3x calls)?
+- Does personal threshold evaluation favor certain prediction patterns?

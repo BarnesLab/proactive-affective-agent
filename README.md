@@ -10,10 +10,13 @@ Unlike reactive approaches (e.g., CALLM) that require users to write diary entri
 
 Each participant gets a **PersonalAgent** that learns and adapts over time through self-evaluation against EMA ground truth.
 
-## Two Agent Versions
+## Three Agent Versions
 
-- **V1 (Structured)**: Fixed pipeline — Sense → Retrieve Memory → Reason → Decide
-- **V2 (Autonomous)**: LLM-driven agent with tools — decides what data to examine and how to act
+| Version | Input | RAG | LLM Calls/Entry | Description |
+|---------|-------|-----|-----------------|-------------|
+| **CALLM** | diary text (`emotion_driver`) | TF-IDF top-20 similar cases | 1 | CHI paper baseline (reactive) |
+| **V1 Structured** | passive sensing data | memory doc only | 1 | Fixed pipeline: Sense → Retrieve → Reason → Decide |
+| **V2 Autonomous** | passive sensing data | memory doc + on-demand | 2-3 | ReAct-style: LLM decides what to examine |
 
 ## Setup
 
@@ -23,36 +26,36 @@ pip install -e ".[dev]"
 
 # Copy .env.example to .env and fill in API keys
 cp .env.example .env
-
-# Run single-user simulation
-python scripts/run_single_user.py --user_id <ID>
-
-# Run full simulation
-python scripts/run_simulation.py
 ```
 
 ## Project Structure
 
 ```
 src/
-├── simulation/    # Data replay engine
-├── agent/         # PersonalAgent (V1 structured + V2 autonomous)
-├── sense/         # Sensing data processing & feature extraction
-├── think/         # LLM reasoning & prompt management
-├── remember/      # Per-user memory & RAG retrieval
-├── act/           # Decision-making & intervention delivery
-├── learn/         # Self-evaluation & threshold adaptation
+├── simulation/    # Data replay engine (PilotSimulator)
+├── agent/         # PersonalAgent (CALLM + V1 structured + V2 autonomous)
+├── think/         # LLM client (Claude CLI), prompts, response parser
+├── remember/      # TF-IDF retriever for RAG
 ├── data/          # Data loading & preprocessing
-├── evaluation/    # Metrics & reporting
+├── evaluation/    # Metrics (MAE, BA, F1, personal threshold) & reporting
 └── utils/         # Config & constants
+
+scripts/
+├── run_pilot.py           # Main experiment runner
+├── select_pilot_users.py  # Select users by data coverage
+├── monitor_experiment.py  # Telegram progress notifications
+└── sync_overleaf.py       # Overleaf ↔ local sync docs
+
+draft/                     # Paper draft (synced from Overleaf)
 ```
 
 ## Data
 
-Raw data is from the BUCS cancer survivorship study. Includes:
-- 8 passive sensing streams (accelerometer, GPS, sleep, screen, app usage, etc.)
+Raw data is from the BUCS cancer survivorship study (399 users, 15,984 EMA entries). Includes:
+- 8 passive sensing streams (accelerometer, GPS, sleep, screen, app usage, motion, key input)
 - Daily & weekly EMA surveys (emotional states, intervention receptivity)
-- Baseline trait questionnaires
+- Baseline trait questionnaires (346 features)
+- 756 pre-generated memory documents
 
 Data files are gitignored due to size. See `data/` for expected structure.
 
@@ -67,15 +70,26 @@ The draft is also synced to `draft/` in this repository via the Overleaf Git bri
 
 ## Pilot Study
 
-Compare **CALLM baseline** (CHI paper, diary text) vs **V1 Structured** (sensing) vs **V2 Autonomous** (sensing) on 5 users.
+Compare **CALLM baseline** (CHI paper, diary text) vs **V1 Structured** (sensing) vs **V2 Autonomous** (sensing) on 5 users with all their EMA entries.
 
 ```bash
 # Select best pilot users by data coverage
-python scripts/select_pilot_users.py --group 1
+python scripts/select_pilot_users.py
 
 # Dry run (test pipeline, no LLM calls)
-python scripts/run_pilot.py --version all --dry-run
+python scripts/run_pilot.py --version all --users 71,164,119,458,310 --dry-run
 
-# Full pilot run (~5.5 hours)
-python scripts/run_pilot.py --version all --group 1 --max-ema 30
+# Run single version (for parallel execution)
+python scripts/run_pilot.py --version callm --users 71,164,119,458,310
+python scripts/run_pilot.py --version v1 --users 71,164,119,458,310
+python scripts/run_pilot.py --version v2 --users 71,164,119,458,310
+
+# Run all versions sequentially
+python scripts/run_pilot.py --version all --users 71,164,119,458,310
 ```
+
+### Evaluation
+
+Two evaluation approaches:
+1. **Regression**: MAE on continuous targets (PANAS_Pos, PANAS_Neg, ER_desire)
+2. **CHI paper personal threshold**: Per-user mean ± SD on predicted values → binary classification → Balanced Accuracy & F1
