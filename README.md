@@ -1,6 +1,6 @@
 # Proactive Affective Agent
 
-Proactive Affective Agent for just-in-time adaptive interventions (JITAI) in cancer survivorship. Uses passive mobile sensing data to predict emotional states and intervention receptivity *before* user self-report.
+Proactive Affective Agent for just-in-time adaptive interventions (JITAI) in cancer survivorship. Uses passive mobile sensing data and diary text to predict emotional states and intervention receptivity.
 
 ## Key Idea
 
@@ -10,13 +10,32 @@ Unlike reactive approaches (e.g., CALLM) that require users to write diary entri
 
 Each participant gets a **PersonalAgent** that learns and adapts over time through self-evaluation against EMA ground truth.
 
-## Three Agent Versions
+## Five Agent Versions + ML Baselines
 
-| Version | Input | RAG | LLM Calls/Entry | Description |
-|---------|-------|-----|-----------------|-------------|
-| **CALLM** | diary text (`emotion_driver`) | TF-IDF top-20 similar cases | 1 | CHI paper baseline (reactive) |
-| **V1 Structured** | passive sensing data | memory doc only | 1 | Fixed pipeline: Sense → Retrieve → Reason → Decide |
-| **V2 Autonomous** | passive sensing data | memory doc + on-demand | 2-3 | ReAct-style: LLM decides what to examine |
+| Version | Diary | Sensing | RAG | Pipeline Style | LLM Calls |
+|---------|-------|---------|-----|----------------|-----------|
+| **CALLM** | ✅ | ❌ | TF-IDF diary only (CHI baseline) | Reactive | 1 |
+| **V1** | ❌ | ✅ | memory doc only | Structured | 1 |
+| **V2** | ❌ | ✅ | memory doc only | Autonomous | 1 |
+| **V3** | ✅ | ✅ | diary search → diary+sensing | Structured | 1 |
+| **V4** | ✅ | ✅ | diary search → diary+sensing | Autonomous | 1 |
+| **ML** | ❌ | ✅ | N/A | RF / XGBoost / LogReg | 0 |
+
+- **CALLM**: CHI paper baseline — diary text + TF-IDF RAG
+- **V1 vs V2**: Structured (fixed 5-step) vs Autonomous (LLM decides what matters), sensing only
+- **V3 vs V4**: Same distinction, but with diary + sensing + enhanced multimodal RAG
+- **ML baselines**: Traditional models on sensor feature vectors (no LLM calls needed)
+
+## Phase 1 Pilot Results (5 users, 427 EMA entries)
+
+| Metric | CALLM | V1 | V2 | V3 | V4 | ML |
+|--------|-------|----|----|----|----|-----|
+| Mean MAE ↓ | **~1.16** | ~high | 7.06 | *pending* | *pending* | *pending* |
+| Mean BA ↑ | **~0.63** | ~0.52 | 0.52 | *pending* | *pending* | *pending* |
+| Mean F1 ↑ | **~0.44** | ~low | 0.19 | *pending* | *pending* | *pending* |
+| PT BA ↑ | **~0.72** | — | 0.54 | *pending* | *pending* | — |
+
+CALLM (diary+RAG) dominates V1/V2 (sensing only). V3/V4 and ML baselines are ready to run — waiting for raw hourly sensing data from collaborator.
 
 ## Setup
 
@@ -33,18 +52,29 @@ cp .env.example .env
 ```
 src/
 ├── simulation/    # Data replay engine (PilotSimulator)
-├── agent/         # PersonalAgent (CALLM + V1 structured + V2 autonomous)
+├── agent/         # PersonalAgent + 4 workflow classes
+│   ├── structured.py       # V1: sensing → structured pipeline
+│   ├── autonomous.py       # V2: sensing → autonomous reasoning
+│   ├── structured_full.py  # V3: diary + sensing + RAG → structured
+│   └── autonomous_full.py  # V4: diary + sensing + RAG → autonomous
 ├── think/         # LLM client (Claude CLI), prompts, response parser
-├── remember/      # TF-IDF retriever for RAG
-├── data/          # Data loading & preprocessing
-├── evaluation/    # Metrics (MAE, BA, F1, personal threshold) & reporting
+├── remember/      # TF-IDF retriever + MultiModalRetriever (diary+sensing RAG)
+├── baselines/     # ML baselines (RF, XGBoost, LogReg, Ridge)
+├── data/          # Data loading, preprocessing, hourly features (placeholder)
+├── evaluation/    # Metrics, reporting, unified cross-method comparison
 └── utils/         # Config & constants
 
 scripts/
-├── run_pilot.py           # Main experiment runner
+├── run_pilot.py           # Main LLM experiment runner (5 versions)
+├── run_parallel.sh        # Launch 25 parallel processes (5 versions × 5 users)
+├── run_ml_baselines.py    # ML baselines (no LLM calls)
+├── generate_dashboard.py  # HTML dashboard with comparison charts
 ├── select_pilot_users.py  # Select users by data coverage
-├── monitor_experiment.py  # Telegram progress notifications
-└── sync_overleaf.py       # Overleaf ↔ local sync docs
+└── sync_overleaf.py       # Overleaf ↔ local sync
+
+docs/
+├── design.md                      # System design document
+└── next-steps-waiting-for-data.md # Action plan for when raw data arrives
 
 draft/                     # Paper draft (synced from Overleaf)
 ```
@@ -59,33 +89,30 @@ Raw data is from the BUCS cancer survivorship study (399 users, 15,984 EMA entri
 
 Data files are gitignored due to size. See `data/` for expected structure.
 
-## Paper Draft
+## Running Experiments
 
-The paper draft is maintained on Overleaf:
-**[Overleaf Project](https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8)**
-
-> Need access? Contact Zhiyuan for permissions.
-
-The draft is also synced to `draft/` in this repository via the Overleaf Git bridge.
-
-## Pilot Study
-
-Compare **CALLM baseline** (CHI paper, diary text) vs **V1 Structured** (sensing) vs **V2 Autonomous** (sensing) on 5 users with all their EMA entries.
+### LLM Versions (CALLM / V1 / V2 / V3 / V4)
 
 ```bash
-# Select best pilot users by data coverage
-python scripts/select_pilot_users.py
-
 # Dry run (test pipeline, no LLM calls)
 python scripts/run_pilot.py --version all --users 71,164,119,458,310 --dry-run
 
-# Run single version (for parallel execution)
-python scripts/run_pilot.py --version callm --users 71,164,119,458,310
-python scripts/run_pilot.py --version v1 --users 71,164,119,458,310
-python scripts/run_pilot.py --version v2 --users 71,164,119,458,310
+# Run single version
+python scripts/run_pilot.py --version v3 --users 71,164,119,458,310
+python scripts/run_pilot.py --version v4 --users 71,164,119,458,310
 
-# Run all versions sequentially
-python scripts/run_pilot.py --version all --users 71,164,119,458,310
+# Run all 5 versions × 5 users in parallel (25 processes)
+bash scripts/run_parallel.sh
+```
+
+### ML Baselines (no LLM calls)
+
+```bash
+# Run all models with daily features
+python scripts/run_ml_baselines.py
+
+# Specific models only
+python scripts/run_ml_baselines.py --models rf,xgboost
 ```
 
 ### Evaluation
@@ -93,3 +120,10 @@ python scripts/run_pilot.py --version all --users 71,164,119,458,310
 Two evaluation approaches:
 1. **Regression**: MAE on continuous targets (PANAS_Pos, PANAS_Neg, ER_desire)
 2. **CHI paper personal threshold**: Per-user mean ± SD on predicted values → binary classification → Balanced Accuracy & F1
+
+## Paper Draft
+
+The paper draft is maintained on Overleaf:
+**[Overleaf Project](https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8)**
+
+> Need access? Contact Zhiyuan for permissions.

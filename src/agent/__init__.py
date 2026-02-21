@@ -1,1 +1,1 @@
-"""PersonalAgent: per-user agent that learns and adapts over time."""
+"""PersonalAgent: per-user agent with 5 workflow versions (CALLM, V1-V4)."""

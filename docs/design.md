@@ -41,7 +41,7 @@ Predictions (emotional state + receptivity)
 Decision (intervene / wait / observe)
 ```
 
-## 3. Three Agent Versions (Pilot)
+## 3. Five Agent Versions + ML Baselines
 
 ### 3.0 CALLM Baseline
 
@@ -52,34 +52,63 @@ CHI paper reactive approach — uses diary text (`emotion_driver`) as input:
 
 This is the baseline to beat. It has a natural advantage on text-rich entries since the diary text directly reveals emotional state.
 
-### 3.1 V1: Structured Agent
+### 3.1 V1: Structured (Sensing Only)
 
 Fixed pipeline using passive sensing data only (no diary text):
 
-1. **Sense**: Extract and summarize available sensing features for the current time window
-2. **Retrieve Memory**: Query user's personal memory for relevant past patterns
-3. **Reason**: LLM interprets current sensing + memory context → predicts emotional state and receptivity
-4. **Decide**: Based on predictions and confidence, decide whether to intervene
+1. **Sleep Analysis**: What do the sleep metrics suggest about rest quality?
+2. **Mobility & Activity**: What do GPS, motion, and screen data reveal?
+3. **Social Signals**: What do typing patterns and app usage suggest?
+4. **Pattern Integration**: How do these signals combine?
+5. **User Context**: Given this user's history and traits, predict.
 
 **Advantages**: Reproducible, debuggable, consistent across runs.
-**Disadvantages**: Cannot adapt its *process* — always follows the same steps regardless of context.
+**Disadvantages**: Cannot adapt its process; no diary input.
 
-### 3.2 V2: Autonomous Agent
+### 3.2 V2: Autonomous (Sensing Only)
 
-ReAct-style agent with tools:
+Single-call autonomous agent — receives all sensing data + memory, freely reasons about which signals matter most.
 
-- `query_sensing(sensor, window)` — Retrieve specific sensing data
-- `read_memory(query)` — Search user's personal memory
-- `check_peers(pattern)` — Find similar patterns in other users
-- `retrieve_rag(query)` — Semantic search over memory documents
-- `predict_affect(evidence)` — Make an emotional state prediction
-- `check_history(user_id)` — Review past prediction accuracy
-- `intervene(type, content)` — Deliver an intervention
+**Advantages**: Flexible — can focus on the most informative signals for this user/context.
+**Disadvantages**: Less predictable; no diary input.
 
-The LLM decides which tools to use, in what order, and when to stop.
+### 3.3 V3: Structured Full (Diary + Sensing + RAG)
 
-**Advantages**: Flexible — can skip unnecessary steps, deep-dive on anomalies, adapt process to context.
-**Disadvantages**: Less predictable, harder to evaluate systematically, higher API cost.
+Combines all three data modalities with a fixed 5-step pipeline:
+
+1. **Diary Analysis**: Identify emotional themes, coping language, distress indicators
+2. **Sensing Analysis**: Interpret sleep, mobility, screen, typing patterns
+3. **Cross-Modal Consistency**: Do diary and sensing tell a consistent story?
+4. **Similar Case Comparison**: How do RAG-retrieved cases (diary + sensing) compare?
+5. **Integrated Prediction**: Synthesize all evidence
+
+Uses `MultiModalRetriever`: TF-IDF search on diary text, but returns matched cases with their sensing data attached.
+
+### 3.4 V4: Autonomous Full (Diary + Sensing + RAG)
+
+Same data as V3, but the LLM autonomously decides how to weigh and reason about all evidence. No fixed pipeline.
+
+### 3.5 ML Baselines
+
+Traditional ML models on sensor feature vectors (no LLM calls):
+
+- **RandomForest**: Non-linear, handles missing features well
+- **XGBoost**: Gradient boosted trees, strong on tabular data
+- **LogisticRegression**: Linear baseline for binary targets (class-weighted)
+- **Ridge**: Linear baseline for continuous targets
+
+5-fold CV using the same train/test splits as LLM versions. Features: 20 daily aggregate sensing features (sleep, mobility, activity, screen, typing, apps).
+
+### 3.6 Version Comparison Matrix
+
+| Version | Diary | Sensing | RAG | Pipeline | LLM |
+|---------|-------|---------|-----|----------|-----|
+| CALLM | ✅ | ❌ | TF-IDF diary | Reactive | 1 call |
+| V1 | ❌ | ✅ | memory only | Structured | 1 call |
+| V2 | ❌ | ✅ | memory only | Autonomous | 1 call |
+| V3 | ✅ | ✅ | diary→diary+sensing | Structured | 1 call |
+| V4 | ✅ | ✅ | diary→diary+sensing | Autonomous | 1 call |
+| ML | ❌ | ✅ | N/A | Traditional | 0 |
 
 ## 4. Simulation Design
 
@@ -108,6 +137,7 @@ Critical constraint: **The agent must never see future data.** At each decision 
 
 - 399 users, 15,984 EMA entries across 5 non-overlapping test splits (combined for evaluation)
 - 8 sensing streams as **daily aggregates** (one row per user per day, not raw streams)
+  - Hourly/minute-level raw data expected from collaborator (will enable richer features)
 - 756 pre-generated memory documents
 - Baseline trait questionnaire (346 features)
 - LLM backend: Claude Code CLI (`claude -p --model sonnet`), Max subscription
@@ -130,7 +160,12 @@ Markdown document maintained per user, containing:
 
 ### 5.3 RAG (Retrieval-Augmented Generation)
 
-TF-IDF retriever over training set `emotion_driver` texts. Used for CALLM version to find similar past cases by cosine similarity. (Original OpenAI embeddings are incompatible with Claude CLI backend.)
+Two retriever classes:
+
+- **TFIDFRetriever**: TF-IDF over training set `emotion_driver` texts. Used by CALLM to find similar cases by cosine similarity. Returns diary text + outcomes.
+- **MultiModalRetriever** (extends TFIDFRetriever): Same TF-IDF search, but enriches results with the matched participant's sensing data for that date. Used by V3/V4. Returns diary text + sensing data + outcomes.
+
+(Original OpenAI embeddings from CHI paper are incompatible with Claude CLI backend.)
 
 ## 6. Self-Learning Loop
 
@@ -157,9 +192,11 @@ Two evaluation approaches:
 
 ### 7.2 Comparisons
 
-- CALLM (diary text, reactive) vs V1 (sensing, structured) vs V2 (sensing, autonomous)
-- Per-user analysis across 5 selected users (highest data coverage)
+- 5 LLM versions: CALLM vs V1 vs V2 vs V3 vs V4
+- ML baselines: RF, XGBoost, LogReg, Ridge (5-fold CV, no LLM)
+- Per-user analysis across 5 pilot users (71, 164, 119, 458, 310)
 - Personal threshold evaluation matching CHI paper methodology
+- Unified comparison with markdown + LaTeX table generation
 
 ## 8. Key Design Decisions
 
@@ -169,12 +206,21 @@ Two evaluation approaches:
 | Per-user memory | Markdown files | Simple, inspectable, version-controllable. No need for a database at this scale |
 | Receptivity definition | Desire ∧ Availability | Unifies two constructs into one actionable signal |
 | Simulation approach | Retrospective replay | Only option given we have historical data, not real-time access |
-| Two agent versions | V1 + V2 | Tests whether autonomy helps or hurts in this domain |
+| Five agent versions | CALLM + V1-V4 | Tests effect of data modalities (diary vs sensing vs both) and reasoning style (structured vs autonomous) |
+| ML baselines | RF/XGBoost/LogReg | Establishes non-LLM reference point; tests whether LLM reasoning adds value over feature engineering |
+| MultiModal RAG | TF-IDF diary → return diary+sensing | Enriches retrieved cases with sensing context for V3/V4 |
 
-## 9. Open Questions
+## 9. Phase 1 Findings
 
-- Sensing data is daily aggregates — is sub-day granularity worth pursuing?
+- **CALLM >> V1/V2**: Diary text + RAG (MAE ~1.16) crushes daily aggregate sensing only (MAE ~7.06)
+- **V1 ≈ V2**: Structured vs autonomous makes little difference when sensing data is too coarse
+- **Implication**: Daily aggregate sensing lacks signal. Need hourly/minute-level features
+
+## 10. Open Questions
+
+- ~~Sensing data is daily aggregates — is sub-day granularity worth pursuing?~~ **Yes — Phase 1 showed daily aggregates are insufficient**
+- Will hourly features close the gap between sensing-based versions and CALLM?
+- Can V3/V4 (diary + sensing + RAG) surpass CALLM by adding sensing context?
+- Do ML baselines outperform LLM-based sensing-only versions (V1/V2)?
 - How to handle missing sensing data gracefully? (Common in real-world mobile sensing)
-- Can V1/V2 beat CALLM despite lacking direct emotional text input?
-- How to fairly compare V1 and V2 given V2's variable compute cost (2-3x calls)?
 - Does personal threshold evaluation favor certain prediction patterns?
