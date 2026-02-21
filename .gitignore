@@ -23,10 +23,8 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data (large files tracked separately)
-data/raw/
-data/processed/embeddings/
-data/processed/memory_documents/
+# Data
+data/
 
 # Outputs
 outputs/
