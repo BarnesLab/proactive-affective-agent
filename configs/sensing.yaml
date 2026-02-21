@@ -1,0 +1,75 @@
+# Sensing data configuration
+
+sensors:
+  accelerometer:
+    file: "ACCEL_2024-07-15.csv"
+    features:
+      - activity_level
+      - movement_variance
+      - step_count_proxy
+    timestamp_col: "timestamp"
+
+  sleep:
+    file: "SLEEP_2024-07-15.csv"
+    features:
+      - sleep_duration
+      - sleep_quality
+      - bedtime
+      - waketime
+    timestamp_col: "timestamp"
+
+  android_sleep:
+    file: "AndroidSleep_2024-07-15.csv"
+    features:
+      - sleep_duration
+      - sleep_segments
+    timestamp_col: "timestamp"
+
+  gps:
+    file: "GPS_2024-07-15.csv"
+    features:
+      - location_entropy
+      - distance_traveled
+      - time_at_home
+      - num_visited_places
+    timestamp_col: "timestamp"
+
+  app_usage:
+    file: "APPUSAGE_2024-07-15.csv"
+    features:
+      - total_usage_minutes
+      - social_app_minutes
+      - top_categories
+    timestamp_col: "timestamp"
+
+  screen:
+    file: "ScreenOnTime_2024-07-15 (1).csv"
+    features:
+      - screen_on_duration
+      - num_unlocks
+      - screen_on_episodes
+    timestamp_col: "timestamp"
+
+  motion:
+    file: "MOTION_2024-07-15.csv"
+    features:
+      - motion_intensity
+      - sedentary_time
+    timestamp_col: "timestamp"
+
+  key_input:
+    file: "KeyInput_2024-07-15.csv"
+    features:
+      - typing_speed
+      - typing_frequency
+    timestamp_col: "timestamp"
+
+# Aggregation windows for feature extraction
+aggregation:
+  windows:
+    - name: "1h"
+      minutes: 60
+    - name: "4h"
+      minutes: 240
+    - name: "24h"
+      minutes: 1440

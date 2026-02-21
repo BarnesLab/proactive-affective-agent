@@ -1,0 +1,28 @@
+# LLM provider configuration
+
+default_provider: "openai"
+
+providers:
+  openai:
+    model: "gpt-4o"
+    temperature: 0.3
+    max_tokens: 2048
+    api_key_env: "OPENAI_API_KEY"
+
+  anthropic:
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.3
+    max_tokens: 2048
+    api_key_env: "ANTHROPIC_API_KEY"
+
+  local:
+    endpoint_env: "LOCAL_LLM_ENDPOINT"
+    model: "meta-llama/Llama-3-8b"
+    temperature: 0.3
+    max_tokens: 2048
+
+# Retry settings
+retry:
+  max_retries: 3
+  backoff_base: 2
+  backoff_max: 60
