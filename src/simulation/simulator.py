@@ -269,10 +269,12 @@ class PilotSimulator:
         current_user: int | None = None,
         current_entry: int | None = None,
     ) -> None:
-        """Save intermediate checkpoint with resume info."""
+        """Save intermediate checkpoint with resume info (per-user-per-version)."""
         checkpoint_dir = self.output_dir / "checkpoints"
         checkpoint_dir.mkdir(exist_ok=True)
-        path = checkpoint_dir / f"{version}_checkpoint.json"
+        # Per-user checkpoint to support parallel user processing
+        suffix = f"_user{current_user}" if current_user is not None else ""
+        path = checkpoint_dir / f"{version}{suffix}_checkpoint.json"
         with open(path, "w") as f:
             json.dump({
                 "version": version,
@@ -285,25 +287,50 @@ class PilotSimulator:
             }, f, default=str)
 
     def _load_checkpoint(self, version: str) -> tuple:
-        """Load checkpoint for resume. Returns (preds, gts, meta, resume_user, resume_entry)."""
-        path = self.output_dir / "checkpoints" / f"{version}_checkpoint.json"
-        if not path.exists():
+        """Load checkpoint for resume. Returns (preds, gts, meta, resume_user, resume_entry).
+
+        Loads all per-user checkpoints and merges them.
+        """
+        checkpoint_dir = self.output_dir / "checkpoints"
+        if not checkpoint_dir.exists():
             return [], [], [], None, -1
 
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            preds = data.get("predictions", [])
-            gts = data.get("ground_truths", [])
-            meta = data.get("metadata", [])
-            cur_user = data.get("current_user")
-            cur_entry = data.get("current_entry", -1)
+        # Look for per-user checkpoints
+        all_preds = []
+        all_gts = []
+        all_meta = []
+        last_user = None
+        last_entry = -1
 
-            if preds and cur_user is not None:
-                logger.info(f"Resuming {version} from checkpoint: user {cur_user}, entry {cur_entry}, {len(preds)} entries done")
-                return preds, gts, meta, cur_user, cur_entry
-        except Exception as e:
-            logger.warning(f"Failed to load checkpoint for {version}: {e}")
+        import glob
+        pattern = str(checkpoint_dir / f"{version}_user*_checkpoint.json")
+        files = sorted(glob.glob(pattern))
+
+        if not files:
+            # Try legacy single checkpoint
+            legacy = checkpoint_dir / f"{version}_checkpoint.json"
+            if legacy.exists():
+                files = [str(legacy)]
+
+        for fpath in files:
+            try:
+                with open(fpath) as f:
+                    data = json.load(f)
+                all_preds.extend(data.get("predictions", []))
+                all_gts.extend(data.get("ground_truths", []))
+                all_meta.extend(data.get("metadata", []))
+                cu = data.get("current_user")
+                ce = data.get("current_entry", -1)
+                if cu is not None:
+                    if last_user is None or cu > last_user or (cu == last_user and ce > last_entry):
+                        last_user = cu
+                        last_entry = ce
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint {fpath}: {e}")
+
+        if all_preds and last_user is not None:
+            logger.info(f"Resuming {version}: {len(all_preds)} entries from checkpoint, last user={last_user} entry={last_entry}")
+            return all_preds, all_gts, all_meta, last_user, last_entry
 
         return [], [], [], None, -1
 
