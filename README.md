@@ -55,3 +55,27 @@ Raw data is from the BUCS cancer survivorship study. Includes:
 - Baseline trait questionnaires
 
 Data files are gitignored due to size. See `data/` for expected structure.
+
+## Paper Draft
+
+The paper draft is maintained on Overleaf:
+**[Overleaf Project](https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8)**
+
+> Need access? Contact Zhiyuan for permissions.
+
+The draft is also synced to `draft/` in this repository via the Overleaf Git bridge.
+
+## Pilot Study
+
+Compare **CALLM baseline** (CHI paper, diary text) vs **V1 Structured** (sensing) vs **V2 Autonomous** (sensing) on 5 users.
+
+```bash
+# Select best pilot users by data coverage
+python scripts/select_pilot_users.py --group 1
+
+# Dry run (test pipeline, no LLM calls)
+python scripts/run_pilot.py --version all --dry-run
+
+# Full pilot run (~5.5 hours)
+python scripts/run_pilot.py --version all --group 1 --max-ema 30
+```

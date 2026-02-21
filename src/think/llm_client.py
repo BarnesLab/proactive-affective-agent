@@ -26,7 +26,7 @@ class ClaudeCodeClient:
     def __init__(
         self,
         model: str = "sonnet",
-        timeout: int = 120,
+        timeout: int = 300,
         max_retries: int = 3,
         backoff_base: float = 2.0,
         delay_between_calls: float = 2.0,
@@ -71,8 +71,9 @@ class ClaudeCodeClient:
 
                 logger.debug(f"LLM call #{self._call_count + 1} (attempt {attempt})")
 
-                # Remove CLAUDE_CODE vars to avoid recursion
-                env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE")}
+                # Remove all CLAUDE* env vars to avoid nested session detection
+                env = {k: v for k, v in os.environ.items()
+                       if not k.upper().startswith("CLAUDE")}
 
                 result = subprocess.run(
                     cmd,
@@ -94,7 +95,9 @@ class ClaudeCodeClient:
                         continue
                     raise RuntimeError(f"Claude CLI failed after {self.max_retries} attempts: {stderr}")
 
-                return result.stdout.strip()
+                raw = result.stdout.strip()
+                # Claude CLI --output-format json wraps in {"result": "...", ...}
+                return self._unwrap_cli_response(raw)
 
             except subprocess.TimeoutExpired:
                 logger.warning(f"Claude CLI timed out after {self.timeout}s (attempt {attempt})")
@@ -141,16 +144,12 @@ class ClaudeCodeClient:
             "claude", "-p", prompt,
             "--output-format", "json",
             "--model", self.model,
-            "--no-input",
+            "--no-session-persistence",
+            "--tools", "",
         ]
 
         if system_prompt:
-            cmd.extend(["--system-prompt", system_prompt])
-
-        if schema_path and schema_path.exists():
-            cmd.extend(["--json-schema", str(schema_path)])
-        elif json_schema:
-            cmd.extend(["--json-schema", json.dumps(json_schema)])
+            cmd.extend(["--append-system-prompt", system_prompt])
 
         return cmd
 
@@ -181,6 +180,23 @@ class ClaudeCodeClient:
             "reasoning": "[DRY RUN] Placeholder prediction",
             "confidence": 0.5,
         })
+
+    def _unwrap_cli_response(self, raw: str) -> str:
+        """Unwrap Claude CLI JSON output format.
+
+        The CLI with --output-format json returns:
+        {"type":"result","result":"<actual LLM output>","cost_usd":...}
+        We extract the "result" field.
+        """
+        if not raw:
+            return ""
+        try:
+            wrapper = json.loads(raw)
+            if isinstance(wrapper, dict) and "result" in wrapper:
+                return str(wrapper["result"])
+        except json.JSONDecodeError:
+            pass
+        return raw
 
     @property
     def call_count(self) -> int:
