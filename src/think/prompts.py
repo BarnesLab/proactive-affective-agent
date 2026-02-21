@@ -226,66 +226,45 @@ def format_sensing_summary(sensing_day) -> str:
     return "\n\n".join(sections) if sections else "Minimal sensing data available."
 
 
-# --- V2 Autonomous (ReAct-style, multi-turn) ---
+# --- V2 Autonomous (single-call, full context) ---
 
 def v2_system_prompt(trait_profile: str) -> str:
     """System prompt for V2 autonomous workflow."""
     return f"""{CONTEXT_NOTE}
 
 You are an autonomous AI agent that predicts cancer survivors' emotional states.
-Unlike a fixed pipeline, you decide what information to examine and in what order.
+You receive all available sensing data and user context, then freely reason about
+the most informative signals before making your prediction.
 
 ## User Profile
 {trait_profile}
 
-You will receive an initial overview of today's sensing data. After reviewing it,
-you may request deeper analysis of specific aspects. Think carefully about what
-signals are most informative for this particular user.
-
-When you're ready to make your final prediction, respond with ONLY a JSON object.
-
 {OUTPUT_FORMAT}"""
 
 
-def v2_initial_prompt(
+def v2_prompt(
     sensing_summary: str,
     memory_doc: str,
     date_str: str = "",
 ) -> str:
-    """Round 1: Initial overview for V2 autonomous agent."""
-    return f"""## Today's Sensing Overview{f' ({date_str})' if date_str else ''}
+    """Single-call prompt for V2 autonomous agent with full context."""
+    return f"""## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
 {sensing_summary}
 
-## User Memory Summary
-{memory_doc[:2000] if memory_doc else "No memory document available."}
+## User Memory (longitudinal emotional trajectory)
+{memory_doc[:3000] if memory_doc else "No memory document available."}
 
-Review this data and decide your next step. You have two options:
+## Instructions
+You have full access to this user's sensing data and history above.
+Reason autonomously — decide which signals matter most for THIS specific user
+and situation. Consider:
 
-**Option A**: If you need more detail about specific aspects, respond with:
-REQUEST: <what you want to examine>
-(e.g., "REQUEST: Compare today's sleep to this user's weekly average" or
-"REQUEST: What are the typical sensing patterns when this user is stressed?")
+- Which sensing signals are most informative given this user's profile and history?
+- Are there unusual patterns compared to what you know about this user?
+- How do different signals corroborate or contradict each other?
+- What is the most likely emotional state given ALL available evidence?
 
-**Option B**: If you have enough information to make predictions, respond with
-your JSON prediction directly.
-
-What would you like to do?"""
-
-
-def v2_followup_prompt(
-    additional_context: str,
-    round_num: int,
-) -> str:
-    """Round 2+: Provide requested context and ask for next step or final prediction."""
-    if round_num >= 3:
-        force = "\n\nYou must now provide your final prediction as JSON. No more requests."
-    else:
-        force = "\n\nYou may make one more request or provide your final JSON prediction."
-
-    return f"""Here is the additional information you requested:
-
-{additional_context}
-{force}"""
+Think through the evidence, then provide your prediction as JSON."""
 
 
 # --- Shared helpers ---

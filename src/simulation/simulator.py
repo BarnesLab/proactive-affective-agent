@@ -94,6 +94,8 @@ class PilotSimulator:
     def run_version(self, version: str) -> dict[str, Any]:
         """Run the pilot for a single version (callm/v1/v2).
 
+        Supports resuming from checkpoint. Each entry is checkpointed immediately.
+
         Returns:
             Dict with predictions, ground_truths, metadata, metrics.
         """
@@ -101,9 +103,10 @@ class PilotSimulator:
         logger.info(f"Running {version.upper()} on {len(self._users_data)} users")
         logger.info(f"{'='*60}")
 
-        all_predictions = []
-        all_ground_truths = []
-        all_metadata = []
+        # Try to resume from checkpoint
+        all_predictions, all_ground_truths, all_metadata, resume_user, resume_entry = \
+            self._load_checkpoint(version)
+
         per_user_metrics = {}
 
         llm_client = ClaudeCodeClient(
@@ -115,6 +118,12 @@ class PilotSimulator:
         for user_data in self._users_data:
             sid = user_data["study_id"]
             n_entries = len(user_data["ema_entries"])
+
+            # Skip fully completed users when resuming
+            if resume_user is not None and sid < resume_user:
+                logger.info(f"\n--- User {sid}: skipped (already completed) ---")
+                continue
+
             logger.info(f"\n--- User {sid} ({version.upper()}, {n_entries} entries) ---")
 
             agent = PersonalAgent(
@@ -133,6 +142,10 @@ class PilotSimulator:
             for i, (ema_row, sensing_day) in enumerate(
                 zip(user_data["ema_entries"], user_data["sensing_days"])
             ):
+                # Skip already-processed entries when resuming
+                if resume_user is not None and sid == resume_user and i <= resume_entry:
+                    continue
+
                 date_str = str(ema_row.get("date_local", ""))
 
                 logger.info(f"  Entry {i+1}/{n_entries} ({date_str})")
@@ -151,7 +164,7 @@ class PilotSimulator:
                 # Extract ground truth
                 gt = _extract_ground_truth(ema_row)
 
-                # Save trace
+                # Save trace immediately
                 trace_data = {k: v for k, v in pred.items() if k.startswith("_")}
                 if trace_data:
                     self.reporter.save_trace(trace_data, sid, i, version)
@@ -163,19 +176,24 @@ class PilotSimulator:
                 user_gts.append(gt)
                 user_meta.append({"study_id": sid, "entry_idx": i, "date": date_str})
 
+                all_predictions.append(clean_pred)
+                all_ground_truths.append(gt)
+                all_metadata.append({"study_id": sid, "entry_idx": i, "date": date_str})
+
+                # Checkpoint after EVERY entry
+                self._checkpoint(version, all_predictions, all_ground_truths, all_metadata,
+                                 current_user=sid, current_entry=i)
+
+            # Clear resume state after first resumed user is done
+            resume_user = None
+            resume_entry = -1
+
             # Per-user metrics
             if user_preds:
                 try:
                     per_user_metrics[sid] = compute_all(user_preds, user_gts, user_meta)
                 except Exception as e:
                     logger.warning(f"  Metrics error for user {sid}: {e}")
-
-            all_predictions.extend(user_preds)
-            all_ground_truths.extend(user_gts)
-            all_metadata.extend(user_meta)
-
-            # Checkpoint: save after each user
-            self._checkpoint(version, all_predictions, all_ground_truths, all_metadata)
 
             logger.info(f"  User {sid} done. Total LLM calls: {llm_client.call_count}")
 
@@ -248,8 +266,10 @@ class PilotSimulator:
         predictions: list[dict],
         ground_truths: list[dict],
         metadata: list[dict],
+        current_user: int | None = None,
+        current_entry: int | None = None,
     ) -> None:
-        """Save intermediate checkpoint."""
+        """Save intermediate checkpoint with resume info."""
         checkpoint_dir = self.output_dir / "checkpoints"
         checkpoint_dir.mkdir(exist_ok=True)
         path = checkpoint_dir / f"{version}_checkpoint.json"
@@ -257,10 +277,35 @@ class PilotSimulator:
             json.dump({
                 "version": version,
                 "n_entries": len(predictions),
+                "current_user": current_user,
+                "current_entry": current_entry,
                 "predictions": predictions,
                 "ground_truths": ground_truths,
                 "metadata": metadata,
             }, f, default=str)
+
+    def _load_checkpoint(self, version: str) -> tuple:
+        """Load checkpoint for resume. Returns (preds, gts, meta, resume_user, resume_entry)."""
+        path = self.output_dir / "checkpoints" / f"{version}_checkpoint.json"
+        if not path.exists():
+            return [], [], [], None, -1
+
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            preds = data.get("predictions", [])
+            gts = data.get("ground_truths", [])
+            meta = data.get("metadata", [])
+            cur_user = data.get("current_user")
+            cur_entry = data.get("current_entry", -1)
+
+            if preds and cur_user is not None:
+                logger.info(f"Resuming {version} from checkpoint: user {cur_user}, entry {cur_entry}, {len(preds)} entries done")
+                return preds, gts, meta, cur_user, cur_entry
+        except Exception as e:
+            logger.warning(f"Failed to load checkpoint for {version}: {e}")
+
+        return [], [], [], None, -1
 
 
 def _extract_ground_truth(ema_row) -> dict[str, Any]:
