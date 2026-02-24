@@ -101,24 +101,27 @@ class MLBaselinePipeline:
     def __init__(
         self,
         splits_dir: Path,
-        sensing_dfs: dict[str, pd.DataFrame],
+        sensing_dfs: dict[str, pd.DataFrame] | None,
         feature_builder,
         output_dir: Path,
         model_names: list[str] | None = None,
+        processed_hourly_dir: Path | None = None,
     ) -> None:
         """
         Args:
             splits_dir: Directory with group_{1-5}_{train,test}.csv files.
-            sensing_dfs: Pre-loaded sensing DataFrames.
-            feature_builder: Module with build_daily_features/impute_features functions.
+            sensing_dfs: Pre-loaded legacy sensing DataFrames (None if using Parquet).
+            feature_builder: Module with build_daily_features/build_parquet_features/impute_features.
             output_dir: Where to save results.
             model_names: Which models to run (default: all available).
+            processed_hourly_dir: Path to data/processed/hourly/ for Parquet mode.
         """
         self.splits_dir = splits_dir
         self.sensing_dfs = sensing_dfs
         self.fb = feature_builder
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.processed_hourly_dir = processed_hourly_dir
 
         if model_names is None:
             model_names = ["rf", "xgboost", "logistic", "ridge"]
@@ -146,12 +149,20 @@ class MLBaselinePipeline:
             test_df["date_local"] = pd.to_datetime(test_df["date_local"]).dt.date
 
             # Build features
-            X_train, y_cont_train, y_bin_train = self.fb.build_daily_features(
-                train_df, self.sensing_dfs
-            )
-            X_test, y_cont_test, y_bin_test = self.fb.build_daily_features(
-                test_df, self.sensing_dfs
-            )
+            if self.processed_hourly_dir is not None:
+                X_train, y_cont_train, y_bin_train = self.fb.build_parquet_features(
+                    train_df, self.processed_hourly_dir
+                )
+                X_test, y_cont_test, y_bin_test = self.fb.build_parquet_features(
+                    test_df, self.processed_hourly_dir
+                )
+            else:
+                X_train, y_cont_train, y_bin_train = self.fb.build_daily_features(
+                    train_df, self.sensing_dfs
+                )
+                X_test, y_cont_test, y_bin_test = self.fb.build_daily_features(
+                    test_df, self.sensing_dfs
+                )
 
             # Impute missing values
             X_train = self.fb.impute_features(X_train)

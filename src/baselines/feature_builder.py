@@ -151,26 +151,82 @@ def impute_features(X: pd.DataFrame, strategy: str = "median") -> pd.DataFrame:
         raise ValueError(f"Unknown strategy: {strategy}")
 
 
-def build_hourly_features(
+def build_parquet_features(
     ema_df: pd.DataFrame,
-    sensing_dfs: dict[str, pd.DataFrame],
+    processed_dir: str | Path,
     user_ids: list[int] | None = None,
     lookback_hours: int = 24,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Placeholder: build hourly features from raw minute-level data.
+    """Build ML feature matrix from processed hourly Parquet files.
 
-    Will be implemented when colleague provides raw data + extraction code.
+    Uses HourlyFeatureLoader to load pre-processed Parquet data for each EMA
+    entry, producing a flat hourly feature vector (h0_screen_on_min, etc.).
+    Requires Phase 1 Parquet outputs in processed_dir/{modality}/.
 
     Args:
-        ema_df: EMA DataFrame.
-        sensing_dfs: Raw minute-level sensing DataFrames.
-        user_ids: Filter to these users.
-        lookback_hours: Hours of history before each EMA.
+        ema_df: EMA DataFrame with Study_ID, timestamp_local, and target columns.
+        processed_dir: Path to data/processed/hourly/ directory.
+        user_ids: If provided, only build features for these users.
+        lookback_hours: Hours of sensing history before each EMA (default 24).
 
     Returns:
-        Same format as build_daily_features.
+        Tuple of (X, y_continuous, y_binary) — same format as build_daily_features.
     """
-    raise NotImplementedError(
-        "Hourly features require raw minute-level data from colleague. "
-        "Use build_daily_features() for now."
+    from src.data.hourly_features import HourlyFeatureLoader
+    from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
+
+    loader = HourlyFeatureLoader(processed_dir=processed_dir)
+
+    if user_ids is not None:
+        ema_df = ema_df[ema_df["Study_ID"].isin(user_ids)]
+
+    rows_X = []
+    rows_y_cont = []
+    rows_y_bin = []
+    meta_rows = []
+
+    for _, ema_row in ema_df.iterrows():
+        sid = int(ema_row["Study_ID"])
+        ts = ema_row.get("timestamp_local") or ema_row.get("Timestamp_start")
+
+        # Feature vector from Parquet
+        try:
+            feat = loader.get_feature_matrix(sid, ts, lookback_hours=lookback_hours)
+        except Exception:
+            feat = {}
+        rows_X.append(feat)
+
+        # Continuous targets
+        cont = {t: ema_row.get(t, np.nan) for t in CONTINUOUS_TARGETS}
+        rows_y_cont.append(cont)
+
+        # Binary targets
+        bin_targets: dict[str, float] = {}
+        for target in BINARY_STATE_TARGETS:
+            val = ema_row.get(target)
+            if pd.notna(val):
+                if isinstance(val, bool):
+                    bin_targets[target] = int(val)
+                elif isinstance(val, str):
+                    bin_targets[target] = 1 if val.lower().strip() in ("true", "1", "yes") else 0
+                else:
+                    bin_targets[target] = int(bool(val))
+            else:
+                bin_targets[target] = np.nan
+        avail = ema_row.get("INT_availability")
+        bin_targets["INT_availability"] = (
+            1 if str(avail).lower().strip() == "yes" else 0
+        ) if pd.notna(avail) else np.nan
+        rows_y_bin.append(bin_targets)
+
+        meta_rows.append({"Study_ID": sid, "timestamp_local": ts})
+
+    X = pd.DataFrame(rows_X).fillna(np.nan)
+    y_cont = pd.DataFrame(rows_y_cont)
+    y_bin = pd.DataFrame(rows_y_bin)
+
+    logger.info(
+        f"Built Parquet features: {X.shape[0]} samples, {X.shape[1]} features, "
+        f"missing rate={X.isna().mean().mean():.1%}"
     )
+    return X, y_cont, y_bin

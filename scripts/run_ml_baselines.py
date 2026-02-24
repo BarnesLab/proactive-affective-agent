@@ -32,9 +32,9 @@ def main():
         description="Run ML baselines on sensor features (no LLM calls)"
     )
     parser.add_argument(
-        "--features", type=str, default="daily",
-        choices=["daily", "hourly"],
-        help="Feature type: daily aggregate (default) or hourly (requires raw data)"
+        "--features", type=str, default="parquet",
+        choices=["daily", "parquet"],
+        help="Feature type: parquet=hourly Parquet files (default), daily=legacy aggregate CSVs"
     )
     parser.add_argument(
         "--models", type=str, default="rf,xgboost,logistic,ridge",
@@ -70,13 +70,21 @@ def main():
 
     # Load data
     loader = DataLoader(data_dir=data_dir)
-    sensing_dfs = loader.load_all_sensing()
-    logging.info(f"Loaded {len(sensing_dfs)} sensing sources")
+    processed_hourly_dir = data_dir / "processed" / "hourly"
 
-    # Feature type
-    if args.features == "hourly":
-        logging.error("Hourly features require raw minute-level data (not yet available)")
-        sys.exit(1)
+    # Choose feature source
+    if args.features == "parquet":
+        if not processed_hourly_dir.exists():
+            logging.error(
+                f"Parquet directory not found: {processed_hourly_dir}\n"
+                "Run Phase 1 scripts first: bash scripts/offline/run_phase1.sh"
+            )
+            sys.exit(1)
+        logging.info(f"Using Parquet features from {processed_hourly_dir}")
+        sensing_dfs = None  # not needed for Parquet path
+    else:
+        sensing_dfs = loader.load_all_sensing()
+        logging.info(f"Loaded {len(sensing_dfs)} sensing sources (legacy CSV)")
 
     # Run pipeline
     pipeline = MLBaselinePipeline(
@@ -85,6 +93,7 @@ def main():
         feature_builder=feature_builder,
         output_dir=output_dir,
         model_names=model_names,
+        processed_hourly_dir=processed_hourly_dir if args.features == "parquet" else None,
     )
 
     logging.info("Starting ML baseline pipeline...")
