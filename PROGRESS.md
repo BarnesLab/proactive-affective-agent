@@ -1,36 +1,33 @@
 # Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-**Last updated:** 2026-02-24 (session 3)
-**Status:** Active development — V3 pilot running locally, ML baselines running on Titan
+**Last updated:** 2026-02-24 (session 3 end — hand-off to session 4)
+**Status:** V3 pilot running locally (~10:30 PM done), Titan jobs running, next agent picks up
 
 ---
 
-## ⚠️ Token Limit Warning
+## ⚠️ New Session Onboarding
 
-Claude Max weekly limit may be reached soon. If a new session is started:
-1. The project's MEMORY.md at `~/.claude/projects/-Users-zwang/memory/MEMORY.md` has cross-session state
-2. Read `CLAUDE.md` (this repo root) to restore context
-3. Read this file (`PROGRESS.md`) for exact current state
-4. Sessions **cannot** be resumed across account switches — start fresh with context from these files
+If starting fresh, read in this order:
+1. `CLAUDE.md` (repo root) — project brief
+2. This file (`PROGRESS.md`) — exact current state + pending tasks
+3. `~/.claude/projects/-Users-zwang/memory/MEMORY.md` — cross-session context
 
-Key commands to reorient a new session:
+Key commands to verify state:
 ```bash
-# Check what's running
+# What's running locally?
 ps aux | grep python | grep -v grep
 
-# Check recent git commits
-git log --oneline -10
+# V3 pilot log tail
+tail -5 outputs/pilot/logs/v3_all_users.log
 
-# Quick sanity-check sensing pipeline
-python3 -c "
-import pandas as pd
-from src.sense.query_tools import SensingQueryEngine
-from pathlib import Path
-dfs = [pd.read_csv(f'data/processed/splits/group_{i}_test.csv') for i in range(1,6)]
-df = pd.concat(dfs); df['timestamp_local'] = pd.to_datetime(df['timestamp_local'])
-eng = SensingQueryEngine(processed_dir=Path('data/processed/hourly'), ema_df=df)
-print(eng.call_tool('get_daily_summary', {'date': '2023-11-20'}, study_id=71, ema_timestamp='2023-11-20 18:00:00'))
-"
+# V4 chain watcher alive?
+ps aux | grep run_v4_after_v3 | grep -v grep
+
+# Checkpoint files
+ls -la outputs/pilot/checkpoints/
+
+# Titan status
+ssh zhiyuan@172.29.39.82 'ps aux | grep python | grep -v grep | wc -l'
 ```
 
 ---
@@ -52,7 +49,7 @@ print(eng.call_tool('get_daily_summary', {'date': '2023-11-20'}, study_id=71, em
 - `keyinput`: 280 users
 - `light`: 111 users
 - `mus` (music): 91 users
-- `accelerometer`: 11,134 rows (sleep detection via `val_sleep_duration_min`)
+- `accelerometer`: 11,134 rows (`val_sleep_duration_min`)
 - `gps`: 12,926 rows (`travel_km`, `home_minutes`, `location_variance`, etc.)
 
 **Prediction targets:**
@@ -60,256 +57,287 @@ print(eng.call_tool('get_daily_summary', {'date': '2023-11-20'}, study_id=71, em
 - Binary (15): `Individual_level_{PA,NA,happy,sad,afraid,miserable,worried,cheerful,pleased,grateful,lonely,interactions_quality,pain,forecasting,ER_desire}_State`
 - `INT_availability` (yes/no)
 
-**Binary threshold for `ER_desire_State`:** `ER_desire >= 5` (scale midpoint), **not** person mean.
-Rationale: distribution is bimodal (45.9% are 0, mean=2.37, median=1), midpoint is the natural breakpoint.
-
 ---
 
 ## System Architecture
 
 ```
-run_agentic_pilot.py
-    ├── CC backend:  ClaudeCodeAgent (src/agent/cc_agent.py)
-    │                └── claude --print subprocess + MCP server (src/sense/mcp_server.py)
-    └── API backend: AgenticSensingAgent (src/agent/agentic_sensing.py)
-                     └── Anthropic SDK tool-use loop + SensingQueryEngine
+Pilot versions:
+  CALLM  — Diary + TF-IDF RAG, structured output
+  V1     — Sensing only, structured 5-step prompt
+  V2     — Sensing only, autonomous (no fixed steps)
+  V3     — Diary + sensing + multimodal RAG, structured output  ← RUNNING NOW
+  V4     — Diary + sensing + multimodal RAG, autonomous         ← AUTO-STARTS AFTER V3
+
+Scripts:
+  scripts/run_pilot.py              — Run CALLM/V1/V2/V3/V4 pilot simulation
+  scripts/evaluate_pilot.py         — Compute MAE/BA/F1 from checkpoint files
+  scripts/run_ml_baselines.py       — Traditional ML (RF/XGBoost/Ridge/Logistic)
+  scripts/run_dl_baselines.py       — DL (MLP, Transformer, Combined, Text)
+  scripts/run_ar_baseline.py        — AR autocorrelation baseline
+  scripts/merge_baseline_results.py — Merge fold-level results into one JSON
 ```
-
-**SensingQueryEngine** (`src/sense/query_tools.py`):
-- Reads hourly Parquet files from `data/processed/hourly/`
-- Tools: `get_daily_summary`, `query_sensing`, `query_raw_events`, `compare_to_baseline`, `get_receptivity_history`, `find_similar_days`
-- Column name fix applied (2026-02-24): `hour_local` → `hour_start`, `keyboard/music` → `keyinput/mus`
-
-**Session memory** (per-user, longitudinal): `outputs/agentic_pilot/memory/`
-- Accumulates receptivity feedback (diary, raw ER_desire, INT_availability) across EMA entries
-- **No prediction targets** in memory (receptivity leakage fixed 2026-02-23)
 
 ---
 
-## Completed Work
+## 🔴 CURRENTLY RUNNING (2026-02-24 ~16:10)
 
-### ✅ Data Infrastructure
-- [x] 5-fold across-subject CV splits generated (399 users)
-- [x] Phase 1 offline processing: hourly Parquet files generated for screen, motion, keyinput, light, mus
-- [x] Home location and participant platform metadata
-- [x] `SensingQueryEngine` — Parquet-backed tool layer for agent + ML pipeline
-- [x] **CRITICAL BUG FIXED (2026-02-24)**: `hour_local` column not being recognized → all queries returned "no data". Fix: added to `_normalize_hour_start()` alternates. Also fixed `keyboard→keyinput`, `music→mus` directory aliases in both `query_tools.py` and `hourly_features.py`.
+### Local Machine
 
-### ✅ Baseline: AR Autocorrelation
-- Script: `scripts/run_ar_baseline.py`
-- Output: `outputs/ar_baseline/ar_results.json`
-- **Results (n=15,585 predictions, 399 users):**
+| Process | PID | Status | ETA |
+|---------|-----|--------|-----|
+| V3 pilot (all 5 users) | 71841 | Entry 17/93 user71 (~16s/entry after API) | ~22:30 tonight |
+| V4 chain watcher | 72549 | Sleeping, polls every 30s for V3 to finish | After V3 |
+
+**V3 checkpoint files:** `outputs/pilot/checkpoints/v3_user{71,119,164,310,458}_checkpoint.json`
+
+**V3 command that was used:**
+```bash
+PYTHONPATH=. python3 scripts/run_pilot.py \
+    --version v3 \
+    --users 71,119,164,310,458 \
+    --model claude-haiku-4-5-20251001 \
+    --delay 1.0 \
+    --verbose \
+    > outputs/pilot/logs/v3_all_users.log 2>&1 &
+```
+
+**V4 chain watcher:** `/tmp/run_v4_after_v3.sh` — polls PID 71841, then runs V4 with same args.
+If watcher died: start V4 manually after V3 checkpoint files are complete (all 5 users).
+
+**V4 manual start command:**
+```bash
+PYTHONPATH=. python3 scripts/run_pilot.py \
+    --version v4 \
+    --users 71,119,164,310,458 \
+    --model claude-haiku-4-5-20251001 \
+    --delay 1.0 \
+    --verbose \
+    > outputs/pilot/logs/v4_all_users.log 2>&1 &
+```
+
+### Titan Server (zhiyuan@172.29.39.82)
+
+| Process | PID | Status | Output |
+|---------|-----|--------|--------|
+| ML Ridge re-run (5 folds parallel) | ~1341616+ | Running, all 5 folds started at 16:01 | `outputs/ml_baselines_ridge_v2/fold_N/` |
+| Combined baseline (all 5 folds) | 1212188 | Fold 3/5 started at ~16:07 | `outputs/advanced_baselines/combined/` |
+| DL MLP fold 5 re-run | (bg) | Started 16:05, fixing gradient explosion | `outputs/advanced_baselines_dl_fold5_rerun/` |
+
+**Check commands:**
+```bash
+# Ridge folds done?
+ssh zhiyuan@172.29.39.82 'for f in 1 2 3 4 5; do echo -n "Ridge fold_$f: "; cat ~/proactive-affective-agent/outputs/ml_baselines_ridge_v2/fold_$f/ml_baseline_summary.md 2>/dev/null | grep "Mean MAE" || echo "running"; done'
+
+# Combined done?
+ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines/combined/combined_baseline_summary.md 2>/dev/null'
+
+# DL fold 5 rerun done?
+ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines_dl_fold5_rerun/dl/fold_5/dl_baseline_summary.md 2>/dev/null'
+```
+
+---
+
+## ✅ Completed Results
+
+### Baseline: AR Autocorrelation
 
 | Variant | Mean MAE | Mean BA | Mean F1 |
 |---------|----------|---------|---------|
-| `last_value` (AR1) | 2.758 | 0.658 | 0.617 |
-| `rolling_mean_w3` | 2.552 | 0.658 | 0.617 |
+| last_value (AR1) | 2.758 | 0.658 | 0.617 |
+| rolling_mean_w3 | 2.552 | 0.658 | 0.617 |
 
-These are the **empirical ceilings** for autocorrelation-based prediction (no sensing needed). The V4 agent must approach or beat BA=0.658 to demonstrate sensing adds value.
+**Role:** Empirical ceiling for autocorrelation-only prediction. Sensing agents must approach BA≈0.658.
 
-### ✅ Baseline: Text (TF-IDF / BoW on diary)
-- Script: `scripts/run_dl_baselines.py --pipelines text`
-- Output: `outputs/advanced_baselines/text/`
-- **Results (diary-present rows only, 5-fold CV):**
+### Baseline: Text (TF-IDF / BoW on diary)
 
 | Model | Mean MAE | Mean BA | Mean F1 |
 |-------|----------|---------|---------|
 | TF-IDF | 3.999 | 0.613 | 0.570 |
 | BoW | 4.043 | 0.607 | 0.561 |
 
-### ✅ Baseline: Traditional ML (Sensing features)
-- Script: `scripts/run_ml_baselines.py --features parquet`
-- Output: `outputs/ml_baselines/`
-- **Old results (WRONG — sensing data bug not yet fixed when run):**
+### Baseline: Transformer (MiniLM on diary)
 
 | Model | Mean MAE | Mean BA | Mean F1 |
 |-------|----------|---------|---------|
-| RF | 4.373 | 0.500 | 0.298 |
-| XGBoost | 4.373 | 0.500 | 0.360 |
-| Ridge | 4.373 | — | — |
-| Logistic | — | 0.500 | 0.000 |
+| MiniLM | 3.898 | 0.629 | 0.588 |
 
-BA = 0.500 for all = **features were all zeros** (sensing data path bug). Must **rerun** after fixing the `hour_local` bug.
+### Baseline: Traditional ML (Sensing features, 5-fold CV) — RF/XGBoost/Logistic DONE
 
-### ✅ Baseline: Deep Learning (MLP)
-- Script: `scripts/run_dl_baselines.py --pipelines dl`
-- **Status: Never successfully completed** — was running locally with OOM risk when user stopped it
-- Same sensing data bug as ML: results would be invalid even if it completed
-- Must **rerun on Titan server** with GPU
+All 5 folds completed. **Ridge diverged → being re-run with RidgeCV fix on Titan.**
 
-### ✅ Code: CALLM, V1-V4 Agent Workflows
-All 5 versions implemented and fully tested (171/171 tests pass).
+| Model | Mean MAE | Mean BA | Mean F1 | Notes |
+|-------|----------|---------|---------|-------|
+| RF | 5.923 | 0.501 | 0.365 | 5-fold avg |
+| XGBoost | 9.374 | 0.502 | 0.391 | 5-fold avg |
+| Logistic | — | 0.500 | 0.302 | Classification only |
+| Ridge | DIVERGED | — | — | Re-running with RidgeCV |
 
-| Version | Method | Status |
-|---------|--------|--------|
-| CALLM | Diary + TF-IDF RAG, structured | Pilot complete (427 entries) |
-| V1 | Sensing only, structured 5-step | Pilot complete (427 entries) |
-| V2 | Sensing only, autonomous | Pilot complete (427 entries) |
-| V3 | Diary + sensing + multimodal RAG, structured | **Running** (launched 2026-02-24) |
-| V4 | Diary + sensing + multimodal RAG, autonomous | Pending (after V3) |
+Per-fold RF results:
 
-**Known architectural facts:**
-- V1 was missing OUTPUT_FORMAT schema in prompt (fixed 2026-02-24) — existing results with old bug
-- V1/V2 sensing-only causes mean regression (prediction std~2.5 vs GT std~8.0)
-- CALLM diary→RAG dramatically outperforms sensing-only (BA 0.709 vs ~0.55)
-- V3/V4 (diary+sensing) should bridge this gap
+| Fold | MAE | BA | F1 |
+|------|-----|----|----|
+| 1 | 5.689 | 0.502 | 0.340 |
+| 2 | 5.616 | 0.501 | 0.380 |
+| 3 | 5.894 | 0.500 | 0.379 |
+| 4 | 5.830 | 0.499 | 0.358 |
+| 5 | 6.588 | 0.501 | 0.369 |
 
-**Run commands:**
-```bash
-# V3/V4 pilot
-PYTHONPATH=. python3 scripts/run_pilot.py --version v3 --users 71,119,164,310,458 --model claude-haiku-4-5-20251001 --delay 1.0
-PYTHONPATH=. python3 scripts/run_pilot.py --version v4 --users 71,119,164,310,458 --model claude-haiku-4-5-20251001 --delay 1.0
-```
+**Key insight: BA ≈ 0.50 = essentially random. Sensing features alone are not predictive.**
 
-### ✅ Evaluation Framework
-- `src/evaluation/` — metrics computation (MAE, BA, F1)
-- AR baseline as empirical upper bound for autocorrelation-only prediction
-- Oracle mode **removed** (would turn prediction into time series forecasting)
+### Baseline: DL MLP (Sensing features) — Folds 1-4 done, Fold 5 being re-run
 
----
+| Fold | MAE | BA | F1 | Notes |
+|------|-----|----|----|-------|
+| 1 | 5.082 | 0.506 | 0.437 | ✅ |
+| 2 | 4.695 | 0.509 | 0.448 | ✅ |
+| 3 | 4.511 | 0.510 | 0.440 | ✅ |
+| 4 | 4.506 | 0.501 | 0.436 | ✅ |
+| 5 | ~1e12 | 0.448 | — | ❌ gradient explosion → rerunning |
 
-## 🔄 Running on Titan (zhiyuan@172.29.39.82)
+4-fold mean (excluding fold 5): MAE=4.699, BA=0.507, F1=0.440
 
-### ML + DL Baselines — CURRENTLY RUNNING IN PARALLEL (2026-02-24 ~15:17)
+### Pilot: CALLM, V1, V2 — All 5 users complete (427 entries each)
 
-All baselines were relaunched with fold-level parallelism after identifying resource underutilization.
+| Version | PANAS_Pos MAE | happy_State BA | Mean BA | Notes |
+|---------|--------------|----------------|---------|-------|
+| CALLM | 1.850 | 0.709 | 0.645 | Diary + TF-IDF RAG |
+| V1 | 8.016 | 0.547 | 0.539 | Sensing structured — mean regression |
+| V2 | 8.834 | 0.551 | 0.531 | Sensing autonomous — mean regression |
 
-**Hardware allocation:**
-- **CPU (40 cores)**: 5 ML fold processes × 8 cores each = all 40 cores utilized
-- **GPU1 RTX A6000 (49GB)**: 5 DL MLP fold processes in parallel
-- **GPU0 RTX A5000 (24GB)**: Transformer + Combined (sentence-transformers models)
-
-**Processes running:**
-
-| Process | PIDs | GPU | Output |
-|---------|------|-----|--------|
-| ML (RF/XGB/Logistic/Ridge) fold 1-5 | 1203761-1203765 | CPU 8cores/fold | `outputs/ml_baselines_v2/fold_N/` |
-| DL MLP fold 1-5 | 1203766-1203770 | GPU1 | `outputs/advanced_baselines/dl/fold_N/` |
-| Transformer (MiniLM) all folds | 1212187 | GPU0 (cuda:0) | `outputs/advanced_baselines/transformer/` |
-| Combined (sensor+text) all folds | 1212188 | GPU0 (cuda:0) | `outputs/advanced_baselines/combined/` |
-| Text (TF-IDF/BoW) all folds | 1212186 | CPU | `outputs/advanced_baselines/text/` |
-
-**After all complete, merge fold results:**
-```bash
-# On Titan:
-cd ~/proactive-affective-agent
-
-# Merge ML results
-PYTHONPATH=. python scripts/merge_baseline_results.py \
-    --output outputs/ml_baselines_v2 --type ml
-
-# Merge DL MLP results
-PYTHONPATH=. python scripts/merge_baseline_results.py \
-    --output outputs/advanced_baselines --type dl --pipeline dl
-```
-
-**Check progress:**
-```bash
-ssh zhiyuan@172.29.39.82 "
-  ps aux | grep 'run_ml\|run_dl' | grep -v grep | wc -l
-  nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader
-  tail -3 ~/proactive-affective-agent/outputs/ml_baselines_v2/fold_1.log
-"
-```
-
-**Feature selection:** `MLBaseline` uses `SelectKBest` with K tuned via 3-fold inner CV (grid: 25/50/75/100% of features). `n_jobs=8` per fold.
-
-**DL CUDA:** `deep_learning_baselines.py` uses `torch.device("cuda" if torch.cuda.is_available() else "cpu")` — automatically uses GPU1 for MLP.
+**Key insight:** V1/V2 (sensing-only) produce mean-regressing predictions (pred std≈2.5 vs GT std≈8.0).
+CALLM diary→RAG is dramatically better. V3/V4 (diary+sensing) should bridge this gap.
 
 ---
 
-## ❌ Pending
+## ❌ Pending Tasks (for Next Session)
 
-### 1. Merge ML/DL fold results (Priority: HIGH — after jobs complete)
-Run `scripts/merge_baseline_results.py` to combine per-fold JSON outputs.
+### HIGHEST PRIORITY — After jobs complete tonight
 
-### 2. V4 Agent — Real End-to-End Test (Priority: HIGH)
-**Status:** Only dry-run completed. No real `claude --print` subprocess calls made.
-
+**1. Evaluate V3 + V4 pilot results**
 ```bash
-# Run real V4 CC on a few users
-python3 scripts/run_agentic_pilot.py \
-    --users 71,72,73 \
-    --backend cc \
-    --max-turns 16 \
-    --output outputs/agentic_pilot/v4_real_test
+cd /Users/zwang/Documents/proactive-affective-agent
+PYTHONPATH=. python3 scripts/evaluate_pilot.py
+```
+This reads `outputs/pilot/checkpoints/{callm,v1,v2,v3,v4}_user{71,...}_checkpoint.json` and prints comparison table. V3 finishes ~22:30, V4 after that.
+
+**2. Merge ML Ridge v2 results (after all 5 folds done)**
+```bash
+# Check if done:
+ssh zhiyuan@172.29.39.82 'ls ~/proactive-affective-agent/outputs/ml_baselines_ridge_v2/fold_{1,2,3,4,5}/*.json 2>/dev/null | wc -l'
+
+# Merge (if merge script supports per-model output dir):
+ssh zhiyuan@172.29.39.82 'cd ~/proactive-affective-agent && PYTHONPATH=. python scripts/merge_baseline_results.py --output outputs/ml_baselines_ridge_v2 --type ml'
 ```
 
-**Prerequisites:**
-- Sensing data confirmed working (done — `hour_local` fix)
-- V4 CC backend reads `claude` CLI from PATH (must be available on server too)
-
-For API backend test (doesn't need claude CLI, just ANTHROPIC_API_KEY):
+**3. Get Combined baseline results (after done)**
 ```bash
-python3 scripts/run_agentic_pilot.py \
-    --users 71,72,73 \
-    --backend api \
-    --output outputs/agentic_pilot/v4_api_test
+ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines/combined/combined_baseline_summary.md'
 ```
+
+**4. Get DL fold 5 result (after rerun done)**
+```bash
+ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines_dl_fold5_rerun/dl/fold_5/dl_baseline_summary.md'
+```
+
+**5. Update PROGRESS.md results table with final numbers**
+
+### MEDIUM PRIORITY
+
+**6. Run full evaluation: CALLM vs V1-V4 comparison table**
+Once V3+V4 complete, run `scripts/evaluate_pilot.py` and update the results summary table.
+
+**7. Investigate V3/V4 behavior**
+- Does V3 (structured diary+sensing) match CALLM performance?
+- Does V4 (autonomous) equal or beat V3?
+- Key metric: PANAS_Pos MAE and mean BA vs AR baseline (0.658)
+
+**8. Paper-ready results table**
+Once all baselines + V3/V4 pilot are done, compile final comparison:
+- AR baseline (ceiling)
+- Text / Transformer (diary text only)
+- ML Sensing (RF, Ridge, XGB, Logistic)
+- DL Sensing (MLP)
+- Combined (sensor + diary)
+- CALLM / V1 / V2 / V3 / V4
 
 ---
 
-## Server Setup: Titan (zhiyuan@172.29.39.82)
+## Results Summary Table (Current State — Incomplete)
 
-**Status:** ✅ Code + data synced (2026-02-24). Both GPUs in use.
+| System | Method | PANAS_Pos MAE↓ | happy_State BA↑ | Mean BA | Status |
+|--------|---------|----------------|-----------------|---------|--------|
+| AR last_value | Autocorrelation | 2.758 | 0.658 | 0.658 | ✅ Done |
+| AR rolling_mean | Autocorrelation | 2.552 | 0.658 | 0.658 | ✅ Done |
+| Text TF-IDF | Diary text only | 3.999 | 0.613 | 0.613 | ✅ Done |
+| Text BoW | Diary text only | 4.043 | 0.607 | 0.607 | ✅ Done |
+| Transformer MiniLM | Diary text only | 3.898 | 0.629 | 0.629 | ✅ Done |
+| ML RF | Sensing features | 5.923 | ~0.501 | 0.501 | ✅ Done |
+| ML XGBoost | Sensing features | 9.374 | ~0.502 | 0.502 | ✅ Done |
+| ML Ridge | Sensing features | DIVERGED | — | — | ⏳ RidgeCV fix running |
+| ML Logistic | Sensing features | — | — | 0.500 | ✅ Done |
+| DL MLP | Sensing features | ~4.7* | ~0.507* | 0.507* | ⏳ Fold 5 rerunning |
+| Combined | Sensor + diary | pending | pending | pending | ⏳ Running |
+| **CALLM** | Diary + TF-IDF RAG | **1.850** | **0.709** | **0.645** | ✅ Done (427 entries) |
+| **V1** | Sensing structured | 8.016 | 0.547 | 0.539 | ✅ Done (427 entries) |
+| **V2** | Sensing autonomous | 8.834 | 0.551 | 0.531 | ✅ Done (427 entries) |
+| **V3** | Diary+sensing structured | running | running | running | ⏳ ~22:30 tonight |
+| **V4** | Diary+sensing autonomous | pending | pending | pending | ⏳ After V3 |
 
-```bash
-# 1. Sync code to server (exclude large raw data, keep processed Parquets)
-rsync -avz \
-    --exclude="data/bucs-data" \
-    --exclude="__pycache__" \
-    --exclude="*.pyc" \
-    --exclude=".git" \
-    --exclude="outputs" \
-    --exclude="*.egg-info" \
-    /Users/zwang/Documents/proactive-affective-agent/ \
-    zhiyuan@172.29.39.82:~/proactive-affective-agent/
-
-# 2. Sync processed Parquet data (hourly features, splits)
-rsync -avz \
-    data/processed/ \
-    zhiyuan@172.29.39.82:~/proactive-affective-agent/data/processed/
-
-# 3. On server: install packages in efficient-ser env
-ssh zhiyuan@172.29.39.82
-source ~/anaconda3/etc/profile.d/conda.sh && conda activate efficient-ser
-pip install xgboost pyarrow scikit-learn sentence-transformers
-
-# 4. GPU to use: GPU1 (RTX A6000, 49GB, nearly free)
-export CUDA_VISIBLE_DEVICES=1
-```
-
-**Available GPU:**
-- GPU0: RTX A5000 (24GB) — has alphapose using ~480MB
-- GPU1: RTX A6000 (49GB) — basically free (22MB used)
+\* = 4-fold mean only, fold 5 diverged
 
 ---
 
-## Results Summary Table (Current State)
+## Bug Fixes Applied (This Session)
 
-All metrics: MAE = mean absolute error (regression), BA = balanced accuracy (binary classification).
-Agent pilot results are for 5 pilot users (71, 119, 164, 310, 458), 427 entries each.
-Key targets shown: PANAS_Pos (MAE), Individual_level_happy_State (BA).
+1. **V1 prompt missing OUTPUT_FORMAT** (`src/think/prompts.py`): Added `{OUTPUT_FORMAT}` schema at end of `v1_prompt()`. Existing V1 results were with old broken prompt.
 
-| System | Method | PANAS_Pos MAE↓ | happy_State BA↑ | Notes |
-|--------|---------|----------------|-----------------|-------|
-| AR baseline | Last value (AR1) | 2.758 | 0.658 | 15,984 entries, all users |
-| AR baseline | Rolling mean (w=3) | 2.552 | 0.658 | Autocorrelation ceiling |
-| Text | TF-IDF on diary | 3.999 | 0.613 | 5-fold CV, diary rows only |
-| Text | BoW on diary | 4.043 | 0.607 | 5-fold CV, diary rows only |
-| Transformer | MiniLM on diary | 3.898 | 0.629 | 5-fold CV, diary rows only |
-| ML sensing | RF / XGBoost | pending | pending | Titan folds 4-5 running |
-| DL sensing | MLP (parquet) | ~1e12 | ~0.506 | DIVERGING — gradient clipping fix deployed |
-| Combined | Sensor + diary text | pending | pending | Titan still running |
-| **CALLM** | Diary + TF-IDF RAG | **1.850** | **0.709** | 5 users, 427 entries ✅ |
-| **V1** | Sensing structured | 8.016 | 0.547 | 5 users, 427 entries ✅ |
-| **V2** | Sensing autonomous | 8.834 | 0.551 | 5 users, 427 entries ✅ |
-| **V3** | Diary+sensing structured | running | running | V3 launched 2026-02-24 |
-| **V4** | Diary+sensing autonomous | pending | pending | After V3 completes |
+2. **TFIDFRetriever min_df=2 crash on small corpus** (`src/remember/retriever.py`): Added try/except fallback to min_df=1 for corpora with < 2 docs.
 
-**Key insight:** CALLM (diary text → RAG) dramatically outperforms sensing-only V1/V2.
-Sensing data alone produces mean-regressing predictions (pred std=2.5 vs GT std=8.0).
-V3/V4 (diary + sensing combined) should close this gap.
+3. **SelectKBest k > n_features** (`src/baselines/ml_pipeline.py`): Changed fixed k_vals to use `"all"` string for max K, avoiding post-VarianceThreshold dimensionality mismatch.
+
+4. **MLP gradient explosion** (`src/baselines/deep_learning_baselines.py`): Added `torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)`.
+
+5. **Sigmoid overflow** (`src/baselines/deep_learning_baselines.py`): Added `logits_clipped = np.clip(logits, -500.0, 500.0)` before sigmoid.
+
+6. **Ridge regression divergence** (`src/baselines/ml_pipeline.py`): Replaced `Ridge(alpha=1.0)` with `RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])`.
+
+7. **GPS/accelerometer data confirmed**: Both have data (gps: 12,926 rows, accel: 11,134 rows). PROGRESS.md corrected.
+
+---
+
+## Test Suite: 171/171 Passing
+
+```bash
+# Run all tests
+PYTHONPATH=. python3 -m pytest tests/ -v
+
+# Quick smoke test
+PYTHONPATH=. python3 -m pytest tests/ -x -q
+```
+
+All tests use dry-run mode for LLM calls — no API tokens consumed.
+
+---
+
+## Critical Files
+
+| File | Purpose |
+|------|---------|
+| `src/sense/query_tools.py` | SensingQueryEngine — core data access |
+| `src/data/hourly_features.py` | HourlyFeatureLoader — Parquet features for ML/DL |
+| `src/baselines/ml_pipeline.py` | ML baseline (RF/XGBoost/Ridge/Logistic + SelectKBest) |
+| `src/baselines/deep_learning_baselines.py` | MLP + Transformer + Combined + Text |
+| `src/agent/structured_full.py` | V3 agent implementation |
+| `src/agent/autonomous_full.py` | V4 agent implementation |
+| `src/think/prompts.py` | All LLM prompts for CALLM/V1/V2/V3/V4 |
+| `scripts/run_pilot.py` | Main pilot runner |
+| `scripts/evaluate_pilot.py` | Compute MAE/BA/F1 from checkpoint files |
+| `scripts/run_ml_baselines.py` | ML baseline runner (per-fold) |
+| `scripts/run_dl_baselines.py` | DL/Text/Transformer/Combined runner |
+| `data/processed/hourly/` | Hourly Parquet files |
+| `data/processed/splits/` | 5-fold CV splits |
+| `outputs/pilot/checkpoints/` | Per-user prediction checkpoints |
 
 ---
 
@@ -319,43 +347,27 @@ V3/V4 (diary + sensing combined) should close this gap.
 2. **Oracle mode:** Removed — giving agent historical PA/NA = time series forecasting, not sensing-based prediction
 3. **Session memory content:** Only receptivity signals (diary, raw ER_desire, INT_availability). Never prediction targets.
 4. **5-fold CV:** Across-subject (participant-level). All observations from a user in exactly one fold.
-5. **AR baseline role:** Empirical ceiling for autocorrelation-only prediction. V4 must approach BA≈0.658 to show sensing adds value.
-6. **Feature selection:** SelectKBest with K tuned as hyperparameter (25/50/75/100% fractions), 3-fold inner CV.
+5. **AR baseline role:** Empirical ceiling for autocorrelation-only prediction.
+6. **Feature selection:** SelectKBest with K as hyperparameter (25/50/75/100% fractions), 3-fold inner CV.
+7. **V3/V4 model:** `claude-haiku-4-5-20251001` (cost-efficient, ~10s/call)
 
 ---
 
-## Critical Files
+## Server Setup: Titan (zhiyuan@172.29.39.82)
 
-| File | Purpose |
-|------|---------|
-| `src/sense/query_tools.py` | SensingQueryEngine — core data access for agent + baselines |
-| `src/data/hourly_features.py` | HourlyFeatureLoader — Parquet features for ML/DL |
-| `src/agent/cc_agent.py` | V4 CC backend (claude --print subprocess) |
-| `src/agent/agentic_sensing.py` | V4 API backend (Anthropic SDK) |
-| `src/sense/mcp_server.py` | MCP server for CC backend |
-| `src/baselines/ml_pipeline.py` | ML baseline with SelectKBest feature selection |
-| `scripts/run_agentic_pilot.py` | Main V4 evaluation runner |
-| `scripts/run_ml_baselines.py` | Traditional ML baselines |
-| `scripts/run_dl_baselines.py` | DL + Text + Transformer + Combined baselines |
-| `scripts/run_ar_baseline.py` | AR autocorrelation baseline |
-| `data/processed/hourly/` | Hourly Parquet files (screen/motion/keyinput/light/mus) |
-| `data/processed/splits/` | 5-fold CV splits |
+```bash
+# Code sync (local → server)
+rsync -avz \
+    --exclude="data/bucs-data" \
+    --exclude="__pycache__" --exclude="*.pyc" \
+    --exclude=".git" --exclude="outputs" --exclude="*.egg-info" \
+    /Users/zwang/Documents/proactive-affective-agent/ \
+    zhiyuan@172.29.39.82:~/proactive-affective-agent/
 
----
+# Env
+ssh zhiyuan@172.29.39.82
+source ~/anaconda3/etc/profile.d/conda.sh && conda activate efficient-ser
 
-## Recent Bug Fixes (2026-02-24)
-
-1. **`hour_local` column not recognized** in `_normalize_hour_start()`:
-   - Affected: `SensingQueryEngine` (`query_tools.py`) and `HourlyFeatureLoader` (`hourly_features.py`)
-   - Root cause: Parquet files use `hour_local` column; code only checked `timestamp/ts/datetime/hour`
-   - Fix: Added `hour_local`, `hour_utc` to the alternates list in both files
-   - Impact: ALL sensing queries were returning "no data" → ML BA=0.5 → invalid results
-
-2. **Keyboard/music directory name mismatch**:
-   - Disk uses: `keyinput/`, `mus/` directories with `{pid}_keyinput_hourly.parquet` filenames
-   - Code expected: `keyboard/`, `music/`
-   - Fix: Added `_MODALITY_DIR_ALIAS` in `SensingQueryEngine`; updated `MODALITY_DIRS` in `HourlyFeatureLoader`
-
-3. **Oracle mode removed**: `--feedback-mode oracle` in `run_agentic_pilot.py` was passing historical PANAS/NA to the agent = prediction target leakage.
-
-4. **Receptivity leakage in tools**: `get_receptivity_history` and `find_similar_days` were returning prediction targets (PANAS_Pos/Neg, Individual_level_*) as historical context. Fixed to return only ER_desire + INT_availability.
+# GPU: use GPU1 (RTX A6000, 49GB) for new jobs
+export CUDA_VISIBLE_DEVICES=1
+```
