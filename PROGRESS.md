@@ -1,7 +1,7 @@
 # Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-**Last updated:** 2026-02-24
-**Status:** Active development — baselines converging, V4 agent pending real run
+**Last updated:** 2026-02-24 (session 2)
+**Status:** Active development — all baselines running in parallel on Titan, results pending
 
 ---
 
@@ -151,43 +151,62 @@ BA = 0.500 for all = **features were all zeros** (sensing data path bug). Must *
 
 ---
 
-## ❌ Pending / Broken
+## 🔄 Running on Titan (zhiyuan@172.29.39.82)
 
-### 1. ML Baselines — Must Rerun (Priority: HIGH)
-**Why:** Previous run used all-zero features (sensing data path bug now fixed).
+### ML + DL Baselines — CURRENTLY RUNNING IN PARALLEL (2026-02-24 ~15:17)
 
+All baselines were relaunched with fold-level parallelism after identifying resource underutilization.
+
+**Hardware allocation:**
+- **CPU (40 cores)**: 5 ML fold processes × 8 cores each = all 40 cores utilized
+- **GPU1 RTX A6000 (49GB)**: 5 DL MLP fold processes in parallel
+- **GPU0 RTX A5000 (24GB)**: Transformer + Combined (sentence-transformers models)
+
+**Processes running:**
+
+| Process | PIDs | GPU | Output |
+|---------|------|-----|--------|
+| ML (RF/XGB/Logistic/Ridge) fold 1-5 | 1203761-1203765 | CPU 8cores/fold | `outputs/ml_baselines_v2/fold_N/` |
+| DL MLP fold 1-5 | 1203766-1203770 | GPU1 | `outputs/advanced_baselines/dl/fold_N/` |
+| Transformer (MiniLM) all folds | 1212187 | GPU0 (cuda:0) | `outputs/advanced_baselines/transformer/` |
+| Combined (sensor+text) all folds | 1212188 | GPU0 (cuda:0) | `outputs/advanced_baselines/combined/` |
+| Text (TF-IDF/BoW) all folds | 1212186 | CPU | `outputs/advanced_baselines/text/` |
+
+**After all complete, merge fold results:**
 ```bash
-# On Titan server:
-python3 scripts/run_ml_baselines.py \
-    --models rf,xgboost,logistic,ridge \
-    --features parquet \
-    --output outputs/ml_baselines_v2
+# On Titan:
+cd ~/proactive-affective-agent
+
+# Merge ML results
+PYTHONPATH=. python scripts/merge_baseline_results.py \
+    --output outputs/ml_baselines_v2 --type ml
+
+# Merge DL MLP results
+PYTHONPATH=. python scripts/merge_baseline_results.py \
+    --output outputs/advanced_baselines --type dl --pipeline dl
 ```
 
-**Expected:** BA should be meaningfully above 0.5 now that sensing features are non-zero.
-
-**Feature selection:** `MLBaseline` now uses `SelectKBest` with K as a hyperparameter (grid: 25%, 50%, 75%, 100% of features), tuned via 3-fold inner CV per fold. This is correct ML hygiene — K is not hardcoded.
-
-### 2. DL / MLP Baseline — Must Rerun on Server (Priority: HIGH)
-**Why:** Local OOM risk; Titan GPU (RTX A6000 49GB on GPU1) is available.
-
+**Check progress:**
 ```bash
-# On Titan server:
-python3 scripts/run_dl_baselines.py \
-    --pipelines dl \
-    --output outputs/advanced_baselines
+ssh zhiyuan@172.29.39.82 "
+  ps aux | grep 'run_ml\|run_dl' | grep -v grep | wc -l
+  nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader
+  tail -3 ~/proactive-affective-agent/outputs/ml_baselines_v2/fold_1.log
+"
 ```
 
-Also run text + transformer + combined once on server:
-```bash
-python3 scripts/run_dl_baselines.py \
-    --pipelines text,dl,transformer,combined \
-    --output outputs/advanced_baselines
-```
+**Feature selection:** `MLBaseline` uses `SelectKBest` with K tuned via 3-fold inner CV (grid: 25/50/75/100% of features). `n_jobs=8` per fold.
 
-**Known issue from previous local run:** `TypeError: unhashable type: 'slice'` in DL pipeline — the previous run occurred **before** the `hour_local` fix, so the Parquet loading was broken. Rerun should resolve it. If it reappears, check `src/baselines/deep_learning_baselines.py` around the `build_parquet_features` call.
+**DL CUDA:** `deep_learning_baselines.py` uses `torch.device("cuda" if torch.cuda.is_available() else "cpu")` — automatically uses GPU1 for MLP.
 
-### 3. V4 Agent — Real End-to-End Test (Priority: HIGH)
+---
+
+## ❌ Pending
+
+### 1. Merge ML/DL fold results (Priority: HIGH — after jobs complete)
+Run `scripts/merge_baseline_results.py` to combine per-fold JSON outputs.
+
+### 2. V4 Agent — Real End-to-End Test (Priority: HIGH)
 **Status:** Only dry-run completed. No real `claude --print` subprocess calls made.
 
 ```bash
@@ -195,7 +214,7 @@ python3 scripts/run_dl_baselines.py \
 python3 scripts/run_agentic_pilot.py \
     --users 71,72,73 \
     --backend cc \
-    --max-turns 12 \
+    --max-turns 16 \
     --output outputs/agentic_pilot/v4_real_test
 ```
 
@@ -211,23 +230,11 @@ python3 scripts/run_agentic_pilot.py \
     --output outputs/agentic_pilot/v4_api_test
 ```
 
-### 4. Transformer Baseline — Not Yet Run
-```bash
-python3 scripts/run_dl_baselines.py --pipelines transformer
-```
-Requires `sentence-transformers` package.
-
-### 5. Combined (Late Fusion) Baseline — Not Yet Run
-```bash
-python3 scripts/run_dl_baselines.py --pipelines combined
-```
-Sensor features + sentence-transformer embeddings, late-fusion via Ridge/Logistic.
-
 ---
 
 ## Server Setup: Titan (zhiyuan@172.29.39.82)
 
-**Status:** Code not yet synced. Need to do once.
+**Status:** ✅ Code + data synced (2026-02-24). Both GPUs in use.
 
 ```bash
 # 1. Sync code to server (exclude large raw data, keep processed Parquets)

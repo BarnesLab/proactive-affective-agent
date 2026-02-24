@@ -78,8 +78,11 @@ class TransformerBaselinePipeline:
     # Public API
     # ------------------------------------------------------------------
 
-    def run_all_folds(self) -> dict[str, Any]:
+    def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
         """Run 5-fold CV for transformer embedding baselines.
+
+        Args:
+            folds: List of fold indices to run (e.g. [1]). If None, runs all 5 folds.
 
         Returns:
             Nested dict: {model_name: {target: {metric: ...}, "_aggregate": {...}}}
@@ -88,7 +91,7 @@ class TransformerBaselinePipeline:
 
         all_results: dict[str, Any] = {}
 
-        for fold in range(1, 6):
+        for fold in (folds if folds is not None else range(1, 6)):
             logger.info(f"=== Transformer Baseline Fold {fold}/5 ===")
 
             train_df = pd.read_csv(self.splits_dir / f"group_{fold}_train.csv")
