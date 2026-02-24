@@ -257,9 +257,9 @@ Agent internal reasoning: "I need to figure out this person's emotional state ar
 </div>
 <div class="tool-call">→ CALL: find_similar_days(top_k=3)</div>
 <div class="tool-result">
-  Similar day 2024-01-08: (home all day, high screen, no music) → PANAS_Neg=5.1, ER_desire=6 ✗ rejected intervention
-  Similar day 2023-12-22: (home, holiday) → PANAS_Neg=3.2, ER_desire=2 ✓ accepted
-  Similar day 2024-01-02: (home, low GPS) → PANAS_Neg=4.8, ER_desire=5 ✓ accepted
+  Similar day 2024-01-08: (home all day, high screen, no music) → PANAS_Neg=5, ER_desire=6 ✗ rejected intervention
+  Similar day 2023-12-22: (home, holiday) → PANAS_Neg=3, ER_desire=2 ✓ accepted
+  Similar day 2024-01-02: (home, low GPS) → PANAS_Neg=5, ER_desire=5 ✓ accepted
 </div>
 <div class="belief">Belief update: Similar confinement days split. The 2024-01-08 pattern (which also had no music and low typing like today) showed the highest negative affect AND a rejected intervention. That's a concerning match. But the other two were receptive.</div>
 
@@ -270,7 +270,7 @@ Agent internal reasoning: "I need to figure out this person's emotional state ar
 <div class="tool-result">Last 7 days: 4 accepted, 2 rejected. Yesterday 2pm slot: rejected (low ER_desire). Today is a Monday — she often has lower affect on Mondays (pattern in history).</div>
 <div class="belief">Belief update: The rejection yesterday and the Monday pattern converge. She may be experiencing elevated NA but also showing intervention fatigue. I now have enough evidence.</div>
 
-<p><strong>Final prediction:</strong> PANAS_Neg = 4.7 (elevated, 69th personal percentile), ER_desire = 4.5 (moderate), <code>Individual_level_NA_State = True</code>, availability = <em>yes but with caution</em> (receptivity fatigue — suggest lighter intervention or delay).</p>
+<p><strong>Final prediction:</strong> PANAS_Neg = 5 (elevated, 69th personal percentile), ER_desire = 5 (moderate), <code>Individual_level_NA_State = True</code>, availability = <em>yes but with caution</em> (receptivity fatigue — suggest lighter intervention or delay).</p>
 <p><strong>Reasoning summary (stored for feedback loop):</strong> "Extreme home confinement (97th pct), very low typing, behavioral match to a past high-NA day (2024-01-08), plus yesterday's rejection suggest elevated negative affect. Recommended availability = yes but lower-intensity contact."</p>
 </div>
 

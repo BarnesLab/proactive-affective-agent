@@ -35,7 +35,7 @@ An agent that autonomously queries raw sensor data via tool-use (V2, V4) outperf
 
 The key research question: does **agentic investigation** (autonomous tool-use queries) outperform **structured pipelines** (fixed pre-formatted summaries)? We test this across two data conditions: sensing-only and multimodal (diary + sensing).
 
-|  | **Structured** (fixed pipeline) | **Agentic** (autonomous tool-use) |
+|  | **Structured** (fixed pipeline, **most existing work**) | **Agentic** (autonomous tool-use) |
 |---|---|---|
 | **Sensing-only** | V1 | **V2** |
 | **Multimodal** (diary + sensing) | V3 | **V4** ← key contribution |
