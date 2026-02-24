@@ -957,26 +957,28 @@ class SensingQueryEngine:
         before_timestamp: str | datetime,
         include_emotion_driver: bool = False,
     ) -> str:
-        """Retrieve past intervention receptivity and mood patterns for a participant.
+        """Retrieve past intervention receptivity records for a participant.
 
-        In real-world JITAI deployment only intervention accept/reject (receptivity) is
-        available as user feedback. This method returns receptivity data alongside
-        aggregate mood trends — what an actually-deployed system would know.
+        Returns ONLY the receptivity signal: ER_desire (emotion-regulation desire,
+        0-10) and INT_availability (yes/no). Receptivity is defined as
+        ER_desire >= 5 AND INT_availability == "yes".
 
-        For the research context (BUCS study), we also have EMA mood labels and use
-        them here to compute mood patterns. This lets the agent learn per-user baselines
-        while simulating real-world constraints on what feedback is observable.
+        Intentionally omits PANAS_Pos, PANAS_Neg, and Individual_level_* states —
+        those are the labels we are predicting and must not be fed back to the agent
+        as historical context. In real JITAI deployment, the system only observes
+        whether the user engaged with/accepted an intervention, not their full
+        self-reported affect battery.
 
         Args:
             study_id: Participant's Study_ID.
             n_days: Number of past days to include (default 14).
             before_timestamp: Only entries strictly before this timestamp.
-            include_emotion_driver: Include diary text if True (research mode only).
+            include_emotion_driver: Include diary text if True (research simulation).
 
         Returns:
-            Natural language receptivity + mood pattern summary.
+            Natural language receptivity summary (ER_desire + availability only).
         """
-        header = f"[Receptivity & Mood History: last {n_days} days]"
+        header = f"[Receptivity History: last {n_days} days]"
         user_ema = self._ema_for_user(study_id)
         if user_ema.empty:
             return f"{header}\nNo EMA history available."
@@ -994,9 +996,9 @@ class SensingQueryEngine:
         user_ema = user_ema.sort_values("timestamp_local", ascending=False)
 
         lines = [header]
-        pa_by_tod: dict[str, list[float]] = {"morning": [], "afternoon": [], "evening": []}
-        pa_weekday: list[float] = []
-        pa_weekend: list[float] = []
+        receptive_by_tod: dict[str, list[bool]] = {"morning": [], "afternoon": [], "evening": []}
+        n_receptive = 0
+        n_total = 0
 
         for _, row in user_ema.iterrows():
             ts = row["timestamp_local"]
@@ -1004,31 +1006,19 @@ class SensingQueryEngine:
             tod = _time_of_day(ts.hour)
             tod_abbr = tod[:3].capitalize()
 
-            pa = _safe_float(row.get("PANAS_Pos"))
-            na = _safe_float(row.get("PANAS_Neg"))
             er = _safe_float(row.get("ER_desire"))
-            avail = row.get("INT_availability", "?")
+            avail = str(row.get("INT_availability", "")).lower().strip()
 
-            score_parts = []
-            if pa is not None:
-                score_parts.append(f"PA={pa:.0f}")
-            if na is not None:
-                score_parts.append(f"NA={na:.0f}")
-            if er is not None:
-                score_parts.append(f"ER={er:.0f}")
-            scores = ", ".join(score_parts) if score_parts else "no scores"
+            # Derive receptivity signal
+            er_high = (er is not None) and (er >= 5)
+            is_avail = avail in ("yes", "1", "true")
+            receptive = er_high and is_avail
 
-            # Notable elevated states
-            state_cols = [c for c in row.index if c.startswith("Individual_level_") and c.endswith("_State")]
-            true_states = [
-                c.replace("Individual_level_", "").replace("_State", "")
-                for c in state_cols
-                if str(row.get(c, "")).lower() in ("true", "1", "yes")
-            ]
-            state_str = f" | elevated: {', '.join(true_states)}" if true_states else ""
-            avail_str = f" | avail={avail}" if avail not in (None, "?") else ""
+            er_str = f"ER_desire={er:.0f}" if er is not None else "ER_desire=?"
+            avail_str = f"available={avail}" if avail else "available=?"
+            rec_str = "receptive=YES" if receptive else "receptive=no"
 
-            entry = f"{date_str} {tod_abbr}: {scores}{avail_str}{state_str}"
+            entry = f"{date_str} {tod_abbr}: {er_str}, {avail_str} → {rec_str}"
 
             if include_emotion_driver:
                 driver = str(row.get("emotion_driver", "") or "").strip()
@@ -1037,32 +1027,26 @@ class SensingQueryEngine:
 
             lines.append(entry)
 
-            if pa is not None:
-                if tod in pa_by_tod:
-                    pa_by_tod[tod].append(pa)
-                dow = ts.weekday()
-                (pa_weekday if dow < 5 else pa_weekend).append(pa)
+            n_total += 1
+            if receptive:
+                n_receptive += 1
+            if tod in receptive_by_tod:
+                receptive_by_tod[tod].append(receptive)
 
         # Pattern summary
+        if n_total > 0:
+            rate = n_receptive / n_total
+            lines.append(
+                f"Summary: receptive in {n_receptive}/{n_total} past EMA entries ({rate:.0%})"
+            )
         patterns: list[str] = []
-        morn = pa_by_tod["morning"]
-        eve = pa_by_tod["evening"]
-        if morn and eve:
-            diff = float(np.mean(eve)) - float(np.mean(morn))
-            if abs(diff) > 1.5:
-                direction = "higher" if diff > 0 else "lower"
-                patterns.append(
-                    f"Evenings tend to be {direction} PA than mornings (avg {abs(diff):.1f} points)"
-                )
-        if pa_weekday and pa_weekend:
-            diff = float(np.mean(pa_weekend)) - float(np.mean(pa_weekday))
-            if abs(diff) > 1.5:
-                direction = "higher" if diff > 0 else "lower"
-                patterns.append(
-                    f"Weekend PA averages {abs(diff):.1f} points {direction} than weekdays"
-                )
+        for tod_name in ("morning", "afternoon", "evening"):
+            tod_recs = receptive_by_tod[tod_name]
+            if tod_recs:
+                tod_rate = sum(tod_recs) / len(tod_recs)
+                patterns.append(f"{tod_name} {tod_rate:.0%}")
         if patterns:
-            lines.append("Pattern: " + "; ".join(patterns))
+            lines.append("Receptivity by time of day: " + ", ".join(patterns))
 
         return "\n".join(lines)
 
@@ -1120,8 +1104,10 @@ class SensingQueryEngine:
             ema_info: dict[str, Any] = {}
             if not day_ema.empty:
                 last = day_ema.iloc[-1]
-                ema_info["pa"] = _safe_float(last.get("PANAS_Pos"))
-                ema_info["na"] = _safe_float(last.get("PANAS_Neg"))
+                # Only expose receptivity signal (ER_desire + INT_availability),
+                # not PANAS_Pos/PANAS_Neg which are the labels we are predicting.
+                ema_info["er"] = _safe_float(last.get("ER_desire"))
+                ema_info["avail"] = str(last.get("INT_availability", "") or "").lower().strip()
                 ema_info["diary"] = str(last.get("emotion_driver", "") or "").strip()
             similarities.append((sim, past_date, ema_info))
 
@@ -1135,32 +1121,36 @@ class SensingQueryEngine:
         top = similarities[:n]
 
         lines = [header]
+        n_receptive = 0
         for rank, (sim, past_date, ema) in enumerate(top, 1):
-            mood_parts = []
-            if ema.get("pa") is not None:
-                mood_parts.append(f"PA={ema['pa']:.0f}")
-            if ema.get("na") is not None:
-                mood_parts.append(f"NA={ema['na']:.0f}")
-            mood_str = ", ".join(mood_parts) if mood_parts else "no scores"
+            er = ema.get("er")
+            avail = ema.get("avail", "")
+            er_high = (er is not None) and (er >= 5)
+            is_avail = avail in ("yes", "1", "true")
+            receptive = er_high and is_avail
+            if receptive:
+                n_receptive += 1
+
+            er_str = f"ER_desire={er:.0f}" if er is not None else "ER_desire=?"
+            avail_str = f"available={avail}" if avail else "available=?"
+            rec_str = "receptive=YES" if receptive else "receptive=no"
             diary = ema.get("diary", "")
             diary_str = f' | "{diary[:80]}"' if diary else ""
             lines.append(
                 f"{rank}. {past_date} (similarity: {sim:.2f})\n"
-                f"   That day's mood: {mood_str}{diary_str}"
+                f"   Receptivity: {er_str}, {avail_str} → {rec_str}{diary_str}"
             )
 
-        # Pattern note
-        low_pa = sum(1 for _, _, e in top if e.get("pa") is not None and e["pa"] < 12)
-        if low_pa >= n // 2 + 1:
+        # Pattern note on receptivity rate in similar days
+        if n_receptive >= len(top) // 2 + 1:
             lines.append(
-                "Common pattern: Days with this behavioral profile tend to correlate "
-                "with lower positive affect for this person"
+                f"Common pattern: Days with this behavioral profile tend to be "
+                f"receptive ({n_receptive}/{len(top)} similar days were receptive)"
             )
-        high_na = sum(1 for _, _, e in top if e.get("na") is not None and e["na"] > 8)
-        if high_na >= n // 2 + 1:
+        elif n_receptive == 0 and len(top) >= 2:
             lines.append(
-                "Common pattern: Days with this behavioral profile tend to correlate "
-                "with elevated negative affect for this person"
+                f"Common pattern: Days with this behavioral profile tend to be "
+                f"non-receptive (0/{len(top)} similar days were receptive)"
             )
 
         return "\n".join(lines)

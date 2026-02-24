@@ -1,12 +1,12 @@
-"""V5: Autonomous Sensing Agent.
+"""V4: Autonomous Sensing Agent.
 
-Unlike V1-V4 (which receive pre-formatted sensing summaries), V5 has tool access
+Unlike V1-V4 (which receive pre-formatted sensing summaries), V4 has tool access
 to the raw processed sensing data. It autonomously decides what to investigate
 and builds its reasoning from first principles — like a detective with access
 to behavioral telemetry.
 
 Key insight: The "missing puzzle piece" is the current emotional state.
-All past data is visible. V5 finds the patterns that predict it.
+All past data is visible. V4 finds the patterns that predict it.
 
 Uses the Anthropic Python SDK directly (not claude CLI) for proper tool use support.
 """
@@ -94,11 +94,11 @@ PREDICTION_REQUEST = """Based on your investigation, provide your final predicti
 # ---------------------------------------------------------------------------
 
 class AgenticSensingAgent:
-    """V5 autonomous sensing agent.
+    """V4 autonomous sensing agent.
 
     Uses the Anthropic SDK tool-use loop to iteratively query sensing data
     and build evidence before making a final emotional state prediction.
-    Unlike V1-V4, V5 actively chooses what to investigate rather than
+    Unlike V1-V4, V4 actively chooses what to investigate rather than
     receiving pre-formatted summaries.
     """
 
@@ -130,11 +130,16 @@ class AgenticSensingAgent:
         self.max_tool_calls = max_tool_calls
         self.pid = str(study_id).zfill(3)
 
-    def predict(self, ema_row: pd.Series, diary_text: str | None) -> dict[str, Any]:
+    def predict(
+        self,
+        ema_row: pd.Series,
+        diary_text: str | None,
+        session_memory: str | None = None,
+    ) -> dict[str, Any]:
         """Run autonomous investigation and produce an emotional state prediction.
 
         Drives the agentic tool-use loop:
-          1. Send initial context to the model
+          1. Send initial context (+ accumulated session memory) to the model
           2. Process tool calls until end_turn or max_tool_calls reached
           3. If no prediction extracted yet, explicitly request one
           4. Parse and return the prediction dict
@@ -142,6 +147,8 @@ class AgenticSensingAgent:
         Args:
             ema_row: A single row from the EMA DataFrame (current entry to predict).
             diary_text: Free-text diary entry for this EMA slot, or None.
+            session_memory: Accumulated per-user memory from prior EMA entries (receptivity
+                + optional PA/NA in oracle mode). Never contains current EMA labels.
 
         Returns:
             Dict with all prediction targets plus _reasoning, _n_tool_calls, _version.
@@ -150,7 +157,9 @@ class AgenticSensingAgent:
         ema_date = str(ema_row.get("date_local", ""))
         ema_slot = self._get_ema_slot(ema_row)
 
-        initial_context = self._build_initial_context(ema_timestamp, ema_date, ema_slot, diary_text)
+        initial_context = self._build_initial_context(
+            ema_timestamp, ema_date, ema_slot, diary_text, session_memory
+        )
         messages: list[dict] = [{"role": "user", "content": initial_context}]
 
         tool_call_count = 0
@@ -159,7 +168,7 @@ class AgenticSensingAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
-        logger.info(f"[V5] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
+        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
 
         # ------------------------------------------------------------------
         # Agentic tool-use loop
@@ -174,7 +183,7 @@ class AgenticSensingAgent:
                     messages=messages,
                 )
             except Exception as exc:
-                logger.error(f"[V5] Anthropic API error: {exc}")
+                logger.error(f"[V4] Anthropic API error: {exc}")
                 break
 
             final_response = response
@@ -183,7 +192,7 @@ class AgenticSensingAgent:
                 total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
-                logger.debug(f"[V5] Agent ended turn after {tool_call_count} tool calls")
+                logger.debug(f"[V4] Agent ended turn after {tool_call_count} tool calls")
                 break
 
             if response.stop_reason == "tool_use":
@@ -195,7 +204,7 @@ class AgenticSensingAgent:
                         tool_name = block.name
                         tool_input = block.input if isinstance(block.input, dict) else {}
 
-                        logger.debug(f"[V5] Tool call: {tool_name}({tool_input})")
+                        logger.debug(f"[V4] Tool call: {tool_name}({tool_input})")
 
                         result_text = self._execute_tool(
                             tool_name, tool_input, ema_timestamp, ema_date
@@ -215,7 +224,7 @@ class AgenticSensingAgent:
                         tool_call_count += 1
 
                         if tool_call_count >= self.max_tool_calls:
-                            logger.info(f"[V5] Max tool calls ({self.max_tool_calls}) reached")
+                            logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
                             break
 
                 # Extend conversation: assistant turn + tool results
@@ -224,7 +233,7 @@ class AgenticSensingAgent:
 
             else:
                 # Unexpected stop reason (max_tokens, etc.)
-                logger.warning(f"[V5] Unexpected stop_reason: {response.stop_reason}")
+                logger.warning(f"[V4] Unexpected stop_reason: {response.stop_reason}")
                 break
 
         # ------------------------------------------------------------------
@@ -234,7 +243,7 @@ class AgenticSensingAgent:
 
         # If the agent didn't produce a prediction yet, explicitly request one
         if not self._has_prediction(last_text):
-            logger.debug("[V5] No prediction in final response — requesting explicit prediction")
+            logger.debug("[V4] No prediction in final response — requesting explicit prediction")
             messages.append({
                 "role": "assistant",
                 "content": final_response.content if final_response else [],
@@ -253,7 +262,7 @@ class AgenticSensingAgent:
                     total_output_tokens += pred_response.usage.output_tokens or 0
                 last_text = self._extract_text(pred_response)
             except Exception as exc:
-                logger.error(f"[V5] Error requesting prediction: {exc}")
+                logger.error(f"[V4] Error requesting prediction: {exc}")
 
         # ------------------------------------------------------------------
         # Parse prediction
@@ -261,7 +270,7 @@ class AgenticSensingAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
-        prediction["_version"] = "v5"
+        prediction["_version"] = "v4"
         prediction["_model"] = self.model
         prediction["_final_response"] = last_text
         prediction["_input_tokens"] = total_input_tokens
@@ -269,7 +278,7 @@ class AgenticSensingAgent:
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
-            f"[V5] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"[V4] User {self.study_id} done: {tool_call_count} tool calls, "
             f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )
@@ -285,6 +294,7 @@ class AgenticSensingAgent:
         ema_date: str,
         ema_slot: str,
         diary_text: str | None,
+        session_memory: str | None = None,
     ) -> str:
         """Build the initial investigation context message for the agent."""
         diary_section = (
@@ -295,8 +305,15 @@ class AgenticSensingAgent:
 
         memory_excerpt = ""
         if self.memory_doc:
-            memory_excerpt = f"""## Personal History (longitudinal memory)
+            memory_excerpt = f"""## Baseline Personal History (pre-study memory)
 {self.memory_doc[:1200]}
+"""
+
+        session_section = ""
+        if session_memory and session_memory.strip():
+            trimmed = session_memory[-2000:] if len(session_memory) > 2000 else session_memory
+            session_section = f"""## Accumulated Session Memory (your prior observations of this person)
+{trimmed}
 """
 
         # Check which Parquet modality files exist for this participant
@@ -316,12 +333,13 @@ Date: {ema_date}
 ## User Profile
 {self.profile.to_text()}
 
-{memory_excerpt}## Available Sensing Modalities
+{memory_excerpt}{session_section}## Available Sensing Modalities
 {modalities_str}
 
 ## Your Task
 Investigate the sensing data to understand this person's behavioral state leading up to this EMA.
-Use the available tools to build your evidence. Then predict their emotional state.
+Use the available tools to build your evidence. Use the session memory above to calibrate against
+this person's known receptivity and behavioral patterns. Then predict their emotional state.
 
 Start by calling get_daily_summary for {ema_date} to orient yourself."""
 
@@ -390,7 +408,7 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         result = _parse(text)
 
         if result.get("_parse_error"):
-            logger.warning(f"[V5] Failed to parse prediction from response: {text[:300]}")
+            logger.warning(f"[V4] Failed to parse prediction from response: {text[:300]}")
             # Return a neutral fallback so we don't crash the pipeline
             result = self._fallback_prediction()
             result["_parse_error"] = True
@@ -406,7 +424,7 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
             "PANAS_Neg": 8.0,
             "ER_desire": 3.0,
             "INT_availability": "yes",
-            "reasoning": "[V5 fallback: prediction parsing failed]",
+            "reasoning": "[V4 fallback: prediction parsing failed]",
             "confidence": 0.1,
         }
         for target in BINARY_STATE_TARGETS:
