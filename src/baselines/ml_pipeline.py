@@ -94,7 +94,9 @@ class MLBaseline:
         elif name == "ridge":
             if task != "regression":
                 raise ValueError("Ridge only for regression")
-            return Ridge(alpha=1.0)
+            # RidgeCV selects alpha internally; avoids divergence with many features
+            from sklearn.linear_model import RidgeCV
+            return RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])
         else:
             raise ValueError(f"Unknown model: {name}")
 
