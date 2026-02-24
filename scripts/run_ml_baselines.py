@@ -52,6 +52,14 @@ def main():
         "--verbose", action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--fold", type=int, default=None,
+        help="Run only this fold (1-5). If not set, runs all 5 folds sequentially."
+    )
+    parser.add_argument(
+        "--n-jobs", type=int, default=-1,
+        help="n_jobs for GridSearchCV and RF. Set to 8 when running 5 folds in parallel."
+    )
     args = parser.parse_args()
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
@@ -67,6 +75,9 @@ def main():
     # Setup paths
     data_dir = Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data"
     output_dir = Path(args.output) if args.output else PROJECT_ROOT / "outputs" / "ml_baselines"
+    # When running a single fold, isolate output to avoid concurrent write conflicts
+    if args.fold is not None:
+        output_dir = output_dir / f"fold_{args.fold}"
 
     # Load data
     loader = DataLoader(data_dir=data_dir)
@@ -94,14 +105,18 @@ def main():
         output_dir=output_dir,
         model_names=model_names,
         processed_hourly_dir=processed_hourly_dir if args.features == "parquet" else None,
+        n_jobs=args.n_jobs,
     )
 
     logging.info("Starting ML baseline pipeline...")
     logging.info(f"  Models: {model_names}")
     logging.info(f"  Features: {args.features}")
     logging.info(f"  Output: {output_dir}")
+    if args.fold is not None:
+        logging.info(f"  Fold: {args.fold} (single-fold mode)")
 
-    results = pipeline.run_all_folds()
+    folds = [args.fold] if args.fold is not None else None
+    results = pipeline.run_all_folds(folds=folds)
 
     # Print summary
     print(f"\n{'='*60}")

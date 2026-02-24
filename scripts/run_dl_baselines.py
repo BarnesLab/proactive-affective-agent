@@ -64,6 +64,10 @@ def main() -> None:
         "--verbose", action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--fold", type=int, default=None,
+        help="Run only this fold (1-5). If not set, runs all 5 folds. Use for parallel fold execution."
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -78,6 +82,8 @@ def main() -> None:
     base_output = Path(args.output) if args.output else PROJECT_ROOT / "outputs" / "advanced_baselines"
 
     pipelines_to_run = [p.strip().lower() for p in args.pipelines.split(",")]
+    folds = [args.fold] if args.fold is not None else None
+    fold_suffix = f"/fold_{args.fold}" if args.fold is not None else ""
 
     all_summaries: dict[str, dict] = {}
 
@@ -88,9 +94,9 @@ def main() -> None:
             from src.baselines.text_baselines import TextBaselinePipeline
             pipeline = TextBaselinePipeline(
                 splits_dir=splits_dir,
-                output_dir=base_output / "text",
+                output_dir=base_output / f"text{fold_suffix}",
             )
-            results = pipeline.run_all_folds()
+            results = pipeline.run_all_folds(folds=folds)
             all_summaries["Text (TF-IDF / BoW)"] = results
             _print_summary("Text Baseline (TF-IDF / BoW)", results)
         except Exception as e:
@@ -103,10 +109,10 @@ def main() -> None:
             from src.baselines.deep_learning_baselines import DLBaselinePipeline
             pipeline = DLBaselinePipeline(
                 splits_dir=splits_dir,
-                output_dir=base_output / "dl",
+                output_dir=base_output / f"dl{fold_suffix}",
                 processed_hourly_dir=hourly_dir,
             )
-            results = pipeline.run_all_folds()
+            results = pipeline.run_all_folds(folds=folds)
             all_summaries["Deep Learning (MLP)"] = results
             _print_summary("Deep Learning Baseline (MLP)", results)
         except ImportError as e:
@@ -121,9 +127,9 @@ def main() -> None:
             from src.baselines.transformer_baselines import TransformerBaselinePipeline
             pipeline = TransformerBaselinePipeline(
                 splits_dir=splits_dir,
-                output_dir=base_output / "transformer",
+                output_dir=base_output / f"transformer{fold_suffix}",
             )
-            results = pipeline.run_all_folds()
+            results = pipeline.run_all_folds(folds=folds)
             all_summaries["Transformer (MiniLM)"] = results
             _print_summary("Transformer Baseline (MiniLM + Ridge/LR)", results)
         except ImportError as e:
@@ -138,10 +144,10 @@ def main() -> None:
             from src.baselines.combined_baselines import CombinedBaselinePipeline
             pipeline = CombinedBaselinePipeline(
                 splits_dir=splits_dir,
-                output_dir=base_output / "combined",
+                output_dir=base_output / f"combined{fold_suffix}",
                 processed_hourly_dir=hourly_dir,
             )
-            results = pipeline.run_all_folds()
+            results = pipeline.run_all_folds(folds=folds)
             all_summaries["Combined (sensor + text)"] = results
             _print_summary("Combined Baseline (Parquet + Transformer, late fusion)", results)
         except ImportError as e:
