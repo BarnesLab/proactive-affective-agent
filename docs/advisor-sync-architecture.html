@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proactive Affective Agent — Architecture & Novelty</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 860px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.7; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-top: 40px; }
+  h2 { font-size: 1.2em; margin-top: 36px; color: #111; }
+  h3 { font-size: 1.05em; margin-top: 24px; color: #333; }
+  p { margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.92em; }
+  th { background: #f4f4f4; font-weight: 600; }
+  th, td { border: 1px solid #ccc; padding: 7px 12px; text-align: left; }
+  tr:nth-child(even) td { background: #fafafa; }
+  code { font-family: "Courier New", monospace; background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #f6f6f6; border-left: 3px solid #999; padding: 14px 18px; overflow-x: auto; font-size: 0.86em; line-height: 1.5; }
+  .box { background: #fafafa; border: 1px solid #ddd; padding: 14px 18px; border-radius: 4px; margin: 16px 0; }
+  .highlight { background: #fffbe6; border-left: 3px solid #f0a500; padding: 10px 16px; margin: 16px 0; }
+  .meta { color: #666; font-size: 0.88em; margin-bottom: 32px; }
+  ul { margin: 8px 0; padding-left: 24px; }
+  li { margin: 5px 0; }
+  .badge { display: inline-block; background: #e0e8ff; color: #234; padding: 1px 8px; border-radius: 10px; font-size: 0.82em; font-weight: 600; margin-left: 6px; }
+  .new { background: #e0ffe8; color: #143; }
+</style>
+</head>
+<body>
+
+<h1>Proactive Affective Agent</h1>
+<p class="meta">Architecture & Novelty — Advisor Sync Document &nbsp;·&nbsp; Zhiyuan Wang &nbsp;·&nbsp; February 2026</p>
+
+<div class="highlight">
+<strong>One-sentence pitch:</strong> We replace reactive diary-based LLM predictions (CALLM) with an <em>autonomous agentic loop</em> that investigates multi-modal passive sensing data to infer emotional states in cancer survivors — without requiring the user to write anything.
+</div>
+
+<h1>1. Background & Gap</h1>
+
+<h2>What CALLM Does (Our Baseline)</h2>
+<p>CALLM (CHI 2025) gives the LLM a participant's diary entry and retrieves similar past diary entries (TF-IDF RAG). The LLM reads the diary and predicts PANAS positive/negative affect, emotion regulation desire, and binary affect states. It achieves ~72–74% balanced accuracy on affect classification.</p>
+
+<table>
+<tr><th>What works</th><th>What's missing</th></tr>
+<tr><td>Diary text is expressive, self-reported</td><td>Requires participant to write each time (3×/day)</td></tr>
+<tr><td>TF-IDF RAG gives personal context</td><td>Passive signals ignored entirely</td></tr>
+<tr><td>Strong accuracy on 5-pilot users</td><td>Breaks when participant doesn't write</td></tr>
+</table>
+
+<h2>The Gap</h2>
+<p>In real JITAI deployment, participants frequently skip diary entries — especially during high-stress moments when intervention is most needed. Passive sensing data (phone always on) fills this gap. But naively feeding raw sensor columns to an LLM doesn't work: the data is noisy, multi-modal, and heterogeneous across iOS/Android.</p>
+
+<h1>2. System Architecture</h1>
+
+<h2>Six Agent Versions</h2>
+
+<table>
+<tr>
+  <th>Version</th><th>Diary</th><th>Sensing</th><th>RAG</th><th>Style</th>
+</tr>
+<tr>
+  <td>CALLM</td><td>✓</td><td>—</td><td>TF-IDF diary</td><td>Reactive (user-initiated)</td>
+</tr>
+<tr>
+  <td>V1</td><td>—</td><td>✓</td><td>Memory doc</td><td>Structured 5-step</td>
+</tr>
+<tr>
+  <td>V2</td><td>—</td><td>✓</td><td>Memory doc</td><td>Autonomous (LLM decides)</td>
+</tr>
+<tr>
+  <td>V3</td><td>✓</td><td>✓</td><td>Diary + sensing</td><td>Structured + multimodal RAG</td>
+</tr>
+<tr>
+  <td>V4</td><td>✓</td><td>✓</td><td>Diary + sensing</td><td>Autonomous + multimodal RAG</td>
+</tr>
+<tr>
+  <td><strong>V5</strong></td><td>✓</td><td>✓</td><td><strong>Tool-use queries</strong></td><td><strong>Agentic loop</strong> <span class="badge new">NEW</span></td>
+</tr>
+</table>
+
+<h2>V5: The Agentic Sensing Loop (Primary Contribution)</h2>
+
+<p>V5 uses the Anthropic SDK's native tool-use API. The LLM is not given a pre-formatted feature summary — instead, it calls tools to <em>query</em> the data like a detective, deciding what to look at based on emerging evidence.</p>
+
+<div class="box">
+<strong>Conversation structure (simplified):</strong>
+<pre>
+SYSTEM: You are an expert behavioral data scientist. You have access to
+        passive sensing tools. Your goal: predict this person's emotional
+        state at [timestamp].
+
+ASSISTANT: → calls query_sensing(modality="gps", hours_before_ema=6)
+TOOL:      GPS data: 12 captures, 2.1 km travel, home_at_min=45, entropy=0.3
+
+ASSISTANT: → calls compare_to_baseline(metric="gps_travel_km", lookback_days=14)
+TOOL:      Baseline: mean=6.8 km/day, today=2.1 km (31st percentile, low)
+
+ASSISTANT: → calls query_sensing(modality="screen", hours_before_ema=4)
+TOOL:      screen_on_min=87, screen_n_sessions=12, structural_missing_app=False
+
+ASSISTANT: → calls find_similar_days(top_k=3)
+TOOL:      3 similar past days: 2024-01-12, 2024-02-03, 2024-01-28
+           All 3 had PANAS_Neg > threshold (negative affect days)
+
+ASSISTANT: Reasoning chain → structured prediction output
+</pre>
+</div>
+
+<h2>Tool Inventory</h2>
+
+<table>
+<tr><th>Tool</th><th>What it returns</th><th>Why it matters</th></tr>
+<tr>
+  <td><code>query_sensing</code></td>
+  <td>Hourly sensor data for chosen modality + window</td>
+  <td>Agent chooses which signals to look at</td>
+</tr>
+<tr>
+  <td><code>get_daily_summary</code></td>
+  <td>All modalities aggregated to day level</td>
+  <td>Quick overview before drilling in</td>
+</tr>
+<tr>
+  <td><code>compare_to_baseline</code></td>
+  <td>z-score + percentile vs personal history</td>
+  <td>Detects anomaly relative to this person</td>
+</tr>
+<tr>
+  <td><code>get_ema_history</code></td>
+  <td>Past N EMA responses (labels + context)</td>
+  <td>Temporal emotional trajectory</td>
+</tr>
+<tr>
+  <td><code>find_similar_days</code></td>
+  <td>Behaviorally similar past days + their labels</td>
+  <td>Nearest-neighbor inference on lived experience</td>
+</tr>
+</table>
+
+<h1>3. Data Pipeline (BUCS Study)</h1>
+
+<h2>Scale</h2>
+<ul>
+  <li><strong>418 participants</strong> (297 iOS, 121 Android), ~5-week cancer survivorship study</li>
+  <li><strong>~114 GB raw data</strong> across 8 sensing modalities</li>
+  <li><strong>~15,000+ EMA entries</strong> at 3×/day granularity</li>
+  <li>Processed to <strong>~2 GB Parquet</strong> at hourly resolution (24 bins per EMA)</li>
+</ul>
+
+<h2>The Missing Data Problem</h2>
+<p>One contribution is a principled 4-class taxonomy replacing the destructive <code>fillna(0)</code> approach:</p>
+
+<table>
+<tr><th>Class</th><th>Meaning</th><th>Handling</th></tr>
+<tr><td>OBSERVED</td><td>Data present and valid</td><td>Use directly</td></tr>
+<tr><td>STRUCTURAL_MISSING</td><td>Platform doesn't support this sensor<br>(e.g., iOS has no app-level data)</td><td>Inform agent; never impute with zero</td></tr>
+<tr><td>DEVICE_MISSING</td><td>Phone off / not carried (coverage &lt; 5%)</td><td>Flag; exclude from personal baseline</td></tr>
+<tr><td>PARTICIPANT_MISSING</td><td>Phone on, sensor active, no activity recorded</td><td>Impute as zero (genuinely inactive)</td></tr>
+</table>
+
+<h2>Hourly Resolution Design</h2>
+<p>Each EMA entry has a fixed timestamp. We create 24 hourly bins (aligned to local clock time) covering the preceding 24 hours. This gives the agent a sliding window of recent behavior to query. iOS and Android data are harmonized into identical column schemas before storage.</p>
+
+<h2>Personal Baseline Construction</h2>
+<p>The <code>compare_to_baseline</code> tool computes a rolling 14-day personal mean/SD for any metric. This enables person-centered anomaly detection — "you moved unusually little today" is more meaningful than "you moved 1.2 km (below average for the study cohort)."</p>
+
+<h1>4. Novelty Summary</h1>
+
+<div class="highlight">
+<strong>What's novel relative to CALLM and prior sensing+LLM work:</strong>
+<ol>
+  <li><strong>Agentic sensing investigation</strong>: Tool-use loop where LLM decides <em>what to investigate</em>, not just what to predict. No prior JITAI work uses LLM tool-use over passive sensor data.</li>
+  <li><strong>Person-centered baselines</strong>: Anomaly detection relative to individual history, not population norms. Cancer survivors are highly heterogeneous.</li>
+  <li><strong>Principled missing data taxonomy</strong>: 4-class scheme that distinguishes structural missingness (platform) from behavioral missingness (device off vs. inactive) — important for realistic sensing pipelines.</li>
+  <li><strong>Multi-modal RAG over behavioral episodes</strong>: <code>find_similar_days</code> retrieves analogous behavioral days (not just textual diary similarity) and uses their outcomes as soft labels for inference.</li>
+  <li><strong>No diary required</strong>: Enables proactive intervention even when participants are non-compliant with diary entries — closes the most critical CALLM gap for real deployment.</li>
+</ol>
+</div>
+
+<h1>5. Example: Agent Reasoning Trace</h1>
+
+<div class="box">
+<p><strong>Scenario:</strong> Participant 071, 2024-01-15, 2:00 PM EMA (afternoon slot).</p>
+<p><strong>Background:</strong> 62-year-old female, breast cancer stage II, 4 years post-treatment. PHQ-8 = 8 (mild depression), extraversion = 3.2/7.</p>
+
+<pre>
+Agent investigates:
+  query_sensing(gps, 8h before)
+  → stayed home all morning, 0 km travel, entropy=0 (unusually low)
+
+  compare_to_baseline(gps_at_home_min, 14 days)
+  → she's usually home 40% of time; today 100%. 95th percentile (very high).
+
+  query_sensing(screen, 4h before)
+  → 3.2 hours screen time, 28 sessions — high for a weekday morning
+
+  compare_to_baseline(screen_on_min, 14 days)
+  → 80th percentile. Slightly elevated.
+
+  get_ema_history(7 days)
+  → last 3 days: NA slightly elevated, requested no intervention twice
+
+  find_similar_days(top_k=3)
+  → Match 2024-01-08 (stayed home, high screen): PANAS_Neg=5.1, ER_desire=6
+  → Match 2023-12-22 (holiday, stayed home): PANAS_Neg=3.2, ER_desire=2
+  → Match 2024-01-02 (stayed home, low GPS): PANAS_Neg=4.8, ER_desire=5
+
+Agent reasoning:
+  "Participant stayed home all morning with elevated screen time. This
+   pattern matches past days with moderate-to-high negative affect.
+   No extreme values, but the combination of complete home confinement +
+   sustained screen engagement on a workday warrants monitoring.
+   Predicting: PANAS_Neg=4.5 (moderate), ER_desire=5 (elevated),
+   Individual_level_NA_State=True, availability=yes."
+</pre>
+</div>
+
+<h1>6. Next Steps</h1>
+
+<table>
+<tr><th>Task</th><th>Status</th></tr>
+<tr><td>Phase 0: Participant roster + home locations</td><td>✅ Done (418 participants)</td></tr>
+<tr><td>Phase 1 light: motion, screen, keyboard, music, light</td><td>✅ Done (running now)</td></tr>
+<tr><td>Phase 1 heavy: accelerometer, GPS</td><td>⏳ Pending (overnight run)</td></tr>
+<tr><td>V5 agent dry-run evaluation</td><td>⏳ Pending (data needed)</td></tr>
+<tr><td>V3/V4/V5 full evaluation on BUCS</td><td>⏳ Pending</td></tr>
+<tr><td>ML baselines on BUCS features</td><td>⏳ Pending</td></tr>
+<tr><td>Paper writing (intro, method, experiment)</td><td>🔄 In progress on Overleaf</td></tr>
+</table>
+
+<hr>
+<p class="meta">
+  GitHub: <code>https://github.com/BarnesLab/proactive-affective-agent</code> &nbsp;·&nbsp;
+  Google Doc: <a href="https://docs.google.com/document/d/1BJ8P81Zcy3fKQYyQXNr9wU_es1tjkUGCdEblBvemskQ/edit?usp=sharing">Design Notes</a> &nbsp;·&nbsp;
+  Overleaf: <a href="https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8">Paper Draft</a>
+</p>
+
+</body>
+</html>

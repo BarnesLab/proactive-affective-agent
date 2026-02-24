@@ -31,7 +31,9 @@ OUTPUT_PATH = PROCESSED_DIR / "home_locations.parquet"
 # Constants
 # ---------------------------------------------------------------------------
 # DBSCAN parameters
-DBSCAN_EPS = 0.00135      # ~150 m in degrees latitude/longitude
+# sklearn DBSCAN with metric="haversine" expects coordinates in RADIANS and eps in RADIANS.
+# 150 m / 6371000 m = 0.00002356 radians.  (NOT 0.00135 which is degrees, not radians!)
+DBSCAN_EPS = 150.0 / 6_371_000.0   # 150 m converted to radians ≈ 2.356e-5
 DBSCAN_MIN_SAMPLES = 4
 
 # Nighttime window (local time hours, inclusive of start, exclusive of end)
