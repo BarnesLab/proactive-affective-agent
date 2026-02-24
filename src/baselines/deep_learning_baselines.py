@@ -23,7 +23,11 @@ from sklearn.preprocessing import StandardScaler
 logger = logging.getLogger(__name__)
 
 try:
+    import os as _os
+    _os.environ.setdefault("OMP_NUM_THREADS", "1")
+    _os.environ.setdefault("MKL_NUM_THREADS", "1")
     import torch
+    torch.set_num_threads(1)  # prevent SIGSEGV in OpenMP/KMP on macOS Apple Silicon
     import torch.nn as nn
     from torch.utils.data import DataLoader as TorchDataLoader, TensorDataset
     HAS_TORCH = True

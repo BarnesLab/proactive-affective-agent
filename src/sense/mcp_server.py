@@ -51,9 +51,18 @@ _data_dir: Path = Path(_args.data_dir) if _args.data_dir else PROJECT_ROOT / "da
 # Lazy-init SensingQueryEngine (imports pandas/numpy — avoid at module level)
 # ---------------------------------------------------------------------------
 
+import pandas as pd  # noqa: E402
 from src.sense.query_tools import SensingQueryEngine  # noqa: E402
+from src.data.loader import DataLoader  # noqa: E402
 
-_engine = SensingQueryEngine(processed_dir=_data_dir)
+# Load EMA data needed by SensingQueryEngine for baseline/history queries
+_loader = DataLoader()
+try:
+    _ema_df = _loader.load_all_ema()
+except Exception:
+    _ema_df = pd.DataFrame()
+
+_engine = SensingQueryEngine(processed_dir=_data_dir, ema_df=_ema_df)
 
 # ---------------------------------------------------------------------------
 # Build MCP server

@@ -20,6 +20,9 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
 )
+from sklearn.feature_selection import SelectKBest, VarianceThreshold, f_classif, f_regression
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -33,7 +36,15 @@ except ImportError:
 
 
 class MLBaseline:
-    """A single ML model for one target variable."""
+    """A single ML model for one target variable.
+
+    Feature selection (SelectKBest) is included in the pipeline with K tuned
+    via 3-fold inner CV on the training fold. The k_candidates grid is chosen
+    to cover the feature space at several densities (small, medium, all).
+    """
+
+    # K candidates expressed as fractions of n_features (evaluated at fit time)
+    K_FRACTIONS = [0.25, 0.5, 0.75, 1.0]
 
     def __init__(self, model_name: str, task: str = "regression") -> None:
         """
@@ -43,8 +54,10 @@ class MLBaseline:
         """
         self.model_name = model_name
         self.task = task
-        self.model = self._create_model(model_name, task)
-        self.scaler = StandardScaler()
+        self._estimator = self._create_model(model_name, task)
+        # pipeline and grid search are built in fit() once n_features is known
+        self._pipeline: Pipeline | None = None
+        self._best_k: int | None = None
 
     def _create_model(self, name: str, task: str):
         if name == "rf":
@@ -84,12 +97,41 @@ class MLBaseline:
             raise ValueError(f"Unknown model: {name}")
 
     def fit(self, X_train: np.ndarray, y_train: np.ndarray) -> None:
-        X_scaled = self.scaler.fit_transform(X_train)
-        self.model.fit(X_scaled, y_train)
+        n_features = X_train.shape[1]
+        score_fn = f_classif if self.task == "classification" else f_regression
+
+        # Build candidate K values from fractions, deduplicated and capped
+        k_vals = sorted({max(1, int(n_features * f)) for f in self.K_FRACTIONS})
+        k_vals = [k for k in k_vals if k < n_features] + [n_features]
+        k_vals = sorted(set(k_vals))
+
+        pipe = Pipeline([
+            ("var_thresh", VarianceThreshold()),      # remove zero-variance features
+            ("scaler", StandardScaler()),
+            ("select", SelectKBest(score_fn)),
+            ("model", self._estimator),
+        ])
+
+        scoring = "balanced_accuracy" if self.task == "classification" else "neg_mean_absolute_error"
+        grid = GridSearchCV(
+            pipe,
+            param_grid={"select__k": k_vals},
+            cv=3,
+            scoring=scoring,
+            n_jobs=-1,
+            refit=True,
+        )
+        grid.fit(X_train, y_train)
+        self._pipeline = grid.best_estimator_
+        self._best_k = grid.best_params_.get("select__k")
+        logger.debug(
+            "  %s/%s: best_k=%d (from %s)", self.model_name, self.task, self._best_k, k_vals
+        )
 
     def predict(self, X_test: np.ndarray) -> np.ndarray:
-        X_scaled = self.scaler.transform(X_test)
-        return self.model.predict(X_scaled)
+        if self._pipeline is None:
+            raise RuntimeError("Call fit() before predict()")
+        return self._pipeline.predict(X_test)
 
 
 class MLBaselinePipeline:

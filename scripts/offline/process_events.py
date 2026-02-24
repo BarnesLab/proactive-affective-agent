@@ -280,7 +280,7 @@ def process_keyboard_events(dry_run: bool = False) -> None:
             continue
 
         df = pd.concat(chunks, ignore_index=True)
-        df = df.dropna(subset=["epoch_session_start", "strinput_text"])
+        df = df.dropna(subset=["epoch_session_start", "strinput_text", "timezone"])
         df["timestamp_local_start"] = to_local_time(df["epoch_session_start"], df["timezone"])
         df["timestamp_local_end"] = to_local_time(df["epoch_session_end"], df["timezone"])
         df["words_typed"] = df["strinput_text"].astype(str).str.split().str.len().fillna(0).astype(int)

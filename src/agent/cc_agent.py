@@ -104,7 +104,7 @@ class ClaudeCodeAgent:
         memory_doc: str | None,
         processed_dir: Path,
         model: str = "claude-sonnet-4-6",
-        max_turns: int = 12,
+        max_turns: int = 16,
         python_bin: str = "/opt/homebrew/bin/python3.13",
     ) -> None:
         """Initialize the Claude Code agentic agent.
@@ -207,11 +207,14 @@ class ClaudeCodeAgent:
                 "--mcp-config", mcp_config_path,
                 "--append-system-prompt", SYSTEM_PROMPT,
                 "--no-session-persistence",
-                "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
                 prompt,
+                "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
             ]
 
-            env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
+            # Strip nested-session guards so claude --print can be launched as subprocess
+            _blocked = {"CLAUDECODE", "CLAUDE_CODE", "CLAUDE_CODE_SESSION_ID"}
+            env = {k: v for k, v in os.environ.items() if k not in _blocked}
+            env["PYTHONPATH"] = str(PROJECT_ROOT)
 
             result = subprocess.run(
                 cmd,
