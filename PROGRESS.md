@@ -1,7 +1,7 @@
 # Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-**Last updated:** 2026-02-24 (session 2)
-**Status:** Active development — all baselines running in parallel on Titan, results pending
+**Last updated:** 2026-02-24 (session 3)
+**Status:** Active development — V3 pilot running locally, ML baselines running on Titan
 
 ---
 
@@ -137,13 +137,29 @@ BA = 0.500 for all = **features were all zeros** (sensing data path bug). Must *
 - Same sensing data bug as ML: results would be invalid even if it completed
 - Must **rerun on Titan server** with GPU
 
-### ✅ Code: V4 Agentic Agent
-- CC backend: `src/agent/cc_agent.py` — invokes `claude --print` subprocess with MCP server
-- API backend: `src/agent/agentic_sensing.py` — Anthropic SDK direct tool-use loop
-- MCP server: `src/sense/mcp_server.py` — serves sensing tools with EMA timestamp cutoff
-- Session memory: per-user longitudinal accumulation of receptivity signals only
-- **Status: Only dry-run tested** (pilot results show `[DRY RUN] Placeholder` predictions)
-- Sensing tools now confirmed working after `hour_local` bug fix
+### ✅ Code: CALLM, V1-V4 Agent Workflows
+All 5 versions implemented and fully tested (171/171 tests pass).
+
+| Version | Method | Status |
+|---------|--------|--------|
+| CALLM | Diary + TF-IDF RAG, structured | Pilot complete (427 entries) |
+| V1 | Sensing only, structured 5-step | Pilot complete (427 entries) |
+| V2 | Sensing only, autonomous | Pilot complete (427 entries) |
+| V3 | Diary + sensing + multimodal RAG, structured | **Running** (launched 2026-02-24) |
+| V4 | Diary + sensing + multimodal RAG, autonomous | Pending (after V3) |
+
+**Known architectural facts:**
+- V1 was missing OUTPUT_FORMAT schema in prompt (fixed 2026-02-24) — existing results with old bug
+- V1/V2 sensing-only causes mean regression (prediction std~2.5 vs GT std~8.0)
+- CALLM diary→RAG dramatically outperforms sensing-only (BA 0.709 vs ~0.55)
+- V3/V4 (diary+sensing) should bridge this gap
+
+**Run commands:**
+```bash
+# V3/V4 pilot
+PYTHONPATH=. python3 scripts/run_pilot.py --version v3 --users 71,119,164,310,458 --model claude-haiku-4-5-20251001 --delay 1.0
+PYTHONPATH=. python3 scripts/run_pilot.py --version v4 --users 71,119,164,310,458 --model claude-haiku-4-5-20251001 --delay 1.0
+```
 
 ### ✅ Evaluation Framework
 - `src/evaluation/` — metrics computation (MAE, BA, F1)
@@ -271,19 +287,29 @@ export CUDA_VISIBLE_DEVICES=1
 
 ## Results Summary Table (Current State)
 
-| System | Method | Mean MAE↓ | Mean BA↑ | Mean F1↑ | Notes |
-|--------|---------|-----------|----------|----------|-------|
-| AR baseline | Last value (AR1) | 2.758 | 0.658 | 0.617 | Autocorrelation ceiling |
-| AR baseline | Rolling mean (w=3) | 2.552 | 0.658 | 0.617 | Autocorrelation ceiling |
-| Text | TF-IDF on diary | 3.999 | 0.613 | 0.570 | Diary-present rows only |
-| Text | BoW on diary | 4.043 | 0.607 | 0.561 | Diary-present rows only |
-| ML sensing | RF (parquet) | ~~4.373~~ | ~~0.500~~ | ~~0.298~~ | **INVALID** — features were all zeros |
-| ML sensing | XGBoost (parquet) | ~~4.373~~ | ~~0.500~~ | ~~0.360~~ | **INVALID** — features were all zeros |
-| DL sensing | MLP (parquet) | — | — | — | Not run yet |
-| Transformer | MiniLM on diary | — | — | — | Not run yet |
-| Combined | Sensor + text | — | — | — | Not run yet |
-| **V4 agent** | CC backend | — | — | — | **Not real-run yet** |
-| **V4 agent** | API backend | — | — | — | **Not real-run yet** |
+All metrics: MAE = mean absolute error (regression), BA = balanced accuracy (binary classification).
+Agent pilot results are for 5 pilot users (71, 119, 164, 310, 458), 427 entries each.
+Key targets shown: PANAS_Pos (MAE), Individual_level_happy_State (BA).
+
+| System | Method | PANAS_Pos MAE↓ | happy_State BA↑ | Notes |
+|--------|---------|----------------|-----------------|-------|
+| AR baseline | Last value (AR1) | 2.758 | 0.658 | 15,984 entries, all users |
+| AR baseline | Rolling mean (w=3) | 2.552 | 0.658 | Autocorrelation ceiling |
+| Text | TF-IDF on diary | 3.999 | 0.613 | 5-fold CV, diary rows only |
+| Text | BoW on diary | 4.043 | 0.607 | 5-fold CV, diary rows only |
+| Transformer | MiniLM on diary | 3.898 | 0.629 | 5-fold CV, diary rows only |
+| ML sensing | RF / XGBoost | pending | pending | Titan folds 4-5 running |
+| DL sensing | MLP (parquet) | ~1e12 | ~0.506 | DIVERGING — gradient clipping fix deployed |
+| Combined | Sensor + diary text | pending | pending | Titan still running |
+| **CALLM** | Diary + TF-IDF RAG | **1.850** | **0.709** | 5 users, 427 entries ✅ |
+| **V1** | Sensing structured | 8.016 | 0.547 | 5 users, 427 entries ✅ |
+| **V2** | Sensing autonomous | 8.834 | 0.551 | 5 users, 427 entries ✅ |
+| **V3** | Diary+sensing structured | running | running | V3 launched 2026-02-24 |
+| **V4** | Diary+sensing autonomous | pending | pending | After V3 completes |
+
+**Key insight:** CALLM (diary text → RAG) dramatically outperforms sensing-only V1/V2.
+Sensing data alone produces mean-regressing predictions (pred std=2.5 vs GT std=8.0).
+V3/V4 (diary + sensing combined) should close this gap.
 
 ---
 
