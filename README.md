@@ -12,6 +12,25 @@ Each EMA entry becomes an opportunity for an AI agent to autonomously investigat
 
 ---
 
+## Research Hypotheses
+
+**H1 — Sensing augments diary-based prediction.**
+Adding passive sensing data to diary entries improves prediction over diary alone (CALLM). Behavioral signals (mobility, screen time, activity) carry complementary information beyond what participants self-report. *V4-structured/agentic vs. CALLM.*
+
+**H2 — LLM-empowered agents outperform ML baselines on sensing data.**
+Large language models bring contextual, cross-modal reasoning that tabular ML (RF, XGBoost) cannot — especially for interpreting sparse, heterogeneous sensor streams. *V2-structured/agentic vs. RF/XGBoost/LogReg.*
+
+**H3 — Passive sensing alone enables meaningful prediction.**
+A sensing-only agent can predict emotional states and intervention receptivity without requiring any diary entry, making JITAI deployment feasible for participants who consistently skip self-report. *V2-structured/agentic vs. CALLM (sensing-only condition).*
+
+**H4 — Autonomous agentic investigation outperforms structured pipelines.**
+An agent that autonomously queries raw sensor data via tool-use (V2/V4-agentic) outperforms agents that receive pre-formatted feature summaries (V2/V4-structured), across:
+- **(a) Predictive accuracy** — querying informative signals over irrelevant ones reduces noise
+- **(b) Token efficiency** — selective investigation uses fewer tokens than unconditional feature dumps
+- **(c) Interpretability** — explicit belief-update traces expose what evidence drove each prediction
+
+---
+
 ## Architecture: 2×2 Design Space + Baselines
 
 The key research question: does **agentic investigation** (autonomous tool-use queries) outperform **structured pipelines** (fixed pre-formatted summaries)? We test this across two data conditions: sensing-only and multimodal (diary + sensing).
