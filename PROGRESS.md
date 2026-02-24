@@ -1,243 +1,327 @@
-# BUCS Pilot Study — Progress & Next Steps
+# Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-Last updated: 2026-02-24
-
----
-
-## Project Overview
-
-Goal: Predict emotional state (PANAS Pos/Neg, ER desire, 15 individual-level binary states) of cancer survivors at EMA time points using passive smartphone sensing data. Compare an agentic LLM-based approach (V4) against traditional ML/DL baselines.
-
-**Study cohort:** 400 participants, 5-fold across-subject CV (participant-level, zero leakage), ~15,585 test EMA entries per fold.
+**Last updated:** 2026-02-24
+**Status:** Active development — baselines converging, V4 agent pending real run
 
 ---
 
-## Architecture Overview
+## ⚠️ Token Limit Warning
 
-```
-data/
-  raw/                        # Original CSVs (cancer_survival/Passive Sensing Data/)
-  processed/
-    splits/                   # 5-fold CV splits (group_{1-5}_{train,test}.csv)
-    hourly/                   # Per-participant per-modality hourly Parquet files
-      motion/   001_motion_hourly.parquet ...
-      screen/   001_screen_hourly.parquet ...
-      keyinput/ 001_keyinput_hourly.parquet ...  (logical name: "keyboard")
-      mus/      001_mus_hourly.parquet ...        (logical name: "music")
-      light/    001_light_hourly.parquet ...
-      home_locations.parquet
-      participant_platform.parquet
+Claude Max weekly limit may be reached soon. If a new session is started:
+1. The project's MEMORY.md at `~/.claude/projects/-Users-zwang/memory/MEMORY.md` has cross-session state
+2. Read `CLAUDE.md` (this repo root) to restore context
+3. Read this file (`PROGRESS.md`) for exact current state
+4. Sessions **cannot** be resumed across account switches — start fresh with context from these files
 
-src/
-  sense/
-    query_tools.py         # SensingQueryEngine — Parquet-backed tool dispatch
-    mcp_server.py          # FastMCP server for claude --print subprocess (V4-CC)
-  agent/
-    agentic_sensing.py     # V4 API agent (Anthropic SDK tool-use loop)
-    cc_agent.py            # V4-CC agent (claude --print subprocess)
-  baselines/
-    ml_pipeline.py         # RF / XGBoost / LR with SelectKBest + GridSearchCV
-    deep_learning_baselines.py  # MLP on Parquet features (PyTorch)
-    text_baselines.py      # TF-IDF / BoW on diary text
-    transformer_baselines.py    # Sentence-BERT embeddings
-    combined_baselines.py       # Late fusion (sensing + text)
-    feature_builder.py     # build_parquet_features() → 134-dim feature vectors
-  data/
-    hourly_features.py     # HourlyFeatureLoader (MODALITY_DIRS, _normalize_hour_start)
-    loader.py              # DataLoader (EMA splits, sensing CSVs)
-  think/
-    parser.py              # Parse JSON prediction from LLM output
-
-scripts/
-  run_agentic_pilot.py     # Main V4 (API) + V4-CC pilot runner
-  run_ml_baselines.py      # Traditional ML runner
-  run_dl_baselines.py      # DL + text + transformer + combined runner
-  run_ar_baseline.py       # AR autocorrelation baseline
-```
-
----
-
-## What's Done
-
-### Data & Infrastructure
-
-- [x] **5-fold across-subject CV splits** — `data/processed/splits/group_{1-5}_{train,test}.csv`
-  - Participant-level: all EMA from a participant in exactly one fold
-  - 399 participants, ~16k EMA entries total
-- [x] **Hourly Parquet data** — generated and present in `data/processed/hourly/`
-  - Modalities: motion, screen, keyboard (dir: keyinput), music (dir: mus), light
-  - No GPS or accelerometer available for this cohort
-  - 134-dimensional feature vector per EMA (24h lookback)
-
-### Critical Fixes Applied (This Session)
-
-- [x] **`_normalize_hour_start` in query_tools.py & hourly_features.py** — Parquets use `hour_local` column but code was looking for `hour_start`/`timestamp`/etc. → added `hour_local` to alt-column list. **Root cause of BA=0.5** (all features were zero before this fix).
-- [x] **`_MODALITY_DIR_ALIAS` in query_tools.py** — `keyboard` dir on disk = `keyinput`, `music` dir = `mus`. Added alias map in `_parquet_path()`.
-- [x] **`MODALITY_DIRS` in hourly_features.py** — Same fix: keyboard→keyinput, music→mus. Also fixed filename to use `disk_name` not logical name.
-- [x] **`cc_agent.py` — prompt arg ordering** — `--disallowed-tools` was consuming prompt. Fixed: prompt now placed before `--disallowed-tools` in cmd list.
-- [x] **`cc_agent.py` — `CLAUDECODE=1` inherited by subprocess** — Stripped `CLAUDECODE`, `CLAUDE_CODE`, `CLAUDE_CODE_SESSION_ID` from subprocess env.
-- [x] **`mcp_server.py` — `SensingQueryEngine` missing `ema_df`** — Added `DataLoader` to load EMA data before constructing engine.
-- [x] **`cc_agent.py` — `max_turns=8` insufficient** — Increased to 16 (test used 15 turns).
-- [x] **`deep_learning_baselines.py` — SIGSEGV on macOS** — PyTorch OpenMP crash on Apple Silicon/Xcode Python 3.9. Fixed with `torch.set_num_threads(1)` + `OMP_NUM_THREADS=1`.
-- [x] **ML feature selection** — Added `SelectKBest` + `VarianceThreshold` in `MLBaseline.fit()` with K tuned via 3-fold inner GridSearchCV (K ∈ {25%, 50%, 75%, 100%} of n_features). Previously models had no feature selection → overfitting / BA=0.5.
-- [x] **Oracle mode removal** — Removed `--feedback-mode oracle` from `run_agentic_pilot.py`. Oracle (giving agent historical PANAS/NA) = time-series forecasting, not sensing prediction.
-- [x] **ER_desire binary threshold** — Changed from person-mean to scale midpoint ≥5 (0-10 scale). Distribution: mean=2.37, median=1.0, bimodal, 45.9% zeros. Midpoint ≥5 gives 24.9% positive rate.
-- [x] **`run_ar_baseline.py`** — New script, AR autocorrelation baseline (last_value + rolling_mean_w3).
-- [x] **`_build_prompt()` in cc_agent.py** — Added `session_memory` parameter (was silently dropped).
-
-### Baselines Implemented & Run
-
-#### AR Autocorrelation Baseline ✅ (output: `outputs/ar_baseline/ar_results.json`)
-| Variant | MAE (cont.) | BA (binary) | F1 (binary) |
-|---------|------------|------------|------------|
-| last_value (AR1) | 2.758 | 0.658 | 0.617 |
-| rolling_mean_w3 | 2.552 | 0.658 | 0.617 |
-
-- n=15,585 predictions, 399 users, 5-fold test sets combined
-- **This is the sensing-free ceiling** — any sensing-based model must beat this to prove sensing adds value
-
-#### Traditional ML Baselines (parquet features, 134-dim, 24h lookback)
-- Status: **Was BA=0.5 (zero features bug)**. Bug fixed (hour_local column name). Need rerun on Titan.
-- Models: RF, XGBoost, LogisticRegression, Ridge
-- With feature selection: SelectKBest (K=25%/50%/75%/100% tuned by 3-fold inner CV)
-- Scoring: balanced_accuracy (binary), neg_MAE (continuous)
-
-#### Text Baselines ✅ (run previously)
-- TF-IDF + BoW on diary text (emotion_driver column)
-- Status: Run complete, results in `outputs/advanced_baselines/text/`
-
-#### DL Baselines (MLP on Parquet features)
-- Status: **Was crashing** (PyTorch SIGSEGV on macOS, Xcode Python 3.9 + OpenMP). Fix applied.
-- Recommend running on Titan server (2x GPU, CUDA 12.1, stable PyTorch 2.3.1)
-
-#### Transformer Baselines
-- Status: Not run yet.
-- Sentence-BERT embeddings on diary text + Ridge/LR classifier
-- Requires `sentence-transformers` package
-
-#### Combined (Late Fusion) Baselines
-- Status: Not run yet.
-- Parquet features + sentence-BERT embeddings
-
-### V4 Agentic Agent ✅
-
-#### V4-CC (claude --print subprocess) — **Tested & Working**
-- Full end-to-end test passed (user 71, 2023-11-20)
-- 9 sensing tool calls: `get_daily_summary`, `query_sensing` ×2, `query_raw_events` ×3, `get_receptivity_history`, `find_similar_days`
-- Returned valid JSON prediction (`_parse_error: False`)
-- MCP server initializes cleanly with correct `ema_df`
-- 15 turns consumed → max_turns now set to 16
-
-#### V4 API (Anthropic SDK) — Not yet tested with real data
-- Code structure correct (same as V4-CC but via SDK tool-use loop)
-- Session memory implemented (receptivity feedback only, no oracle leakage)
-- Needs real API call test
-
----
-
-## What's NOT Done / Needs Work
-
-### Critical
-
-1. **Run ML baselines on Titan server** (Titan: zhiyuan@172.29.39.82)
-   - Local machine: memory issues, Python 3.9 from Xcode
-   - Titan: 2x RTX GPU (A5000 24GB + A6000 49GB), CUDA 12.1, PyTorch 2.3.1
-   - Need to sync code + processed data, set up conda env (`efficient-ser` or new), run
-   - Command: `python scripts/run_ml_baselines.py --features parquet`
-
-2. **Run DL baselines on Titan**
-   - MLP needs GPU for speed (local is too slow / crashes)
-   - Transformer + combined also benefit from GPU
-
-3. **Run V4 pilot on test users** (5-10 users, ~50 EMA entries)
-   - Script ready: `scripts/run_agentic_pilot.py`
-   - Need Claude Max subscription context / API key
-   - Expected runtime: ~5-10 min per user (16 turns × ~20s each)
-
-4. **Run V4 API agent test** (agentic_sensing.py)
-   - Verify real Anthropic SDK tool-use loop works end-to-end
-
-### Important
-
-5. **Feature coverage analysis** — confirm non-zero features for a sample of users/dates
-   - Before fix: 0 features (all NaN/zero)
-   - After fix: 44-68 non-zero features for user 71 (verified)
-   - Need systematic coverage check across all 400 users
-
-6. **Transformer + combined baselines** — not yet run, need Titan
-
-7. **Results comparison table** — once all baselines complete, compare:
-   - AR baseline (ceiling)
-   - Traditional ML (RF, XGB, LR)
-   - DL (MLP)
-   - Text (TF-IDF/BoW)
-   - Transformer (Sentence-BERT)
-   - Combined (late fusion)
-   - V4 Agentic (API and/or CC)
-
-### Lower Priority
-
-8. **Write final Methods section** for CHI paper — ML/DL methods description drafted inline, not yet in paper
-9. **Ablation: sensing modalities** — which modalities most predictive? (motion vs screen vs keyboard)
-10. **Error analysis** — which EMA entries does V4 get wrong? Is it correlated with missing data?
-
----
-
-## Known Issues / Gotchas
-
-| Issue | Status |
-|-------|--------|
-| Xcode Python 3.9 → PyTorch SIGSEGV | Fixed (torch.set_num_threads(1)). Prefer Titan for DL. |
-| `hour_local` column name mismatch | **Fixed** in query_tools.py + hourly_features.py |
-| keyboard dir = keyinput, music = mus | **Fixed** in both files |
-| ML BA=0.5 | Fixed (was zero features) — needs rerun to confirm |
-| V4-CC CLAUDECODE env pollution | **Fixed** |
-| V4-CC max_turns too low | **Fixed** (now 16) |
-| Session memory: only receptivity, not PANAS | By design (oracle mode removed) |
-| ER_desire binary threshold | **Changed** to midpoint ≥5 (was person-mean) |
-
----
-
-## Baseline Results Summary (Updated as runs complete)
-
-| Method | n | Mean MAE | Mean BA | Mean F1 | Notes |
-|--------|---|---------|---------|---------|-------|
-| AR (last_value) | 15,585 | 2.758 | 0.658 | 0.617 | Sensing-free ceiling |
-| AR (rolling_mean_w3) | 15,585 | 2.552 | 0.658 | 0.617 | Sensing-free ceiling |
-| ML (RF) | pending | — | — | — | Need rerun (feature bug fixed) |
-| ML (XGB) | pending | — | — | — | Need rerun |
-| ML (LR) | pending | — | — | — | Need rerun |
-| Text (TF-IDF) | done | — | — | — | See outputs/advanced_baselines/text/ |
-| DL (MLP) | pending | — | — | — | Need Titan |
-| Transformer | pending | — | — | — | Need Titan |
-| Combined | pending | — | — | — | Need Titan |
-| V4-CC (agentic) | 1 test | — | — | — | E2E verified, full pilot pending |
-
----
-
-## Titan Server Setup Notes
-
-- Host: `zhiyuan@172.29.39.82`
-- GPUs: RTX A5000 (24GB, GPU0, partially used) + RTX A6000 (49GB, GPU1, free)
-- CUDA: 12.3, Driver: 545.23.08
-- Conda env `efficient-ser`: has torch 2.3.1+cu121, needs: `pip install xgboost pyarrow scikit-learn`
-- Project not yet synced — needs `rsync` of code + `data/processed/`
-
-To set up and run:
+Key commands to reorient a new session:
 ```bash
-# 1. Sync code
-rsync -avz --exclude="__pycache__" --exclude="*.pyc" --exclude=".git" \
-  /Users/zwang/Documents/proactive-affective-agent/ \
-  zhiyuan@172.29.39.82:~/proactive-affective-agent/
+# Check what's running
+ps aux | grep python | grep -v grep
 
-# 2. Sync processed data
-rsync -avz data/processed/ zhiyuan@172.29.39.82:~/proactive-affective-agent/data/processed/
+# Check recent git commits
+git log --oneline -10
 
-# 3. Run on server
-ssh zhiyuan@172.29.39.82
-conda activate efficient-ser
-pip install xgboost pyarrow scikit-learn sentence-transformers --quiet
-cd ~/proactive-affective-agent
-PYTHONPATH=. python scripts/run_ml_baselines.py --features parquet
-PYTHONPATH=. python scripts/run_dl_baselines.py --pipelines dl,transformer,combined
+# Quick sanity-check sensing pipeline
+python3 -c "
+import pandas as pd
+from src.sense.query_tools import SensingQueryEngine
+from pathlib import Path
+dfs = [pd.read_csv(f'data/processed/splits/group_{i}_test.csv') for i in range(1,6)]
+df = pd.concat(dfs); df['timestamp_local'] = pd.to_datetime(df['timestamp_local'])
+eng = SensingQueryEngine(processed_dir=Path('data/processed/hourly'), ema_df=df)
+print(eng.call_tool('get_daily_summary', {'date': '2023-11-20'}, study_id=71, ema_timestamp='2023-11-20 18:00:00'))
+"
 ```
+
+---
+
+## Dataset
+
+| Item | Value |
+|------|-------|
+| Study | BUCS (cancer survivorship EMA + passive sensing) |
+| Participants | 399 users |
+| EMA entries | ~15,984 total (5-fold test sets combined) |
+| CV strategy | 5-fold **across-subject** (participant-level, zero overlap) |
+| Splits location | `data/processed/splits/group_{1-5}_{train,test}.csv` |
+| Hourly Parquet | `data/processed/hourly/{screen,motion,keyinput,light,mus}/` |
+
+**Sensing data coverage:**
+- `screen`: 407 users
+- `motion`: 371 users
+- `keyinput`: 280 users
+- `light`: 111 users
+- `mus` (music): 91 users
+- `accelerometer`, `gps`: **no data** (not collected in BUCS)
+
+**Prediction targets:**
+- Continuous (3): `PANAS_Pos` (0–30), `PANAS_Neg` (0–30), `ER_desire` (0–10)
+- Binary (15): `Individual_level_{PA,NA,happy,sad,afraid,miserable,worried,cheerful,pleased,grateful,lonely,interactions_quality,pain,forecasting,ER_desire}_State`
+- `INT_availability` (yes/no)
+
+**Binary threshold for `ER_desire_State`:** `ER_desire >= 5` (scale midpoint), **not** person mean.
+Rationale: distribution is bimodal (45.9% are 0, mean=2.37, median=1), midpoint is the natural breakpoint.
+
+---
+
+## System Architecture
+
+```
+run_agentic_pilot.py
+    ├── CC backend:  ClaudeCodeAgent (src/agent/cc_agent.py)
+    │                └── claude --print subprocess + MCP server (src/sense/mcp_server.py)
+    └── API backend: AgenticSensingAgent (src/agent/agentic_sensing.py)
+                     └── Anthropic SDK tool-use loop + SensingQueryEngine
+```
+
+**SensingQueryEngine** (`src/sense/query_tools.py`):
+- Reads hourly Parquet files from `data/processed/hourly/`
+- Tools: `get_daily_summary`, `query_sensing`, `query_raw_events`, `compare_to_baseline`, `get_receptivity_history`, `find_similar_days`
+- Column name fix applied (2026-02-24): `hour_local` → `hour_start`, `keyboard/music` → `keyinput/mus`
+
+**Session memory** (per-user, longitudinal): `outputs/agentic_pilot/memory/`
+- Accumulates receptivity feedback (diary, raw ER_desire, INT_availability) across EMA entries
+- **No prediction targets** in memory (receptivity leakage fixed 2026-02-23)
+
+---
+
+## Completed Work
+
+### ✅ Data Infrastructure
+- [x] 5-fold across-subject CV splits generated (399 users)
+- [x] Phase 1 offline processing: hourly Parquet files generated for screen, motion, keyinput, light, mus
+- [x] Home location and participant platform metadata
+- [x] `SensingQueryEngine` — Parquet-backed tool layer for agent + ML pipeline
+- [x] **CRITICAL BUG FIXED (2026-02-24)**: `hour_local` column not being recognized → all queries returned "no data". Fix: added to `_normalize_hour_start()` alternates. Also fixed `keyboard→keyinput`, `music→mus` directory aliases in both `query_tools.py` and `hourly_features.py`.
+
+### ✅ Baseline: AR Autocorrelation
+- Script: `scripts/run_ar_baseline.py`
+- Output: `outputs/ar_baseline/ar_results.json`
+- **Results (n=15,585 predictions, 399 users):**
+
+| Variant | Mean MAE | Mean BA | Mean F1 |
+|---------|----------|---------|---------|
+| `last_value` (AR1) | 2.758 | 0.658 | 0.617 |
+| `rolling_mean_w3` | 2.552 | 0.658 | 0.617 |
+
+These are the **empirical ceilings** for autocorrelation-based prediction (no sensing needed). The V4 agent must approach or beat BA=0.658 to demonstrate sensing adds value.
+
+### ✅ Baseline: Text (TF-IDF / BoW on diary)
+- Script: `scripts/run_dl_baselines.py --pipelines text`
+- Output: `outputs/advanced_baselines/text/`
+- **Results (diary-present rows only, 5-fold CV):**
+
+| Model | Mean MAE | Mean BA | Mean F1 |
+|-------|----------|---------|---------|
+| TF-IDF | 3.999 | 0.613 | 0.570 |
+| BoW | 4.043 | 0.607 | 0.561 |
+
+### ✅ Baseline: Traditional ML (Sensing features)
+- Script: `scripts/run_ml_baselines.py --features parquet`
+- Output: `outputs/ml_baselines/`
+- **Old results (WRONG — sensing data bug not yet fixed when run):**
+
+| Model | Mean MAE | Mean BA | Mean F1 |
+|-------|----------|---------|---------|
+| RF | 4.373 | 0.500 | 0.298 |
+| XGBoost | 4.373 | 0.500 | 0.360 |
+| Ridge | 4.373 | — | — |
+| Logistic | — | 0.500 | 0.000 |
+
+BA = 0.500 for all = **features were all zeros** (sensing data path bug). Must **rerun** after fixing the `hour_local` bug.
+
+### ✅ Baseline: Deep Learning (MLP)
+- Script: `scripts/run_dl_baselines.py --pipelines dl`
+- **Status: Never successfully completed** — was running locally with OOM risk when user stopped it
+- Same sensing data bug as ML: results would be invalid even if it completed
+- Must **rerun on Titan server** with GPU
+
+### ✅ Code: V4 Agentic Agent
+- CC backend: `src/agent/cc_agent.py` — invokes `claude --print` subprocess with MCP server
+- API backend: `src/agent/agentic_sensing.py` — Anthropic SDK direct tool-use loop
+- MCP server: `src/sense/mcp_server.py` — serves sensing tools with EMA timestamp cutoff
+- Session memory: per-user longitudinal accumulation of receptivity signals only
+- **Status: Only dry-run tested** (pilot results show `[DRY RUN] Placeholder` predictions)
+- Sensing tools now confirmed working after `hour_local` bug fix
+
+### ✅ Evaluation Framework
+- `src/evaluation/` — metrics computation (MAE, BA, F1)
+- AR baseline as empirical upper bound for autocorrelation-only prediction
+- Oracle mode **removed** (would turn prediction into time series forecasting)
+
+---
+
+## ❌ Pending / Broken
+
+### 1. ML Baselines — Must Rerun (Priority: HIGH)
+**Why:** Previous run used all-zero features (sensing data path bug now fixed).
+
+```bash
+# On Titan server:
+python3 scripts/run_ml_baselines.py \
+    --models rf,xgboost,logistic,ridge \
+    --features parquet \
+    --output outputs/ml_baselines_v2
+```
+
+**Expected:** BA should be meaningfully above 0.5 now that sensing features are non-zero.
+
+**Feature selection:** `MLBaseline` now uses `SelectKBest` with K as a hyperparameter (grid: 25%, 50%, 75%, 100% of features), tuned via 3-fold inner CV per fold. This is correct ML hygiene — K is not hardcoded.
+
+### 2. DL / MLP Baseline — Must Rerun on Server (Priority: HIGH)
+**Why:** Local OOM risk; Titan GPU (RTX A6000 49GB on GPU1) is available.
+
+```bash
+# On Titan server:
+python3 scripts/run_dl_baselines.py \
+    --pipelines dl \
+    --output outputs/advanced_baselines
+```
+
+Also run text + transformer + combined once on server:
+```bash
+python3 scripts/run_dl_baselines.py \
+    --pipelines text,dl,transformer,combined \
+    --output outputs/advanced_baselines
+```
+
+**Known issue from previous local run:** `TypeError: unhashable type: 'slice'` in DL pipeline — the previous run occurred **before** the `hour_local` fix, so the Parquet loading was broken. Rerun should resolve it. If it reappears, check `src/baselines/deep_learning_baselines.py` around the `build_parquet_features` call.
+
+### 3. V4 Agent — Real End-to-End Test (Priority: HIGH)
+**Status:** Only dry-run completed. No real `claude --print` subprocess calls made.
+
+```bash
+# Run real V4 CC on a few users
+python3 scripts/run_agentic_pilot.py \
+    --users 71,72,73 \
+    --backend cc \
+    --max-turns 12 \
+    --output outputs/agentic_pilot/v4_real_test
+```
+
+**Prerequisites:**
+- Sensing data confirmed working (done — `hour_local` fix)
+- V4 CC backend reads `claude` CLI from PATH (must be available on server too)
+
+For API backend test (doesn't need claude CLI, just ANTHROPIC_API_KEY):
+```bash
+python3 scripts/run_agentic_pilot.py \
+    --users 71,72,73 \
+    --backend api \
+    --output outputs/agentic_pilot/v4_api_test
+```
+
+### 4. Transformer Baseline — Not Yet Run
+```bash
+python3 scripts/run_dl_baselines.py --pipelines transformer
+```
+Requires `sentence-transformers` package.
+
+### 5. Combined (Late Fusion) Baseline — Not Yet Run
+```bash
+python3 scripts/run_dl_baselines.py --pipelines combined
+```
+Sensor features + sentence-transformer embeddings, late-fusion via Ridge/Logistic.
+
+---
+
+## Server Setup: Titan (zhiyuan@172.29.39.82)
+
+**Status:** Code not yet synced. Need to do once.
+
+```bash
+# 1. Sync code to server (exclude large raw data, keep processed Parquets)
+rsync -avz \
+    --exclude="data/bucs-data" \
+    --exclude="__pycache__" \
+    --exclude="*.pyc" \
+    --exclude=".git" \
+    --exclude="outputs" \
+    --exclude="*.egg-info" \
+    /Users/zwang/Documents/proactive-affective-agent/ \
+    zhiyuan@172.29.39.82:~/proactive-affective-agent/
+
+# 2. Sync processed Parquet data (hourly features, splits)
+rsync -avz \
+    data/processed/ \
+    zhiyuan@172.29.39.82:~/proactive-affective-agent/data/processed/
+
+# 3. On server: install packages in efficient-ser env
+ssh zhiyuan@172.29.39.82
+source ~/anaconda3/etc/profile.d/conda.sh && conda activate efficient-ser
+pip install xgboost pyarrow scikit-learn sentence-transformers
+
+# 4. GPU to use: GPU1 (RTX A6000, 49GB, nearly free)
+export CUDA_VISIBLE_DEVICES=1
+```
+
+**Available GPU:**
+- GPU0: RTX A5000 (24GB) — has alphapose using ~480MB
+- GPU1: RTX A6000 (49GB) — basically free (22MB used)
+
+---
+
+## Results Summary Table (Current State)
+
+| System | Method | Mean MAE↓ | Mean BA↑ | Mean F1↑ | Notes |
+|--------|---------|-----------|----------|----------|-------|
+| AR baseline | Last value (AR1) | 2.758 | 0.658 | 0.617 | Autocorrelation ceiling |
+| AR baseline | Rolling mean (w=3) | 2.552 | 0.658 | 0.617 | Autocorrelation ceiling |
+| Text | TF-IDF on diary | 3.999 | 0.613 | 0.570 | Diary-present rows only |
+| Text | BoW on diary | 4.043 | 0.607 | 0.561 | Diary-present rows only |
+| ML sensing | RF (parquet) | ~~4.373~~ | ~~0.500~~ | ~~0.298~~ | **INVALID** — features were all zeros |
+| ML sensing | XGBoost (parquet) | ~~4.373~~ | ~~0.500~~ | ~~0.360~~ | **INVALID** — features were all zeros |
+| DL sensing | MLP (parquet) | — | — | — | Not run yet |
+| Transformer | MiniLM on diary | — | — | — | Not run yet |
+| Combined | Sensor + text | — | — | — | Not run yet |
+| **V4 agent** | CC backend | — | — | — | **Not real-run yet** |
+| **V4 agent** | API backend | — | — | — | **Not real-run yet** |
+
+---
+
+## Key Design Decisions (Frozen)
+
+1. **ER_desire binary threshold:** `>= 5` (scale midpoint), NOT person mean
+2. **Oracle mode:** Removed — giving agent historical PA/NA = time series forecasting, not sensing-based prediction
+3. **Session memory content:** Only receptivity signals (diary, raw ER_desire, INT_availability). Never prediction targets.
+4. **5-fold CV:** Across-subject (participant-level). All observations from a user in exactly one fold.
+5. **AR baseline role:** Empirical ceiling for autocorrelation-only prediction. V4 must approach BA≈0.658 to show sensing adds value.
+6. **Feature selection:** SelectKBest with K tuned as hyperparameter (25/50/75/100% fractions), 3-fold inner CV.
+
+---
+
+## Critical Files
+
+| File | Purpose |
+|------|---------|
+| `src/sense/query_tools.py` | SensingQueryEngine — core data access for agent + baselines |
+| `src/data/hourly_features.py` | HourlyFeatureLoader — Parquet features for ML/DL |
+| `src/agent/cc_agent.py` | V4 CC backend (claude --print subprocess) |
+| `src/agent/agentic_sensing.py` | V4 API backend (Anthropic SDK) |
+| `src/sense/mcp_server.py` | MCP server for CC backend |
+| `src/baselines/ml_pipeline.py` | ML baseline with SelectKBest feature selection |
+| `scripts/run_agentic_pilot.py` | Main V4 evaluation runner |
+| `scripts/run_ml_baselines.py` | Traditional ML baselines |
+| `scripts/run_dl_baselines.py` | DL + Text + Transformer + Combined baselines |
+| `scripts/run_ar_baseline.py` | AR autocorrelation baseline |
+| `data/processed/hourly/` | Hourly Parquet files (screen/motion/keyinput/light/mus) |
+| `data/processed/splits/` | 5-fold CV splits |
+
+---
+
+## Recent Bug Fixes (2026-02-24)
+
+1. **`hour_local` column not recognized** in `_normalize_hour_start()`:
+   - Affected: `SensingQueryEngine` (`query_tools.py`) and `HourlyFeatureLoader` (`hourly_features.py`)
+   - Root cause: Parquet files use `hour_local` column; code only checked `timestamp/ts/datetime/hour`
+   - Fix: Added `hour_local`, `hour_utc` to the alternates list in both files
+   - Impact: ALL sensing queries were returning "no data" → ML BA=0.5 → invalid results
+
+2. **Keyboard/music directory name mismatch**:
+   - Disk uses: `keyinput/`, `mus/` directories with `{pid}_keyinput_hourly.parquet` filenames
+   - Code expected: `keyboard/`, `music/`
+   - Fix: Added `_MODALITY_DIR_ALIAS` in `SensingQueryEngine`; updated `MODALITY_DIRS` in `HourlyFeatureLoader`
+
+3. **Oracle mode removed**: `--feedback-mode oracle` in `run_agentic_pilot.py` was passing historical PANAS/NA to the agent = prediction target leakage.
+
+4. **Receptivity leakage in tools**: `get_receptivity_history` and `find_similar_days` were returning prediction targets (PANAS_Pos/Neg, Individual_level_*) as historical context. Fixed to return only ER_desire + INT_availability.
