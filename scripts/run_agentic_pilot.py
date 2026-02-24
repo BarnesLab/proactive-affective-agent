@@ -10,7 +10,7 @@ Usage:
     python scripts/run_agentic_pilot.py --users 71,164
     python scripts/run_agentic_pilot.py --users all --model claude-haiku-4-5-20251001
     python scripts/run_agentic_pilot.py --users 71 --dry-run --max-tool-calls 3
-    python scripts/run_agentic_pilot.py --users 71,164 --model claude-opus-4-6 --output-dir outputs/v5_run1
+    python scripts/run_agentic_pilot.py --users 71,164 --model claude-sonnet-4-6 --output-dir outputs/v5_run1
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from src.sense.query_tools import SensingQueryEngine
 # ---------------------------------------------------------------------------
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "agentic_pilot"
-DEFAULT_MODEL = "claude-opus-4-6"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_MAX_TOOL_CALLS = 8
 DELAY_BETWEEN_USERS = 3.0   # seconds
 DELAY_BETWEEN_EMAS = 1.0    # seconds

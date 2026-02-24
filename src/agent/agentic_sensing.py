@@ -108,7 +108,7 @@ class AgenticSensingAgent:
         profile: UserProfile,
         memory_doc: str | None,
         query_engine: SensingQueryEngine,
-        model: str = "claude-opus-4-6",
+        model: str = "claude-sonnet-4-6",
         max_tool_calls: int = 8,
     ) -> None:
         """Initialize the agentic sensing agent.
