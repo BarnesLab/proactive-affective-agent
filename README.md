@@ -15,16 +15,16 @@ Each EMA entry becomes an opportunity for an AI agent to autonomously investigat
 ## Research Hypotheses
 
 **H1 — Sensing augments diary-based prediction.**
-Adding passive sensing data to diary entries improves prediction over diary alone (CALLM). Behavioral signals (mobility, screen time, activity) carry complementary information beyond what participants self-report. *V4-structured/agentic vs. CALLM.*
+Adding passive sensing data to diary entries improves prediction over diary alone (CALLM). Behavioral signals (mobility, screen time, activity) carry complementary information beyond what participants self-report. *V3, V4 vs. CALLM.*
 
 **H2 — LLM-empowered agents outperform ML baselines on sensing data.**
-Large language models bring contextual, cross-modal reasoning that tabular ML (RF, XGBoost) cannot — especially for interpreting sparse, heterogeneous sensor streams. *V2-structured/agentic vs. RF/XGBoost/LogReg.*
+Large language models bring contextual, cross-modal reasoning that tabular ML (RF, XGBoost) cannot — especially for interpreting sparse, heterogeneous sensor streams. *V1, V2 vs. ML.*
 
 **H3 — Passive sensing alone enables meaningful prediction.**
-A sensing-only agent can predict emotional states and intervention receptivity without requiring any diary entry, making JITAI deployment feasible for participants who consistently skip self-report. *V2-structured/agentic vs. CALLM (sensing-only condition).*
+A sensing-only agent can predict emotional states and intervention receptivity without requiring any diary entry, making JITAI deployment feasible for participants who consistently skip self-report. *V1, V2 vs. CALLM (sensing-only condition).*
 
 **H4 — Autonomous agentic investigation outperforms structured pipelines.**
-An agent that autonomously queries raw sensor data via tool-use (V2/V4-agentic) outperforms agents that receive pre-formatted feature summaries (V2/V4-structured), across:
+An agent that autonomously queries raw sensor data via tool-use (V2, V4) outperforms agents that receive pre-formatted feature summaries (V1, V3), across:
 - **(a) Predictive accuracy** — querying informative signals over irrelevant ones reduces noise
 - **(b) Token efficiency** — selective investigation uses fewer tokens than unconditional feature dumps
 - **(c) Interpretability** — explicit belief-update traces expose what evidence drove each prediction
@@ -37,23 +37,23 @@ The key research question: does **agentic investigation** (autonomous tool-use q
 
 |  | **Structured** (fixed pipeline) | **Agentic** (autonomous tool-use) |
 |---|---|---|
-| **Sensing-only** | V2-structured | **V2-agentic** |
-| **Multimodal** (diary + sensing) | V4-structured | **V4-agentic** ← key contribution |
+| **Sensing-only** | V1 | **V2** |
+| **Multimodal** (diary + sensing) | V3 | **V4** ← key contribution |
 
 Plus: CALLM (diary+RAG reactive baseline, CHI 2025), ML baselines (RF/XGBoost/LogReg/Ridge).
 
-### Agent Taxonomy
+### Model Taxonomy
 
 | Name | Diary | Sensing | Style | Novelty |
 |------|-------|---------|-------|---------|
-| **CALLM** | ✅ | ❌ | Reactive (diary required) | CHI 2025 baseline |
-| **V2-structured** | ❌ | ✅ | Fixed 5-step pipeline | LLM-structured sensing only |
-| **V2-agentic** | ❌ | ✅ | Autonomous tool-use | Detective loop, sensing only |
-| **V4-structured** | ✅ | ✅ | Multimodal RAG | Diary + hourly sensing context |
-| **V4-agentic** | ✅ | ✅ | Autonomous tool-use | **Key contribution** |
 | **ML** | ❌ | ✅ | RF/XGBoost/LogReg | Traditional baseline |
+| **CALLM** | ✅ | ❌ | Reactive (diary required) | CHI 2025 baseline |
+| **V1** | ❌ | ✅ | Fixed 5-step pipeline | LLM-structured sensing only |
+| **V2** | ❌ | ✅ | Autonomous tool-use | Detective loop, sensing only |
+| **V3** | ✅ | ✅ | Multimodal RAG | Diary + hourly sensing context |
+| **V4** | ✅ | ✅ | Autonomous tool-use | **Key contribution** |
 
-### Agentic Investigation Loop (V2-agentic, V4-agentic)
+### Agentic Investigation Loop (V2, V4)
 
 Instead of pre-computed feature summaries, the agent uses **Anthropic SDK tool use** to query a Parquet-backed sensing database autonomously:
 
@@ -71,7 +71,7 @@ LLM reasons: "Less movement than usual + high screen time +
 Structured prediction output (JSON)
 ```
 
-The agent builds up evidence like a behavioral data scientist detective — it decides **what to look at, not just what to predict**. Token efficiency is a key metric: the hypothesis is that agentic agents query fewer, more informative signals than V2/V4-structured which receive all features unconditionally.
+The agent builds up evidence like a behavioral data scientist detective — it decides **what to look at, not just what to predict**. Token efficiency is a key metric: the hypothesis is that agentic agents (V2, V4) query fewer, more informative signals than structured agents (V1, V3) which receive all features unconditionally.
 
 **Real-world deployment note**: The `get_receptivity_history` tool reflects what a deployed JITAI system would actually know — past intervention accept/reject events — not high-frequency EMA labels. For the research comparison we also return mood patterns from the study context.
 
@@ -123,13 +123,13 @@ data/processed/hourly/                 (output, ~2 GB Parquet)
 
 ## Pilot Results
 
-| Metric | CALLM | V2-structured | V2-agentic | V4-structured | V4-agentic | ML |
-|--------|-------|---------------|------------|---------------|------------|----|
-| Mean MAE ↓ | **~1.16** | ~high | *pending* | *pending* | *pending* | *pending* |
-| Mean BA ↑ | **~0.63** | ~0.52 | *pending* | *pending* | *pending* | *pending* |
-| Mean F1 ↑ | **~0.44** | ~0.19 | *pending* | *pending* | *pending* | *pending* |
+| Metric | ML | CALLM | V1 | V2 | V3 | V4 |
+|--------|----|-------|----|----|----|----|
+| Mean MAE ↓ | *pending* | **~1.16** | ~high | *pending* | *pending* | *pending* |
+| Mean BA ↑ | *pending* | **~0.63** | ~0.52 | *pending* | *pending* | *pending* |
+| Mean F1 ↑ | *pending* | **~0.44** | ~0.19 | *pending* | *pending* | *pending* |
 
-CALLM (diary+RAG) dominates sensing-only approaches. Full BUCS evaluation pending (Phase 1 heavy modalities + experiments).
+CALLM (diary+RAG) currently dominates sensing-only approaches. Full BUCS evaluation pending (Phase 1 heavy modalities + V2/V3/V4 experiments).
 
 ---
 
@@ -207,7 +207,7 @@ docs/
 
 ## Running Experiments
 
-### V2/V4-Agentic (tool-use loop)
+### V2, V4 — Agentic (tool-use loop)
 
 ```bash
 # Dry run — test tool-use loop without LLM calls
@@ -220,11 +220,11 @@ python scripts/run_agentic_pilot.py --users 71 --model claude-opus-4-6
 python scripts/run_agentic_pilot.py --users 71,164,119 --model claude-sonnet-4-6
 ```
 
-### V2/V4-Structured LLM Versions
+### V1, V3 — Structured LLM Versions
 
 ```bash
 python scripts/run_pilot.py --version all --users 71,164,119,458,310 --dry-run
-python scripts/run_pilot.py --version v4 --users 71,164,119,458,310
+python scripts/run_pilot.py --version v3 --users 71,164,119,458,310
 bash scripts/run_parallel.sh   # all versions in parallel
 ```
 
@@ -244,5 +244,7 @@ Raw BUCS data is gitignored (~114 GB). Processed Parquet outputs (~2 GB) also gi
 Paper draft on Overleaf: `https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8`
 
 Design doc (Google Docs): https://docs.google.com/document/d/1BJ8P81Zcy3fKQYyQXNr9wU_es1tjkUGCdEblBvemskQ/edit?usp=sharing
+
+Architecture overview (advisor sync HTML): https://barneslab.github.io/proactive-affective-agent/docs/advisor-sync-architecture.html
 
 Progress & next steps: `docs/PROGRESS.md`
