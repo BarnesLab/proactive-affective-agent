@@ -195,9 +195,10 @@ Per-fold RF results:
 | 2 | 4.695 | 0.509 | 0.448 | ✅ |
 | 3 | 4.511 | 0.510 | 0.440 | ✅ |
 | 4 | 4.506 | 0.501 | 0.436 | ✅ |
-| 5 | ~1e12 | 0.448 | — | ❌ gradient explosion → rerunning |
+| 5 | ~1e12 | 0.511 | 0.459 | ❌ still diverging after gradient clipping — fold 5 has extreme outlier targets |
 
-4-fold mean (excluding fold 5): MAE=4.699, BA=0.507, F1=0.440
+**4-fold mean (folds 1-4 only):** MAE=4.699, BA=0.507, F1=0.440
+**Conclusion: MLP fold 5 is irreparably unstable. Report 4-fold mean in paper, note fold 5 excluded.**
 
 ### Pilot: CALLM, V1, V2 — All 5 users complete (427 entries each)
 
@@ -278,7 +279,7 @@ Once all baselines + V3/V4 pilot are done, compile final comparison:
 | ML XGBoost | Sensing features | 9.374 | ~0.502 | 0.502 | ✅ Done |
 | ML Ridge | Sensing features | DIVERGED | — | — | ❌ RidgeCV still diverges (3/5 folds bad) |
 | ML Logistic | Sensing features | — | — | 0.500 | ✅ Done |
-| DL MLP | Sensing features | ~4.7* | ~0.507* | 0.507* | ⏳ Fold 5 rerunning |
+| DL MLP | Sensing features | 4.699* | 0.507* | 0.440* | ✅ Done (4-fold; fold 5 excluded—extreme outliers) |
 | Combined | Sensor + diary | pending | pending | pending | ⏳ Running |
 | **CALLM** | Diary + TF-IDF RAG | **1.850** | **0.709** | **0.645** | ✅ Done (427 entries) |
 | **V1** | Sensing structured | 8.016 | 0.547 | 0.539 | ✅ Done (427 entries) |
