@@ -2,13 +2,19 @@
 """Run V4 agentic sensing agent evaluation.
 
 V4 is an autonomous sensing agent that uses tool calls to investigate raw
-behavioral data before making emotional state predictions. Unlike V1-V4,
+behavioral data before making emotional state predictions. Unlike V1-V3,
 which receive pre-formatted sensing summaries in a single prompt, V4
 actively queries the data like a behavioral data scientist.
 
 Two backends are available:
-  --backend api  (default) — Anthropic SDK, bills against ANTHROPIC_API_KEY
-  --backend cc             — claude --print subprocess, bills against Claude Max subscription
+  --backend cc   (default) — claude --print subprocess, bills against Claude Max subscription
+  --backend api            — Anthropic SDK, bills against ANTHROPIC_API_KEY
+
+Session memory: one growing per-user markdown doc accumulates chronological
+receptivity feedback (diary + ER_desire + INT_availability) across EMA entries,
+enabling genuine longitudinal learning about each person.
+
+ER_desire binary threshold: ER_desire >= 5 (scale midpoint, 0-10).
 
 Usage:
     python scripts/run_agentic_pilot.py --users 71,164
@@ -50,12 +56,6 @@ DEFAULT_MAX_TOOL_CALLS = 8
 DEFAULT_BACKEND = "cc"  # "cc" = Claude Max subscription via subprocess, "api" = Anthropic SDK
 CC_PYTHON_BIN = "/opt/homebrew/bin/python3.13"  # Python with mcp + pandas installed
 
-# Feedback modes control what the agent accumulates in its per-user session memory.
-# "real":   diary + receptivity only (ER_desire + INT_availability).
-#           Simulates real-world deployment — no full EMA battery available as feedback.
-# "oracle": diary + receptivity + raw PA/NA scores.
-#           Research upper bound — agent calibrates against full affect battery.
-DEFAULT_FEEDBACK_MODE = "real"
 DELAY_BETWEEN_USERS = 3.0   # seconds
 DELAY_BETWEEN_EMAS = 1.0    # seconds
 
@@ -72,7 +72,6 @@ def main() -> None:
     logger.info("V4 Agentic Sensing Agent — Pilot Evaluation")
     logger.info(f"  Backend:        {args.backend} ({'Claude Code Max subscription' if args.backend == 'cc' else 'Anthropic API key'})")
     logger.info(f"  Model:          {args.model}")
-    logger.info(f"  Feedback mode:  {args.feedback_mode} ({'receptivity-only (real-world)' if args.feedback_mode == 'real' else 'full PA/NA oracle (upper bound)'})")
     logger.info(f"  Max tool calls: {args.max_tool_calls}")
     logger.info(f"  Dry run:        {args.dry_run}")
     logger.info(f"  Users:          {args.users}")
@@ -97,6 +96,10 @@ def main() -> None:
     except FileNotFoundError as exc:
         logger.error(f"Could not load EMA data: {exc}")
         sys.exit(1)
+
+    # Override ER_desire binary threshold: use scale midpoint (>=5) instead of
+    # person-mean, which is more defensible and deployment-agnostic.
+    ema_df = _apply_midpoint_thresholds(ema_df)
 
     logger.info(f"Loaded {len(ema_df)} EMA entries for {ema_df['Study_ID'].nunique()} users")
 
@@ -174,7 +177,6 @@ def main() -> None:
             logger=logger,
             backend=args.backend,
             processed_dir=processed_dir.parent,
-            feedback_mode=args.feedback_mode,
         )
 
         all_predictions.extend(user_predictions)
@@ -204,11 +206,11 @@ def main() -> None:
     results = {
         "run_config": {
             "backend": args.backend,
-            "feedback_mode": args.feedback_mode,
             "model": args.model,
             "max_tool_calls": args.max_tool_calls,
             "dry_run": args.dry_run,
             "diary_only": True,
+            "er_desire_threshold": "midpoint_gte5",
             "users": pilot_user_ids,
             "n_users": len(pilot_user_ids),
             "n_ema_entries": len(all_predictions),
@@ -257,7 +259,6 @@ def _run_user(
     memory_dir: Path | None = None,
     backend: str = "cc",
     processed_dir: Path | None = None,
-    feedback_mode: str = "real",
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Process all EMA entries for one user in chronological order.
 
@@ -267,15 +268,12 @@ def _run_user(
     includes the growing memory, so the agent genuinely learns this person
     over the study period — not just cold-start each time.
 
-    Feedback modes control what enters the memory:
-      "real":   diary + receptivity only (ER_desire + INT_availability).
-                Simulates real-world deployment with no full EMA battery.
-      "oracle": diary + receptivity + raw PA/NA scores.
-                Research upper bound showing ceiling with full affect feedback.
+    Session memory contains: diary + ER_desire raw score + INT_availability,
+    simulating real-world deployment where only receptivity feedback is observable.
 
     Args:
         study_id: Study_ID of the user.
-        ema_df: Full EMA DataFrame.
+        ema_df: Full EMA DataFrame (with midpoint-threshold ER_desire_State).
         baseline_df: Baseline trait DataFrame.
         loader: DataLoader instance.
         query_engine: SensingQueryEngine instance (used only by api backend).
@@ -288,7 +286,6 @@ def _run_user(
         memory_dir: Directory to write per-user growing memory docs.
         backend: "cc" (Claude Code subprocess) or "api" (Anthropic SDK).
         processed_dir: Path to data/processed/ (required for cc backend).
-        feedback_mode: "real" or "oracle" (controls session memory content).
 
     Returns:
         Tuple of (predictions, ground_truths, metadata) lists.
@@ -384,7 +381,7 @@ def _run_user(
     if session_memory:
         logger.info(f"  Session memory: loaded {len(session_memory.splitlines())} lines")
     else:
-        _init_session_memory(session_memory_path, study_id, feedback_mode)
+        _init_session_memory(session_memory_path, study_id)
         session_memory = _load_session_memory(session_memory_path)
 
     # Create agent (one per user; stateless across EMA calls — statefulness
@@ -462,14 +459,13 @@ def _run_user(
         ground_truths.append(gt)
         metadata.append(meta)
 
-        # Update session memory with receptivity outcome (+ PA/NA if oracle mode).
+        # Update session memory with receptivity outcome.
         # This grows the agent's longitudinal user model for the next EMA entry.
         session_memory = _update_session_memory(
             path=session_memory_path,
             ts=ts,
             ema_row=ema_row,
             pred=pred,
-            feedback_mode=feedback_mode,
         )
 
         # Save checkpoint
@@ -494,6 +490,23 @@ def _run_user(
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _apply_midpoint_thresholds(df: pd.DataFrame) -> pd.DataFrame:
+    """Override Individual_level_ER_desire_State using scale midpoint (>= 5).
+
+    The original column was computed using person-mean threshold (CHI paper).
+    We replace it with the simpler, more defensible scale-midpoint definition:
+    ER_desire >= 5 on the 0-10 scale = active desire (above midpoint).
+
+    This does NOT affect any other Individual_level_*_State columns.
+    """
+    if "ER_desire" not in df.columns:
+        return df
+    df = df.copy()
+    er = pd.to_numeric(df["ER_desire"], errors="coerce")
+    df["Individual_level_ER_desire_State"] = (er >= 5).where(er.notna(), other=None)
+    return df
+
+
 def _load_session_memory(path: Path) -> str:
     """Load the current session memory document for a user, or return empty string."""
     if path.exists():
@@ -501,18 +514,12 @@ def _load_session_memory(path: Path) -> str:
     return ""
 
 
-def _init_session_memory(path: Path, study_id: int, feedback_mode: str) -> None:
+def _init_session_memory(path: Path, study_id: int) -> None:
     """Initialize a fresh session memory file for a user."""
-    mode_desc = (
-        "Feedback: diary text + receptivity (ER_desire + INT_availability) only."
-        if feedback_mode == "real"
-        else "Feedback: diary text + receptivity + raw PA/NA scores (oracle/upper-bound)."
-    )
     path.write_text(
         f"# Session Memory — Participant {str(study_id).zfill(3)}\n\n"
-        f"Mode: {feedback_mode}\n"
-        f"{mode_desc}\n\n"
-        f"## EMA History (accumulated chronologically)\n\n",
+        "Feedback: diary text + receptivity (ER_desire raw + INT_availability).\n\n"
+        "## EMA History (accumulated chronologically)\n\n",
         encoding="utf-8",
     )
 
@@ -522,15 +529,13 @@ def _update_session_memory(
     ts: str,
     ema_row: pd.Series,
     pred: dict[str, Any],
-    feedback_mode: str,
 ) -> str:
     """Append the outcome of the current EMA prediction to the session memory file.
 
-    Only feeds back what a deployed JITAI system would observe:
-    - 'real' mode:   diary text + receptivity (ER_desire + INT_availability)
-    - 'oracle' mode: diary text + receptivity + raw PA/NA scores
+    Feeds back only what a deployed JITAI system would observe:
+    diary text + ER_desire raw score + INT_availability → derived receptivity.
 
-    NEVER writes Individual_level_* state labels, which are prediction targets.
+    NEVER writes Individual_level_* state labels (prediction targets).
 
     Returns:
         Updated session memory text.
@@ -560,21 +565,8 @@ def _update_session_memory(
         f"  ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
         f"{diary_str}"
         f"  Agent predicted: INT_availability={pred_avail}, confidence={pred_confidence}\n"
+        "\n"
     )
-
-    if feedback_mode == "oracle":
-        pa = ema_row.get("PANAS_Pos")
-        na = ema_row.get("PANAS_Neg")
-        try:
-            pa_val = float(pa) if pa is not None and str(pa) != "nan" else None
-            na_val = float(na) if na is not None and str(na) != "nan" else None
-        except (ValueError, TypeError):
-            pa_val = na_val = None
-        pa_str = f"PA={pa_val:.0f}" if pa_val is not None else "PA=?"
-        na_str = f"NA={na_val:.0f}" if na_val is not None else "NA=?"
-        entry += f"  [oracle] Actual: {pa_str}, {na_str}\n"
-
-    entry += "\n"
 
     with open(path, "a", encoding="utf-8") as f:
         f.write(entry)
@@ -707,7 +699,7 @@ def _parse_args() -> argparse.Namespace:
   python scripts/run_agentic_pilot.py --users 71,164
   python scripts/run_agentic_pilot.py --users all --model claude-haiku-4-5-20251001
   python scripts/run_agentic_pilot.py --users 71 --dry-run
-  python scripts/run_agentic_pilot.py --users 71,164 --max-tool-calls 5 --output-dir outputs/v4_short
+  python scripts/run_agentic_pilot.py --users 71,164 --max-tool-calls 5 --output-dir outputs/v4_run1
 """,
     )
     parser.add_argument(
@@ -727,17 +719,6 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Inference backend: 'cc' = claude --print subprocess (Claude Max subscription, recommended), "
             "'api' = Anthropic SDK (bills against ANTHROPIC_API_KEY). Default: cc"
-        ),
-    )
-    parser.add_argument(
-        "--feedback-mode",
-        type=str,
-        choices=["real", "oracle"],
-        default=DEFAULT_FEEDBACK_MODE,
-        help=(
-            "Session memory feedback mode: "
-            "'real' = diary + receptivity only (ER_desire + INT_availability), simulates real JITAI deployment; "
-            "'oracle' = adds raw PA/NA scores, shows upper bound with full affect battery. Default: real"
         ),
     )
     parser.add_argument(
