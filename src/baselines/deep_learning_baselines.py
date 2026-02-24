@@ -62,7 +62,7 @@ def _train_mlp(
     lr: float = 1e-3,
 ) -> "nn.Module":
     """Train model in-place and return it."""
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     X_t = torch.tensor(X_train, dtype=torch.float32)
@@ -84,6 +84,7 @@ def _train_mlp(
             optimizer.zero_grad()
             loss = criterion(model(xb), yb)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
     return model
@@ -95,16 +96,18 @@ def _predict_mlp(
     task: str = "regression",
 ) -> np.ndarray:
     """Run inference and return numpy predictions."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
     with torch.no_grad():
-        X_t = torch.tensor(X_test, dtype=torch.float32)
+        X_t = torch.tensor(X_test, dtype=torch.float32).to(device)
         logits = model(X_t).squeeze(1).cpu().numpy()
 
     if task == "regression":
         return logits
     else:
-        # Binary: sigmoid + threshold at 0.5
-        probs = 1.0 / (1.0 + np.exp(-logits))
+        # Binary: numerically stable sigmoid + threshold at 0.5
+        logits_clipped = np.clip(logits, -500.0, 500.0)
+        probs = 1.0 / (1.0 + np.exp(-logits_clipped))
         return (probs >= 0.5).astype(int)
 
 
@@ -146,8 +149,11 @@ class DLBaselinePipeline:
     # Public API
     # ------------------------------------------------------------------
 
-    def run_all_folds(self) -> dict[str, Any]:
-        """Run 5-fold CV for MLP on Parquet hourly features.
+    def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
+        """Run CV for MLP on Parquet hourly features.
+
+        Args:
+            folds: List of fold indices to run (e.g. [1], [3, 4]). If None, runs all 5 folds.
 
         Returns:
             Nested dict: {model_name: {target: {metric: ...}, "_aggregate": {...}}}
@@ -157,7 +163,7 @@ class DLBaselinePipeline:
 
         all_results: dict[str, Any] = {}
 
-        for fold in range(1, 6):
+        for fold in (folds if folds is not None else range(1, 6)):
             logger.info(f"=== DL Baseline Fold {fold}/5 ===")
 
             train_df = pd.read_csv(self.splits_dir / f"group_{fold}_train.csv")

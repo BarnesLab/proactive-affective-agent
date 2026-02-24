@@ -46,14 +46,16 @@ class MLBaseline:
     # K candidates expressed as fractions of n_features (evaluated at fit time)
     K_FRACTIONS = [0.25, 0.5, 0.75, 1.0]
 
-    def __init__(self, model_name: str, task: str = "regression") -> None:
+    def __init__(self, model_name: str, task: str = "regression", n_jobs: int = -1) -> None:
         """
         Args:
             model_name: "rf", "xgboost", "logistic", or "ridge".
             task: "regression" or "classification".
+            n_jobs: Parallelism for GridSearchCV and RF (default: -1 = all cores).
         """
         self.model_name = model_name
         self.task = task
+        self.n_jobs = n_jobs
         self._estimator = self._create_model(model_name, task)
         # pipeline and grid search are built in fit() once n_features is known
         self._pipeline: Pipeline | None = None
@@ -63,12 +65,12 @@ class MLBaseline:
         if name == "rf":
             if task == "regression":
                 return RandomForestRegressor(
-                    n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+                    n_estimators=100, max_depth=10, random_state=42, n_jobs=self.n_jobs
                 )
             else:
                 return RandomForestClassifier(
                     n_estimators=100, max_depth=10, random_state=42,
-                    n_jobs=-1, class_weight="balanced",
+                    n_jobs=self.n_jobs, class_weight="balanced",
                 )
         elif name == "xgboost":
             if not HAS_XGBOOST:
@@ -100,10 +102,11 @@ class MLBaseline:
         n_features = X_train.shape[1]
         score_fn = f_classif if self.task == "classification" else f_regression
 
-        # Build candidate K values from fractions, deduplicated and capped
-        k_vals = sorted({max(1, int(n_features * f)) for f in self.K_FRACTIONS})
-        k_vals = [k for k in k_vals if k < n_features] + [n_features]
-        k_vals = sorted(set(k_vals))
+        # Build candidate K values from fractions; use "all" for the max to
+        # avoid k > post-VarianceThreshold n_features errors in the pipeline.
+        k_vals_int = sorted({max(1, int(n_features * f)) for f in self.K_FRACTIONS})
+        k_vals_int = [k for k in k_vals_int if k < n_features]
+        k_vals = sorted(set(k_vals_int)) + ["all"]
 
         pipe = Pipeline([
             ("var_thresh", VarianceThreshold()),      # remove zero-variance features
@@ -118,7 +121,7 @@ class MLBaseline:
             param_grid={"select__k": k_vals},
             cv=3,
             scoring=scoring,
-            n_jobs=-1,
+            n_jobs=self.n_jobs,
             refit=True,
         )
         grid.fit(X_train, y_train)
@@ -148,6 +151,7 @@ class MLBaselinePipeline:
         output_dir: Path,
         model_names: list[str] | None = None,
         processed_hourly_dir: Path | None = None,
+        n_jobs: int = -1,
     ) -> None:
         """
         Args:
@@ -157,6 +161,7 @@ class MLBaselinePipeline:
             output_dir: Where to save results.
             model_names: Which models to run (default: all available).
             processed_hourly_dir: Path to data/processed/hourly/ for Parquet mode.
+            n_jobs: Parallelism for GridSearchCV and RF (default: -1 = all cores).
         """
         self.splits_dir = splits_dir
         self.sensing_dfs = sensing_dfs
@@ -164,6 +169,7 @@ class MLBaselinePipeline:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.processed_hourly_dir = processed_hourly_dir
+        self.n_jobs = n_jobs
 
         if model_names is None:
             model_names = ["rf", "xgboost", "logistic", "ridge"]
@@ -171,8 +177,11 @@ class MLBaselinePipeline:
             model_names = [m for m in model_names if m != "xgboost"]
         self.model_names = model_names
 
-    def run_all_folds(self) -> dict[str, Any]:
-        """Run 5-fold cross-validation for all models and targets.
+    def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
+        """Run cross-validation for all models and targets.
+
+        Args:
+            folds: List of fold indices to run (e.g. [1], [2, 3]). If None, runs all 5 folds.
 
         Returns:
             Nested dict: {model_name: {target: {metric: value, ...}}}
@@ -181,7 +190,7 @@ class MLBaselinePipeline:
 
         all_results = {}
 
-        for fold in range(1, 6):
+        for fold in (folds if folds is not None else range(1, 6)):
             logger.info(f"=== Fold {fold}/5 ===")
 
             # Load split data
@@ -227,7 +236,7 @@ class MLBaselinePipeline:
                 reg_models = [m for m in self.model_names if m in ("rf", "xgboost", "ridge")]
                 for model_name in reg_models:
                     try:
-                        model = MLBaseline(model_name, task="regression")
+                        model = MLBaseline(model_name, task="regression", n_jobs=self.n_jobs)
                         model.fit(X_train_np[mask_tr], y_tr[mask_tr])
                         preds = model.predict(X_test_np[mask_te])
 
@@ -263,7 +272,7 @@ class MLBaselinePipeline:
                 clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic")]
                 for model_name in clf_models:
                     try:
-                        model = MLBaseline(model_name, task="classification")
+                        model = MLBaseline(model_name, task="classification", n_jobs=self.n_jobs)
                         model.fit(X_train_np[mask_tr], y_tr_int)
                         preds = model.predict(X_test_np[mask_te])
 
