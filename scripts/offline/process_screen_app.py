@@ -271,7 +271,19 @@ def android_aggregate_hour(df: pd.DataFrame, hour_start_ms: float) -> dict:
 
     sub['clip_start'] = sub['epoch_usagewindow_start'].clip(lower=hour_start_ms)
     sub['clip_end'] = sub['epoch_usagewindow_end'].clip(upper=hour_end_ms)
-    sub['duration_s'] = (sub['clip_end'] - sub['clip_start']) / 1000.0
+    clip_ms = sub['clip_end'] - sub['clip_start']
+
+    # Use n_foreground_ms (actual foreground time) if available.
+    # The usage window can span many hours while only a few seconds are foreground;
+    # using window duration directly inflates screen time by 10–100x.
+    # We allocate foreground time proportionally to the clipped fraction.
+    if 'n_foreground_ms' in sub.columns:
+        window_ms = (sub['epoch_usagewindow_end'] - sub['epoch_usagewindow_start']).clip(lower=1)
+        proportion = (clip_ms / window_ms).clip(upper=1.0)
+        sub['duration_s'] = (sub['n_foreground_ms'] * proportion / 1000.0).clip(upper=3600.0)
+    else:
+        sub['duration_s'] = (clip_ms / 1000.0).clip(upper=3600.0)
+
     sub = sub[sub['duration_s'] > 0]
 
     if sub.empty:
@@ -290,12 +302,16 @@ def android_aggregate_hour(df: pd.DataFrame, hour_start_ms: float) -> dict:
     def _cat(name: str) -> float:
         return float(cat_min.get(name, 0.0))
 
+    app_total_min = total_s / 60.0
+    # screen_on_min is capped at 60: the screen can only be on for 60 min/hr.
+    # app_total_min may legitimately exceed 60 (different apps multitasking).
+    screen_on_min = min(app_total_min, 60.0)
     return {
-        'screen_on_min': total_s / 60.0,          # proxy for screen time
+        'screen_on_min': screen_on_min,
         'screen_n_sessions': n_windows,
         'screen_mean_session_min': (total_s / n_windows) / 60.0,
-        'screen_max_session_min': sub['duration_s'].max() / 60.0,
-        'app_total_min': total_s / 60.0,
+        'screen_max_session_min': min(sub['duration_s'].max() / 60.0, 60.0),
+        'app_total_min': app_total_min,
         'app_social_min': _cat('SOCIAL'),
         'app_comm_min': _cat('COMMUNICATION'),
         'app_entertainment_min': _cat('ENTERTAINMENT'),
