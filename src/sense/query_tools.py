@@ -169,6 +169,44 @@ SENSING_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "name": "query_raw_events",
+        "description": (
+            "Query the raw event stream for a specific modality and time window. "
+            "Returns individual events (e.g. each app session, each lock/unlock, each motion "
+            "transition, each song played, each typing session) rather than hourly aggregates. "
+            "Use this when you need fine-grained temporal detail: 'what apps did she open?', "
+            "'when did she first unlock her phone?', 'what songs did she play?', "
+            "'what did she type?'. "
+            "Modalities: screen (lock/unlock events), app (per-app sessions with duration), "
+            "motion (activity transitions), keyboard (typing sessions with text), music (tracks played)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "modality": {
+                    "type": "string",
+                    "enum": ["screen", "app", "motion", "keyboard", "music"],
+                    "description": "Which raw event stream to query",
+                },
+                "hours_before_ema": {
+                    "type": "integer",
+                    "description": "Start of window: N hours before EMA timestamp",
+                },
+                "hours_duration": {
+                    "type": "integer",
+                    "description": "Length of window in hours (default 4)",
+                    "default": 4,
+                },
+                "max_events": {
+                    "type": "integer",
+                    "description": "Max events to return (default 30, max 100)",
+                    "default": 30,
+                },
+            },
+            "required": ["modality", "hours_before_ema"],
+        },
+    },
 ]
 
 
@@ -1161,6 +1199,119 @@ class SensingQueryEngine:
             vec = vec / norm
         return vec, labels
 
+    # ------------------------------------------------------------------
+    # Raw event stream queries
+    # ------------------------------------------------------------------
+
+    EVENT_MODALITY_DIRS = {
+        "screen":   ("screen_events",   "{pid}_screen_events.parquet"),
+        "app":      ("app_events",      "{pid}_app_events.parquet"),
+        "motion":   ("motion_events",   "{pid}_motion_events.parquet"),
+        "keyboard": ("keyboard_events", "{pid}_keyboard_events.parquet"),
+        "music":    ("music_events",    "{pid}_music_events.parquet"),
+    }
+
+    def _load_event_parquet(self, study_id: int, modality: str) -> pd.DataFrame | None:
+        """Load the raw event Parquet for one participant/modality."""
+        if modality not in self.EVENT_MODALITY_DIRS:
+            return None
+        subdir, fname_tpl = self.EVENT_MODALITY_DIRS[modality]
+        pid = str(study_id).zfill(3)
+        path = self.processed_dir.parent / "events" / subdir / fname_tpl.format(pid=pid)
+        if not path.exists():
+            return None
+        return pd.read_parquet(path)
+
+    def query_raw_events(
+        self,
+        study_id: int,
+        modality: str,
+        hours_before_ema: int,
+        ema_timestamp: str | datetime,
+        hours_duration: int = 4,
+        max_events: int = 30,
+    ) -> str:
+        """Return raw event stream for a modality within a time window.
+
+        Returns individual events rather than hourly aggregates, allowing the
+        agent to reason about fine-grained temporal patterns.
+        """
+        df = self._load_event_parquet(study_id, modality)
+        if df is None or df.empty:
+            return (
+                f"[Raw {modality} events: no event-level Parquet available. "
+                f"Run scripts/offline/process_events.py to generate it.]"
+            )
+
+        ema_dt = _normalize_ts(ema_timestamp)
+        window_end = ema_dt - pd.Timedelta(hours=hours_before_ema - hours_duration)
+        window_start = ema_dt - pd.Timedelta(hours=hours_before_ema)
+
+        # Determine timestamp column (start column for interval events)
+        ts_col = None
+        for candidate in ("timestamp_local", "timestamp_local_start"):
+            if candidate in df.columns:
+                ts_col = candidate
+                break
+        if ts_col is None:
+            return f"[Raw {modality} events: unrecognised schema — no timestamp column]"
+
+        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+        mask = (df[ts_col] >= window_start) & (df[ts_col] < window_end)
+        window_df = df[mask].sort_values(ts_col).head(max_events)
+
+        if window_df.empty:
+            return (
+                f"[Raw {modality} events: no events between "
+                f"{window_start.strftime('%H:%M')} – {window_end.strftime('%H:%M')}]"
+            )
+
+        lines = [
+            f"Raw {modality} events "
+            f"({window_start.strftime('%Y-%m-%d %H:%M')} → "
+            f"{window_end.strftime('%H:%M')}, "
+            f"{len(window_df)} events shown):"
+        ]
+
+        if modality == "screen":
+            for _, row in window_df.iterrows():
+                t = pd.to_datetime(row[ts_col]).strftime("%H:%M:%S")
+                lines.append(f"  {t}  {row['event']}")
+
+        elif modality == "app":
+            for _, row in window_df.iterrows():
+                t_start = pd.to_datetime(row["timestamp_local_start"]).strftime("%H:%M")
+                dur = f"{row['duration_min']:.1f} min"
+                pkg = row["app_package"]
+                cat = row.get("app_category", "")
+                lines.append(f"  {t_start}  {pkg} [{cat}]  {dur}")
+
+        elif modality == "motion":
+            for _, row in window_df.iterrows():
+                t = pd.to_datetime(row[ts_col]).strftime("%H:%M:%S")
+                lines.append(f"  {t}  → {row['activity']}")
+
+        elif modality == "keyboard":
+            for _, row in window_df.iterrows():
+                t = pd.to_datetime(row[ts_col]).strftime("%H:%M")
+                words = int(row.get("words_typed", 0))
+                app = row.get("app_package", "")
+                text_preview = str(row.get("text", ""))[:80].replace("\n", " ")
+                lines.append(f"  {t}  {app}  {words} words: \"{text_preview}\"")
+
+        elif modality == "music":
+            for _, row in window_df.iterrows():
+                t = pd.to_datetime(row[ts_col]).strftime("%H:%M")
+                title = row.get("title", "?")
+                artist = row.get("artist", "?")
+                is_ad = " [ad]" if row.get("is_ad") else ""
+                lines.append(f"  {t}  {title} — {artist}{is_ad}")
+
+        if len(df[mask]) > max_events:
+            lines.append(f"  ... ({len(df[mask]) - max_events} more events not shown)")
+
+        return "\n".join(lines)
+
     def call_tool(
         self,
         tool_name: str,
@@ -1218,10 +1369,19 @@ class SensingQueryEngine:
                     reference_date=ref_date,
                     n=tool_input.get("n", 5),
                 )
+            if tool_name == "query_raw_events":
+                return self.query_raw_events(
+                    study_id=study_id,
+                    modality=tool_input["modality"],
+                    hours_before_ema=tool_input["hours_before_ema"],
+                    ema_timestamp=ema_timestamp,
+                    hours_duration=tool_input.get("hours_duration", 4),
+                    max_events=min(tool_input.get("max_events", 30), 100),
+                )
             return (
                 f"Unknown tool: {tool_name}. "
                 f"Available: query_sensing, get_daily_summary, compare_to_baseline, "
-                f"get_receptivity_history, find_similar_days"
+                f"get_receptivity_history, find_similar_days, query_raw_events"
             )
 
         except Exception as exc:

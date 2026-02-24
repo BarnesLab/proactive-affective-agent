@@ -40,11 +40,17 @@ The data you can see: everything BEFORE the EMA timestamp. You cannot see the EM
 
 Investigation strategy:
 1. Start with get_daily_summary to orient yourself on today and recent days
-2. Use query_sensing to zoom into specific modalities that seem informative
-3. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
-4. Use get_receptivity_history to understand this person's typical patterns and past availability
-5. Use find_similar_days to reason analogically from past behavioral-emotional pairings
-6. Synthesize all evidence into a coherent prediction
+2. Use query_sensing to zoom into specific modalities that seem informative (hourly aggregates)
+3. Use query_raw_events to drill into raw event streams when you need fine-grained detail:
+   - screen: exact lock/unlock times (infer wake-up time, phone checking frequency)
+   - app: which specific apps were used, for how long (social media? messaging?)
+   - motion: exact activity transition timestamps (when did she leave home?)
+   - keyboard: what was typed, in which app (communication content)
+   - music: which songs/artists played (mood signal from genre)
+4. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
+5. Use get_receptivity_history to understand this person's typical patterns and past availability
+6. Use find_similar_days to reason analogically from past behavioral-emotional pairings
+7. Synthesize all evidence into a coherent prediction
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
