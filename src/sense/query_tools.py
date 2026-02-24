@@ -275,7 +275,7 @@ def _normalize_ts(ts: str | datetime) -> datetime:
 def _normalize_hour_start(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure the DataFrame has a tz-naive datetime column named 'hour_start'."""
     if "hour_start" not in df.columns:
-        for alt in ("timestamp", "ts", "datetime", "hour"):
+        for alt in ("hour_local", "hour_utc", "timestamp", "ts", "datetime", "hour"):
             if alt in df.columns:
                 df = df.rename(columns={alt: "hour_start"})
                 break
@@ -496,9 +496,16 @@ class SensingQueryEngine:
             logger.warning("Could not load %s: %s", path, exc)
             return pd.DataFrame()
 
+    # Map from logical modality name → actual directory/file prefix on disk
+    _MODALITY_DIR_ALIAS: dict[str, str] = {
+        "keyboard": "keyinput",
+        "music": "mus",
+    }
+
     def _parquet_path(self, study_id: int, modality: str) -> Path:
         pid = str(study_id).zfill(3)
-        return self.processed_dir / modality / f"{pid}_{modality}_hourly.parquet"
+        disk_name = self._MODALITY_DIR_ALIAS.get(modality, modality)
+        return self.processed_dir / disk_name / f"{pid}_{disk_name}_hourly.parquet"
 
     def _load_modality_df(self, study_id: int, modality: str) -> pd.DataFrame:
         cache_key = f"{study_id}_{modality}"
