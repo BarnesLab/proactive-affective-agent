@@ -29,8 +29,8 @@ MODALITY_DIRS: dict[str, str] = {
     "gps": "gps",
     "motion": "motion",
     "screen": "screen",
-    "keyboard": "keyboard",
-    "music": "music",
+    "keyboard": "keyinput",   # disk uses "keyinput" dir/prefix
+    "music": "mus",           # disk uses "mus" dir/prefix
     "light": "light",
 }
 
@@ -372,8 +372,8 @@ def _apply_row_to_window(
 def _normalize_hour_start(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure the 'hour_start' column is a tz-naive datetime column."""
     if "hour_start" not in df.columns:
-        # Try common alternatives
-        for alt in ("timestamp", "ts", "datetime", "hour"):
+        # Try common alternatives (hour_local is the actual column name in processed Parquets)
+        for alt in ("hour_local", "hour_utc", "timestamp", "ts", "datetime", "hour"):
             if alt in df.columns:
                 df = df.rename(columns={alt: "hour_start"})
                 break
@@ -430,8 +430,8 @@ class HourlyFeatureLoader:
     def _get_parquet_path(self, study_id: int, modality: str) -> Path:
         """Return expected Parquet path for a participant + modality."""
         pid = str(study_id).zfill(3)
-        subdir = MODALITY_DIRS.get(modality, modality)
-        return self.processed_dir / subdir / f"{pid}_{modality}_hourly.parquet"
+        disk_name = MODALITY_DIRS.get(modality, modality)
+        return self.processed_dir / disk_name / f"{pid}_{disk_name}_hourly.parquet"
 
     def _load_modality(self, study_id: int, modality: str) -> pd.DataFrame | None:
         """Load (and cache) a modality Parquet for one participant.
