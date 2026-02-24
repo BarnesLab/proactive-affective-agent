@@ -47,7 +47,14 @@ class TFIDFRetriever:
         self._train_df = train_df[mask].reset_index(drop=True)
 
         texts = self._train_df[text_column].fillna("").tolist()
-        self._matrix = self.vectorizer.fit_transform(texts)
+        try:
+            self._matrix = self.vectorizer.fit_transform(texts)
+        except ValueError:
+            # Fallback for small corpora: relax min_df and stop words
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            fallback = TfidfVectorizer(max_features=self.vectorizer.max_features, min_df=1)
+            self._matrix = fallback.fit_transform(texts)
+            self.vectorizer = fallback
         self._fitted = True
 
     def search(self, query: str, top_k: int = 20) -> list[dict[str, Any]]:

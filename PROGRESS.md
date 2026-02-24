@@ -52,7 +52,8 @@ print(eng.call_tool('get_daily_summary', {'date': '2023-11-20'}, study_id=71, em
 - `keyinput`: 280 users
 - `light`: 111 users
 - `mus` (music): 91 users
-- `accelerometer`, `gps`: **no data** (not collected in BUCS)
+- `accelerometer`: 11,134 rows (sleep detection via `val_sleep_duration_min`)
+- `gps`: 12,926 rows (`travel_km`, `home_minutes`, `location_variance`, etc.)
 
 **Prediction targets:**
 - Continuous (3): `PANAS_Pos` (0–30), `PANAS_Neg` (0–30), `ER_desire` (0–10)
