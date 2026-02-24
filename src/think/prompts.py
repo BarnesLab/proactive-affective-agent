@@ -144,7 +144,8 @@ Analyze the sensing data step by step:
 4. **Pattern Integration**: How do these signals combine? Are there concerning patterns?
 5. **User Context**: Given this user's history and traits, what would you predict?
 
-Based on your analysis, provide your predictions as JSON."""
+Based on your analysis, provide your predictions as JSON.
+{OUTPUT_FORMAT}"""
 
 
 def format_sensing_summary(sensing_day) -> str:
