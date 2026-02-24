@@ -75,6 +75,54 @@ The agent builds up evidence like a behavioral data scientist detective — it d
 
 **Real-world deployment note**: The `get_receptivity_history` tool reflects what a deployed JITAI system would actually know — past intervention accept/reject events — not high-frequency EMA labels. For the research comparison we also return mood patterns from the study context.
 
+### Example: Agent Investigation Trace
+
+**Scenario:** Participant 071, 2024-01-15, 2:00 PM EMA.
+**Profile:** 62-year-old female, breast cancer stage II, 4 years post-treatment. PHQ-8 = 8 (mild depression), extraversion = 3.2/7, low social support.
+**Receptivity log:** Past 7 days: 4 accepted, 2 rejected. Yesterday 2pm slot: rejected.
+
+> *Agent:* "I need to figure out this person's emotional state around 2pm today. She has mild depression and is not very extraverted. Let me start with a big-picture look at today."
+
+`→ CALL: get_daily_summary(date="2024-01-15")`
+```
+GPS: stayed home all day, 0 km travel. Screen: 3.4h total (high). Motion: 98% stationary.
+Keyboard: 12 words typed (very low). Music: no listening.
+```
+> *Belief update:* She barely moved, barely typed, barely left home. Baseline for this person? I need to check.
+
+> *Agent:* "The home confinement and inactivity stand out. Let me check if this is unusual for her — maybe she works from home and this is normal."
+
+`→ CALL: compare_to_baseline(metric="gps_at_home_pct", lookback_days=14)`
+```
+Her 14-day baseline: typically home 52% of the time. Today: 100%.
+Percentile: 97th. z-score: +2.8. This is extremely unusual for her.
+```
+> *Belief update:* Strong anomaly signal — much more confined than usual, not just "she works from home."
+
+> *Agent:* "97th percentile home confinement is a red flag. Paired with very low keyboard use and no music — possible social withdrawal or low energy. Let me check if similar patterns predict negative affect."
+
+`→ CALL: find_similar_days(top_k=3)`
+```
+Similar day 2024-01-08: (home all day, high screen, no music) → PANAS_Neg=5, ER_desire=6  ✗ rejected
+Similar day 2023-12-22: (home, holiday)                       → PANAS_Neg=3, ER_desire=2  ✓ accepted
+Similar day 2024-01-02: (home, low GPS)                       → PANAS_Neg=5, ER_desire=5  ✓ accepted
+```
+> *Belief update:* The 2024-01-08 match (no music, low typing, home all day — same pattern as today) showed the highest negative affect AND a rejected intervention. Concerning match.
+
+> *Agent:* "The 2024-01-08 match is concerning. Let me check recent receptivity history — she rejected yesterday, which may signal fatigue with interventions right now."
+
+`→ CALL: get_receptivity_history(n=7)`
+```
+Last 7 days: 4 accepted, 2 rejected.
+Yesterday 2pm slot: rejected (low ER_desire).
+Today is a Monday — she often has lower affect on Mondays (pattern in history).
+```
+> *Belief update:* Yesterday's rejection and the Monday pattern converge. Elevated NA likely, plus intervention fatigue. Enough evidence.
+
+**Final prediction:** `PANAS_Neg = 5` (elevated, 69th personal percentile), `ER_desire = 5` (moderate), `Individual_level_NA_State = True`, availability = *yes but with caution* (receptivity fatigue — suggest lighter intervention or delay).
+
+**Reasoning summary:** Extreme home confinement (97th pct), very low typing, behavioral match to a past high-NA day (2024-01-08), plus yesterday's rejection → elevated negative affect. Recommend lower-intensity contact.
+
 ---
 
 ## Data: BUCS Cancer Survivorship Study
