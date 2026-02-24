@@ -185,6 +185,8 @@ Per-fold RF results:
 
 **Key insight: BA ≈ 0.50 = essentially random. Sensing features alone are not predictive.**
 
+**Ridge note:** Even with RidgeCV (alphas=[0.1, 1, 10, 100, 1000]) inside StandardScaler pipeline, 3/5 folds still diverge catastrophically (MAE ~1e12–1e14). Only folds 2 (MAE=9.5) and 3 (MAE=10.8) are reasonable. Root cause: extreme feature collinearity + outlier targets in some folds. Ridge is not reliable for this dataset — **exclude Ridge from final paper results.**
+
 ### Baseline: DL MLP (Sensing features) — Folds 1-4 done, Fold 5 being re-run
 
 | Fold | MAE | BA | F1 | Notes |
@@ -274,7 +276,7 @@ Once all baselines + V3/V4 pilot are done, compile final comparison:
 | Transformer MiniLM | Diary text only | 3.898 | 0.629 | 0.629 | ✅ Done |
 | ML RF | Sensing features | 5.923 | ~0.501 | 0.501 | ✅ Done |
 | ML XGBoost | Sensing features | 9.374 | ~0.502 | 0.502 | ✅ Done |
-| ML Ridge | Sensing features | DIVERGED | — | — | ⏳ RidgeCV fix running |
+| ML Ridge | Sensing features | DIVERGED | — | — | ❌ RidgeCV still diverges (3/5 folds bad) |
 | ML Logistic | Sensing features | — | — | 0.500 | ✅ Done |
 | DL MLP | Sensing features | ~4.7* | ~0.507* | 0.507* | ⏳ Fold 5 rerunning |
 | Combined | Sensor + diary | pending | pending | pending | ⏳ Running |
