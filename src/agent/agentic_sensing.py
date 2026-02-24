@@ -42,7 +42,7 @@ Investigation strategy:
 1. Start with get_daily_summary to orient yourself on today and recent days
 2. Use query_sensing to zoom into specific modalities that seem informative
 3. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
-4. Use get_ema_history to understand this person's typical emotional range and patterns
+4. Use get_receptivity_history to understand this person's typical patterns and past availability
 5. Use find_similar_days to reason analogically from past behavioral-emotional pairings
 6. Synthesize all evidence into a coherent prediction
 
@@ -150,6 +150,8 @@ class AgenticSensingAgent:
         tool_call_count = 0
         full_reasoning: list[str] = []
         final_response = None
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         logger.info(f"[V5] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
 
@@ -170,6 +172,9 @@ class AgenticSensingAgent:
                 break
 
             final_response = response
+            if hasattr(response, "usage") and response.usage:
+                total_input_tokens += response.usage.input_tokens or 0
+                total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
                 logger.debug(f"[V5] Agent ended turn after {tool_call_count} tool calls")
@@ -237,6 +242,9 @@ class AgenticSensingAgent:
                     system=SYSTEM_PROMPT,
                     messages=messages,
                 )
+                if hasattr(pred_response, "usage") and pred_response.usage:
+                    total_input_tokens += pred_response.usage.input_tokens or 0
+                    total_output_tokens += pred_response.usage.output_tokens or 0
                 last_text = self._extract_text(pred_response)
             except Exception as exc:
                 logger.error(f"[V5] Error requesting prediction: {exc}")
@@ -250,9 +258,13 @@ class AgenticSensingAgent:
         prediction["_version"] = "v5"
         prediction["_model"] = self.model
         prediction["_final_response"] = last_text
+        prediction["_input_tokens"] = total_input_tokens
+        prediction["_output_tokens"] = total_output_tokens
+        prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
             f"[V5] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )
         return prediction
@@ -281,10 +293,10 @@ class AgenticSensingAgent:
 {self.memory_doc[:1200]}
 """
 
+        # Check which Parquet modality files exist for this participant
         available_modalities = [
-            k for k in ["accelerometer", "sleep", "android_sleep", "gps",
-                         "screen", "motion", "key_input", "app_usage"]
-            if k in self.engine.sensing_dfs
+            mod for mod in self.engine.MODALITIES
+            if self.engine._parquet_path(self.study_id, mod).exists()
         ]
         modalities_str = ", ".join(available_modalities) if available_modalities else "none loaded"
 
@@ -314,69 +326,31 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         ema_timestamp: str,
         ema_date: str,
     ) -> str:
-        """Route a tool call to the appropriate SensingQueryEngine method.
+        """Dispatch a tool call to SensingQueryEngine.call_tool().
+
+        The Parquet-backed SensingQueryEngine.call_tool() handles all routing
+        internally using the SENSING_TOOLS schema signatures. This keeps the
+        dispatch logic in one place.
 
         Args:
             tool_name: The tool name from the Anthropic tool_use block.
             tool_input: The input dict from the tool_use block.
-            ema_timestamp: EMA timestamp string (for cutoff enforcement).
-            ema_date: EMA date string (fallback default for date args).
+            ema_timestamp: EMA timestamp (injected into call_tool for cutoff enforcement).
+            ema_date: EMA date string (used for fallback defaults in tool_input).
 
         Returns:
             String result to return to the model as a tool_result.
         """
-        try:
-            if tool_name == "get_daily_summary":
-                return self.engine.get_daily_summary(
-                    study_id=self.study_id,
-                    date=tool_input.get("date", ema_date),
-                    lookback_days=int(tool_input.get("lookback_days", 0)),
-                    cutoff_timestamp=ema_timestamp,
-                )
+        # Inject date default for tools that need it
+        if tool_name == "get_daily_summary" and "date" not in tool_input:
+            tool_input = {**tool_input, "date": ema_date}
 
-            elif tool_name == "query_sensing":
-                return self.engine.query_sensing(
-                    study_id=self.study_id,
-                    modality=tool_input.get("modality", "gps"),
-                    start_date=tool_input.get("start_date", ema_date),
-                    end_date=tool_input.get("end_date"),
-                    cutoff_timestamp=ema_timestamp,
-                )
-
-            elif tool_name == "compare_to_baseline":
-                return self.engine.compare_to_baseline(
-                    study_id=self.study_id,
-                    modality=tool_input.get("modality", "gps"),
-                    metric=tool_input.get("metric", "amt_travel_day_km"),
-                    date=tool_input.get("date", ema_date),
-                    baseline_days=int(tool_input.get("baseline_days", 30)),
-                    cutoff_timestamp=ema_timestamp,
-                )
-
-            elif tool_name == "get_ema_history":
-                return self.engine.get_ema_history(
-                    study_id=self.study_id,
-                    before_date=tool_input.get("before_date", ema_date),
-                    n_entries=min(int(tool_input.get("n_entries", 10)), 30),
-                    include_emotion_driver=bool(tool_input.get("include_emotion_driver", False)),
-                    cutoff_timestamp=ema_timestamp,
-                )
-
-            elif tool_name == "find_similar_days":
-                return self.engine.find_similar_days(
-                    study_id=self.study_id,
-                    reference_date=tool_input.get("reference_date", ema_date),
-                    n_similar=min(int(tool_input.get("n_similar", 5)), 10),
-                    features=tool_input.get("features"),
-                    cutoff_timestamp=ema_timestamp,
-                )
-
-            else:
-                return f"Error: unknown tool '{tool_name}'. Available tools: get_daily_summary, query_sensing, compare_to_baseline, get_ema_history, find_similar_days"
-
-        except Exception as exc:
-            logger.warning(f"[V5] Tool execution error ({tool_name}): {exc}")
-            return f"Tool error: {exc}"
+        return self.engine.call_tool(
+            tool_name=tool_name,
+            tool_input=tool_input,
+            study_id=self.study_id,
+            ema_timestamp=ema_timestamp,
+        )
 
     def _extract_text(self, response: anthropic.types.Message | None) -> str:
         """Extract all TextBlock content from an Anthropic message."""

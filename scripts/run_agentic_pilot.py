@@ -82,10 +82,6 @@ def main() -> None:
 
     logger.info(f"Loaded {len(ema_df)} EMA entries for {ema_df['Study_ID'].nunique()} users")
 
-    logger.info("Loading sensing data...")
-    sensing_dfs = loader.load_all_sensing()
-    logger.info(f"Loaded sensing modalities: {list(sensing_dfs.keys())}")
-
     try:
         baseline_df = loader.load_baseline()
     except FileNotFoundError:
@@ -93,12 +89,19 @@ def main() -> None:
         logger.warning("Baseline trait data not found — using empty profiles")
 
     # ------------------------------------------------------------------
-    # Build query engine (shared across users)
+    # Build query engine (Parquet-backed, shared across users)
     # ------------------------------------------------------------------
+    processed_dir = (Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data") / "processed" / "hourly"
+    if not processed_dir.exists():
+        logger.error(f"Processed hourly data directory not found: {processed_dir}")
+        logger.error("Run scripts/offline/run_phase1.sh first to generate Parquet files.")
+        sys.exit(1)
+
     query_engine = SensingQueryEngine(
-        sensing_dfs=sensing_dfs,
+        processed_dir=processed_dir,
         ema_df=ema_df,
     )
+    logger.info(f"Parquet query engine loaded from: {processed_dir}")
 
     # ------------------------------------------------------------------
     # Select users
@@ -169,21 +172,32 @@ def main() -> None:
         metrics = {}
         logger.warning("No predictions to evaluate.")
 
-    _print_summary(metrics, len(all_predictions), run_start, args.model)
+    _print_summary(metrics, len(all_predictions), run_start, args.model, all_metadata)
 
     # ------------------------------------------------------------------
     # Save final results
     # ------------------------------------------------------------------
+    total_tokens = sum(m.get("total_tokens", 0) for m in all_metadata)
+    total_tool_calls = sum(m.get("n_tool_calls", 0) for m in all_metadata)
     results = {
         "run_config": {
             "model": args.model,
             "max_tool_calls": args.max_tool_calls,
             "dry_run": args.dry_run,
+            "diary_only": True,
             "users": pilot_user_ids,
             "n_users": len(pilot_user_ids),
             "n_ema_entries": len(all_predictions),
             "run_start": run_start.isoformat(),
             "run_end": datetime.now().isoformat(),
+        },
+        "token_stats": {
+            "total_tokens": total_tokens,
+            "input_tokens": sum(m.get("input_tokens", 0) for m in all_metadata),
+            "output_tokens": sum(m.get("output_tokens", 0) for m in all_metadata),
+            "avg_tokens_per_ema": total_tokens / len(all_predictions) if all_predictions else 0,
+            "total_tool_calls": total_tool_calls,
+            "avg_tool_calls_per_ema": total_tool_calls / len(all_predictions) if all_predictions else 0,
         },
         "metrics": metrics,
         "predictions": all_predictions,
@@ -253,7 +267,31 @@ def _run_user(
         logger.warning(f"User {study_id}: no EMA entries found")
         return [], [], []
 
-    entries = list(user_ema.iterrows())
+    total_ema = len(user_ema)
+
+    # Diary-present filter: for apple-to-apple comparison with CALLM (diary-based baseline),
+    # only evaluate on EMA entries where the participant also wrote a diary entry.
+    # This ensures the evaluation set is identical for all methods.
+    diary_mask = (
+        user_ema["emotion_driver"].notna()
+        & (user_ema["emotion_driver"].astype(str).str.strip() != "")
+        & (user_ema["emotion_driver"].astype(str).str.lower() != "nan")
+    )
+    user_ema_with_diary = user_ema[diary_mask]
+
+    if user_ema_with_diary.empty:
+        logger.warning(
+            f"User {study_id}: no diary-present EMA entries found "
+            f"(diary_only=True). Falling back to all {total_ema} entries."
+        )
+        eval_ema = user_ema
+    else:
+        eval_ema = user_ema_with_diary
+        logger.info(
+            f"  Diary filter: {len(eval_ema)}/{total_ema} EMA entries have diary text"
+        )
+
+    entries = list(eval_ema.iterrows())
     if dry_run:
         entries = entries[:dry_run_limit]
         logger.info(f"  [DRY RUN] Limiting to {dry_run_limit} EMA entries")
@@ -342,6 +380,9 @@ def _run_user(
             "timestamp_local": ts,
             "date_local": ema_date,
             "n_tool_calls": pred.get("_n_tool_calls", 0),
+            "input_tokens": pred.get("_input_tokens", 0),
+            "output_tokens": pred.get("_output_tokens", 0),
+            "total_tokens": pred.get("_total_tokens", 0),
         }
 
         predictions.append(pred)
@@ -424,6 +465,7 @@ def _print_summary(
     n_predictions: int,
     run_start: datetime,
     model: str,
+    all_metadata: list[dict] | None = None,
 ) -> None:
     """Print evaluation summary to stdout."""
     elapsed = (datetime.now() - run_start).total_seconds()
@@ -433,6 +475,18 @@ def _print_summary(
     print(f"Model:           {model}")
     print(f"Predictions:     {n_predictions}")
     print(f"Elapsed:         {elapsed:.0f}s ({elapsed / 60:.1f}min)")
+
+    if all_metadata:
+        total_tool_calls = sum(m.get("n_tool_calls", 0) for m in all_metadata)
+        total_tokens = sum(m.get("total_tokens", 0) for m in all_metadata)
+        input_tokens = sum(m.get("input_tokens", 0) for m in all_metadata)
+        output_tokens = sum(m.get("output_tokens", 0) for m in all_metadata)
+        avg_tool_calls = total_tool_calls / n_predictions if n_predictions else 0
+        avg_tokens = total_tokens / n_predictions if n_predictions else 0
+        print(f"\nToken Usage:")
+        print(f"  Total tokens:    {total_tokens:,}  ({input_tokens:,} in / {output_tokens:,} out)")
+        print(f"  Avg/EMA entry:   {avg_tokens:.0f} tokens")
+        print(f"  Avg tool calls:  {avg_tool_calls:.1f}")
 
     agg = metrics.get("aggregate", {})
 

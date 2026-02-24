@@ -8,16 +8,16 @@ The agentic sensing agent uses these tools like a detective:
 Two data backends are supported:
   1. Parquet-backed (SensingQueryEngine): reads hourly Parquet files from
      data/processed/hourly/{modality}/{pid}_{modality}_hourly.parquet.
-     Primary backend for V5 agentic agent.
+     Primary backend for agentic variants (V2-agentic, V4-agentic).
   2. CSV-backed (SensingQueryEngineLegacy): reads from pre-loaded daily CSV
      DataFrames. Preserved for backward compatibility with V1–V4 pipelines.
 
 Tool inventory (SENSING_TOOLS list, Anthropic SDK format):
-  - query_sensing          : targeted hourly sensor query
-  - get_daily_summary      : full day-level overview across all modalities
-  - compare_to_baseline    : compare a metric to personal historical baseline
-  - get_ema_history        : retrieve past EMA responses for context
-  - find_similar_days      : find behaviorally similar past days via cosine similarity
+  - query_sensing             : targeted hourly sensor query
+  - get_daily_summary         : full day-level overview across all modalities
+  - compare_to_baseline       : compare a metric to personal historical baseline
+  - get_receptivity_history   : retrieve past intervention receptivity + mood patterns
+  - find_similar_days         : find behaviorally similar past days via cosine similarity
 """
 
 from __future__ import annotations
@@ -129,10 +129,12 @@ SENSING_TOOLS: list[dict] = [
         },
     },
     {
-        "name": "get_ema_history",
+        "name": "get_receptivity_history",
         "description": (
-            "Retrieve this person's past EMA responses and diary entries. "
-            "Use this to understand their emotional patterns and personal baselines."
+            "Retrieve this person's past intervention receptivity and mood patterns. "
+            "In real-world JITAI deployment only intervention accept/reject is known; "
+            "this tool returns that signal plus aggregate mood trends for context. "
+            "Use this to understand their emotional baseline and availability patterns."
         ),
         "input_schema": {
             "type": "object",
@@ -144,7 +146,7 @@ SENSING_TOOLS: list[dict] = [
                 },
                 "include_emotion_driver": {
                     "type": "boolean",
-                    "description": "Include the diary text (emotion_driver). Default false.",
+                    "description": "Include the diary text (emotion_driver) if available. Default false.",
                     "default": False,
                 },
             },
@@ -910,25 +912,33 @@ class SensingQueryEngine:
             return "bottom 7% of your hours"
         return ""
 
-    def get_ema_history(
+    def get_receptivity_history(
         self,
         study_id: int,
         n_days: int,
         before_timestamp: str | datetime,
         include_emotion_driver: bool = False,
     ) -> str:
-        """Retrieve formatted EMA history for a participant.
+        """Retrieve past intervention receptivity and mood patterns for a participant.
+
+        In real-world JITAI deployment only intervention accept/reject (receptivity) is
+        available as user feedback. This method returns receptivity data alongside
+        aggregate mood trends — what an actually-deployed system would know.
+
+        For the research context (BUCS study), we also have EMA mood labels and use
+        them here to compute mood patterns. This lets the agent learn per-user baselines
+        while simulating real-world constraints on what feedback is observable.
 
         Args:
             study_id: Participant's Study_ID.
             n_days: Number of past days to include (default 14).
             before_timestamp: Only entries strictly before this timestamp.
-            include_emotion_driver: Include diary text if True.
+            include_emotion_driver: Include diary text if True (research mode only).
 
         Returns:
-            Natural language EMA history with pattern summary.
+            Natural language receptivity + mood pattern summary.
         """
-        header = f"[EMA History: last {n_days} days]"
+        header = f"[Receptivity & Mood History: last {n_days} days]"
         user_ema = self._ema_for_user(study_id)
         if user_ema.empty:
             return f"{header}\nNo EMA history available."
@@ -1193,8 +1203,8 @@ class SensingQueryEngine:
                     current_value=float(tool_input["current_value"]),
                     ema_timestamp=ema_timestamp,
                 )
-            if tool_name == "get_ema_history":
-                return self.get_ema_history(
+            if tool_name == "get_receptivity_history":
+                return self.get_receptivity_history(
                     study_id=study_id,
                     n_days=tool_input.get("n_days", 14),
                     before_timestamp=ema_timestamp,
@@ -1208,7 +1218,11 @@ class SensingQueryEngine:
                     reference_date=ref_date,
                     n=tool_input.get("n", 5),
                 )
-            return f"Unknown tool: {tool_name}"
+            return (
+                f"Unknown tool: {tool_name}. "
+                f"Available: query_sensing, get_daily_summary, compare_to_baseline, "
+                f"get_receptivity_history, find_similar_days"
+            )
 
         except Exception as exc:
             logger.error("Tool call '%s' failed: %s", tool_name, exc, exc_info=True)

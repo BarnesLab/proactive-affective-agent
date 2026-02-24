@@ -12,37 +12,49 @@ Each EMA entry becomes an opportunity for an AI agent to autonomously investigat
 
 ---
 
-## Architecture: Six Agent Versions + ML Baselines
+## Architecture: 2×2 Design Space + Baselines
 
-| Version | Diary | Sensing | RAG | Style | Novelty |
-|---------|-------|---------|-----|-------|---------|
-| **CALLM** | ✅ | ❌ | TF-IDF diary only | Reactive | CHI 2025 baseline |
-| **V1** | ❌ | ✅ | memory doc only | Structured | Fixed 5-step pipeline |
-| **V2** | ❌ | ✅ | memory doc only | Autonomous | LLM decides steps |
-| **V3** | ✅ | ✅ | diary+sensing RAG | Structured | Multimodal RAG |
-| **V4** | ✅ | ✅ | diary+sensing RAG | Autonomous | Full autonomy |
-| **V5** | ✅ | ✅ | tool-use queries | **Agentic** | Detective-style investigation |
-| **ML** | ❌ | ✅ | N/A | RF/XGBoost | Traditional baseline |
+The key research question: does **agentic investigation** (autonomous tool-use queries) outperform **structured pipelines** (fixed pre-formatted summaries)? We test this across two data conditions: sensing-only and multimodal (diary + sensing).
 
-### V5: Agentic Sensing Investigation (Key Contribution)
+|  | **Structured** (fixed pipeline) | **Agentic** (autonomous tool-use) |
+|---|---|---|
+| **Sensing-only** | V2-structured | **V2-agentic** |
+| **Multimodal** (diary + sensing) | V4-structured | **V4-agentic** ← key contribution |
 
-V5 is the primary novel contribution. Instead of pre-computed feature summaries, the agent uses **Anthropic SDK tool use** to query a Parquet-backed sensing database autonomously:
+Plus: CALLM (diary+RAG reactive baseline, CHI 2025), ML baselines (RF/XGBoost/LogReg/Ridge).
+
+### Agent Taxonomy
+
+| Name | Diary | Sensing | Style | Novelty |
+|------|-------|---------|-------|---------|
+| **CALLM** | ✅ | ❌ | Reactive (diary required) | CHI 2025 baseline |
+| **V2-structured** | ❌ | ✅ | Fixed 5-step pipeline | LLM-structured sensing only |
+| **V2-agentic** | ❌ | ✅ | Autonomous tool-use | Detective loop, sensing only |
+| **V4-structured** | ✅ | ✅ | Multimodal RAG | Diary + hourly sensing context |
+| **V4-agentic** | ✅ | ✅ | Autonomous tool-use | **Key contribution** |
+| **ML** | ❌ | ✅ | RF/XGBoost/LogReg | Traditional baseline |
+
+### Agentic Investigation Loop (V2-agentic, V4-agentic)
+
+Instead of pre-computed feature summaries, the agent uses **Anthropic SDK tool use** to query a Parquet-backed sensing database autonomously:
 
 ```
 EMA timestamp received
        ↓
 LLM calls query_sensing(modality="gps", hours_before_ema=4)
-LLM calls compare_to_baseline(metric="screen_on_min", ...)
-LLM calls find_similar_days(top_k=3)
-LLM calls get_ema_history(n_days=7)
+LLM calls compare_to_baseline(feature="screen_on_min", current_value=45)
+LLM calls find_similar_days(n=5)
+LLM calls get_receptivity_history(n_days=7)
        ↓
 LLM reasons: "Less movement than usual + high screen time +
               3 similar days all had negative affect..."
        ↓
-Structured prediction output
+Structured prediction output (JSON)
 ```
 
-The agent builds up evidence like a behavioral data scientist detective — it decides **what to look at, not just what to predict**.
+The agent builds up evidence like a behavioral data scientist detective — it decides **what to look at, not just what to predict**. Token efficiency is a key metric: the hypothesis is that agentic agents query fewer, more informative signals than V2/V4-structured which receive all features unconditionally.
+
+**Real-world deployment note**: The `get_receptivity_history` tool reflects what a deployed JITAI system would actually know — past intervention accept/reject events — not high-frequency EMA labels. For the research comparison we also return mood patterns from the study context.
 
 ---
 
@@ -52,6 +64,7 @@ The agent builds up evidence like a behavioral data scientist detective — it d
 - **EMA**: 3×/day (8–10am, 1–3pm, 7–9pm), ~15,000+ entries
 - **Passive sensing**: 8 modalities at hourly resolution
 - **Labels**: PANAS Pos/Neg, ER desire, 12 binary affect states, availability
+- **Evaluation subset**: EMA entries where diary was also written (for apple-to-apple CALLM comparison)
 
 ### BUCS Sensing Pipeline (Phase 0 → Phase 1)
 
@@ -68,16 +81,18 @@ data/bucs-data/                        (raw, ~114 GB)
 
 scripts/offline/                       (offline batch processors)
     run_phase0.sh                      → participant roster + home locations
-    run_phase1.sh                      → all light modalities (30 min)
+    run_phase1.sh                      → all light modalities (~30 min)
     process_accel.py                   → actigraphy (run overnight)
     process_gps.py                     → mobility features (run overnight)
 
-data/processed/hourly/                 (output, ~2 GB)
+data/processed/hourly/                 (output, ~2 GB Parquet)
     participant_platform.parquet       (418 participants, iOS/Android flag)
-    home_locations.parquet             (362/413 home locations, median radius 25m)
+    home_locations.parquet             (359/413 home locations, median radius 25m)
     motion/ screen/ keyinput/ mus/ light/
     accel/ gps/                        (heavy, run separately)
 ```
+
+**Note**: 114 GB raw → 2 GB Parquet = semantic feature aggregation, not lossy compression. Raw 1 Hz accelerometer → 4 hourly statistics (activity counts, mean/std magnitude, coverage %). Agent tools in `src/sense/query_tools.py` can query at hourly granularity; raw data remains accessible on disk.
 
 **Missing data taxonomy** (4 classes, handled explicitly):
 - `OBSERVED`: data present and valid
@@ -87,15 +102,15 @@ data/processed/hourly/                 (output, ~2 GB)
 
 ---
 
-## Pilot Results (existing V1–V4)
+## Pilot Results
 
-| Metric | CALLM | V1 | V2 | V3 | V4 | ML |
-|--------|-------|----|----|----|----|-----|
-| Mean MAE ↓ | **~1.16** | ~high | 7.06 | *pending* | *pending* | *pending* |
-| Mean BA ↑ | **~0.63** | ~0.52 | 0.52 | *pending* | *pending* | *pending* |
-| Mean F1 ↑ | **~0.44** | ~low | 0.19 | *pending* | *pending* | *pending* |
+| Metric | CALLM | V2-structured | V2-agentic | V4-structured | V4-agentic | ML |
+|--------|-------|---------------|------------|---------------|------------|----|
+| Mean MAE ↓ | **~1.16** | ~high | *pending* | *pending* | *pending* | *pending* |
+| Mean BA ↑ | **~0.63** | ~0.52 | *pending* | *pending* | *pending* | *pending* |
+| Mean F1 ↑ | **~0.44** | ~0.19 | *pending* | *pending* | *pending* | *pending* |
 
-CALLM (diary+RAG) dominates sensing-only V1/V2. V3/V4/V5/ML evaluation pending on BUCS processed data.
+CALLM (diary+RAG) dominates sensing-only approaches. Full BUCS evaluation pending (Phase 1 heavy modalities + experiments).
 
 ---
 
@@ -126,12 +141,12 @@ python scripts/offline/process_gps.py
 ```
 src/
 ├── agent/
-│   ├── personal_agent.py      # PersonalAgent dispatcher (routes to V1–V5)
-│   ├── structured.py          # V1: sensing → structured 5-step pipeline
-│   ├── autonomous.py          # V2: sensing → LLM-autonomous reasoning
-│   ├── structured_full.py     # V3: diary + sensing + RAG → structured
-│   ├── autonomous_full.py     # V4: diary + sensing + RAG → autonomous
-│   └── agentic_sensing.py     # V5: Anthropic tool-use detective loop
+│   ├── personal_agent.py      # PersonalAgent dispatcher
+│   ├── structured.py          # V2-structured: sensing → fixed 5-step pipeline
+│   ├── autonomous.py          # V2-structured (autonomous variant)
+│   ├── structured_full.py     # V4-structured: diary + sensing + RAG → structured
+│   ├── autonomous_full.py     # V4-structured (autonomous variant)
+│   └── agentic_sensing.py     # V2/V4-agentic: Anthropic tool-use detective loop
 ├── sense/
 │   ├── query_tools.py         # SensingQueryEngine + SENSING_TOOLS (SDK format)
 │   └── features.py            # HourlyFeatureLoader and feature extractors
@@ -158,21 +173,22 @@ scripts/
 │   ├── process_accel.py       # Accelerometer → actigraphy (heavy)
 │   ├── process_gps.py         # GPS → mobility features (heavy)
 │   └── utils.py               # Shared timezone/epoch helpers
-├── run_pilot.py               # LLM experiment runner (V1–V4)
-├── run_agentic_pilot.py       # V5 evaluation runner (tool-use loop)
+├── run_pilot.py               # LLM experiment runner (V2/V4-structured)
+├── run_agentic_pilot.py       # Agentic evaluation runner (V2/V4-agentic, tool-use loop)
 ├── run_ml_baselines.py        # ML baselines
-└── run_parallel.sh            # Parallel 5-version experiment launcher
+└── run_parallel.sh            # Parallel experiment launcher
 
 docs/
 ├── design.md                  # System design document
-└── next-steps-waiting-for-data.md
+├── PROGRESS.md                # Auto-updated progress tracker
+└── advisor-sync-architecture.html  # Architecture overview for advisor meetings
 ```
 
 ---
 
 ## Running Experiments
 
-### V5 Agentic Agent
+### V2/V4-Agentic (tool-use loop)
 
 ```bash
 # Dry run — test tool-use loop without LLM calls
@@ -181,16 +197,16 @@ python scripts/run_agentic_pilot.py --users 71 --dry-run
 # Single user evaluation
 python scripts/run_agentic_pilot.py --users 71 --model claude-opus-4-6
 
-# Multiple users
+# Multiple users (diary-present EMA entries only, for CALLM comparison)
 python scripts/run_agentic_pilot.py --users 71,164,119 --model claude-sonnet-4-6
 ```
 
-### V1–V4 LLM Versions
+### V2/V4-Structured LLM Versions
 
 ```bash
 python scripts/run_pilot.py --version all --users 71,164,119,458,310 --dry-run
-python scripts/run_pilot.py --version v3 --users 71,164,119,458,310
-bash scripts/run_parallel.sh   # all 5 versions × 5 users in parallel
+python scripts/run_pilot.py --version v4 --users 71,164,119,458,310
+bash scripts/run_parallel.sh   # all versions in parallel
 ```
 
 ### ML Baselines
@@ -209,3 +225,5 @@ Raw BUCS data is gitignored (~114 GB). Processed Parquet outputs (~2 GB) also gi
 Paper draft on Overleaf: `https://www.overleaf.com/project/6999d011b24a9f1d4e6e53e8`
 
 Design doc (Google Docs): https://docs.google.com/document/d/1BJ8P81Zcy3fKQYyQXNr9wU_es1tjkUGCdEblBvemskQ/edit?usp=sharing
+
+Progress & next steps: `docs/PROGRESS.md`
