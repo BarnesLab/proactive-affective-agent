@@ -46,9 +46,15 @@ MAX_HORIZONTAL_ACCURACY_M = 500.0
 # ---------------------------------------------------------------------------
 
 def haversine_m(lat1, lon1, lat2, lon2):
-    """Return distance in metres between (lat1, lon1) and (lat2, lon2)."""
+    """Return distance in metres between (lat1, lon1) and (lat2, lon2).
+
+    All arguments may be scalars or arrays of the same shape.
+    """
     R = 6_371_000.0  # Earth radius in metres
-    lat1, lon1, lat2, lon2 = np.radians([lat1, lon1, lat2, lon2])
+    lat1 = np.radians(lat1)
+    lon1 = np.radians(lon1)
+    lat2 = np.radians(lat2)
+    lon2 = np.radians(lon2)
     dlat = lat2 - lat1
     dlon = lon2 - lon1
     a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
