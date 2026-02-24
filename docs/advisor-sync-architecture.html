@@ -47,11 +47,12 @@
 <tr><th>What works</th><th>What's missing</th></tr>
 <tr><td>Diary text is expressive, self-reported</td><td>Requires participant to write each time (3×/day)</td></tr>
 <tr><td>TF-IDF RAG gives personal context</td><td>Passive signals ignored entirely</td></tr>
-<tr><td>Strong accuracy on pilot users</td><td>Breaks when participant doesn't write</td></tr>
+<tr><td>~BA 0.63 on diary-present EMA entries (pilot)</td><td>No prediction pathway for diary-absent EMA entries</td></tr>
 </table>
 
 <h2>The Gap</h2>
 <p>In real JITAI deployment, participants frequently skip diary entries — especially during high-stress moments when intervention is most needed. Passive sensing data (phone always on) fills this gap. The challenge: multi-modal, noisy, iOS/Android-heterogeneous data that can't be naively fed to an LLM.</p>
+<p><em>Evaluation note:</em> For a fair apple-to-apple comparison, all models (including ours) are currently evaluated on <strong>diary-present EMA entries only</strong>. We hypothesize that multimodal sensing + agent (V3, V4) will outperform diary-only CALLM even on this shared subset — by leveraging passive behavioral context in addition to the diary. The sensing-only path (V1, V2) addresses diary-absent entries as a deployment advantage, but full evaluation on that condition is pending.</p>
 
 <h1>2. System Architecture</h1>
 
@@ -225,7 +226,7 @@
   <li><strong>Receptivity as the only feedback signal</strong>: In real deployment there is no high-frequency EMA — only whether users accepted or rejected past interventions. <code>get_receptivity_history</code> closes this loop without requiring self-report.</li>
   <li><strong>Behavioral episode RAG</strong>: <code>find_similar_days</code> retrieves behaviorally analogous past days (not just diary text similarity) and uses their outcomes as soft labels for inference.</li>
   <li><strong>Principled missing data taxonomy</strong>: 4-class scheme that distinguishes why data is missing — critical for cross-platform sensing pipelines with heterogeneous devices.</li>
-  <li><strong>No diary required</strong>: Enables proactive intervention even when participants are non-compliant — the critical CALLM gap for real-world JITAI deployment.</li>
+  <li><strong>Diary-free design goal</strong>: The sensing-only path (V1, V2) is designed to enable proactive intervention even when participants are non-compliant — addressing the critical CALLM deployment gap. Full evaluation on diary-absent entries is a planned next step.</li>
 </ol>
 </div>
 
