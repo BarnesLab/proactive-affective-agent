@@ -1,4 +1,4 @@
-"""PersonalAgent: orchestrates CALLM, V1, V2, V3, V4 workflows for a single user.
+"""PersonalAgent: orchestrates CALLM, V1, V2, V3, V4, V5 workflows for a single user.
 
 Each user gets their own PersonalAgent. The agent delegates to the appropriate
 workflow based on the version parameter.
@@ -9,6 +9,7 @@ Version matrix:
   V2: sensing only — autonomous reasoning
   V3: diary + sensing + multimodal RAG — structured pipeline
   V4: diary + sensing + multimodal RAG — autonomous reasoning
+  V5: autonomous agentic sensing — tool-use loop with raw data access
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class PersonalAgent:
-    """Per-user agent that predicts emotional states using CALLM/V1/V2/V3/V4."""
+    """Per-user agent that predicts emotional states using CALLM/V1/V2/V3/V4/V5."""
 
     def __init__(
         self,
@@ -39,9 +40,12 @@ class PersonalAgent:
         profile: UserProfile | None = None,
         memory_doc: str = "",
         retriever: TFIDFRetriever | None = None,
+        query_engine=None,
+        v5_model: str = "claude-opus-4-6",
+        v5_max_tool_calls: int = 8,
     ) -> None:
         self.study_id = study_id
-        self.version = version  # "callm", "v1", "v2", "v3", "v4"
+        self.version = version  # "callm", "v1", "v2", "v3", "v4", "v5"
         self.llm = llm_client
         self.profile = profile or UserProfile(study_id=study_id)
         self.memory_doc = memory_doc
@@ -58,6 +62,21 @@ class PersonalAgent:
         elif version == "v4":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
             self._v4 = AutonomousFullWorkflow(llm_client, retriever=mm_retriever)
+        elif version == "v5":
+            if query_engine is None:
+                raise ValueError(
+                    "V5 requires a SensingQueryEngine. "
+                    "Pass query_engine= when constructing PersonalAgent with version='v5'."
+                )
+            from src.agent.agentic_sensing import AgenticSensingAgent
+            self._v5 = AgenticSensingAgent(
+                study_id=study_id,
+                profile=self.profile,
+                memory_doc=memory_doc,
+                query_engine=query_engine,
+                model=v5_model,
+                max_tool_calls=v5_max_tool_calls,
+            )
 
     def predict(
         self,
@@ -69,7 +88,7 @@ class PersonalAgent:
         """Make predictions for a single EMA entry.
 
         Args:
-            ema_row: pandas Series of the EMA entry (needed for CALLM/V3/V4's diary).
+            ema_row: pandas Series of the EMA entry (needed for CALLM/V3/V4/V5 diary).
             sensing_day: SensingDay dataclass (needed for V1/V2/V3/V4).
             date_str: Date string for context.
             sensing_dfs: Full sensing DataFrames (for V2 deeper queries).
@@ -87,6 +106,8 @@ class PersonalAgent:
             return self._run_v3(ema_row, sensing_day, date_str)
         elif self.version == "v4":
             return self._run_v4(ema_row, sensing_day, date_str)
+        elif self.version == "v5":
+            return self._run_v5(ema_row)
         else:
             raise ValueError(f"Unknown version: {self.version}")
 
@@ -174,3 +195,12 @@ class PersonalAgent:
             profile=self.profile,
             date_str=date_str,
         )
+
+    def _run_v5(self, ema_row) -> dict[str, Any]:
+        """V5 Agentic Sensing: autonomous tool-use loop over raw sensing data."""
+        diary_text = None
+        if ema_row is not None:
+            diary_text = str(ema_row.get("emotion_driver", ""))
+            if diary_text.lower() == "nan" or not diary_text.strip():
+                diary_text = None
+        return self._v5.predict(ema_row=ema_row, diary_text=diary_text)
