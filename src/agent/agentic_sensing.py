@@ -164,6 +164,7 @@ class AgenticSensingAgent:
 
         tool_call_count = 0
         full_reasoning: list[str] = []
+        structured_tool_calls: list[dict[str, Any]] = []
         final_response = None
         total_input_tokens = 0
         total_output_tokens = 0
@@ -221,6 +222,16 @@ class AgenticSensingAgent:
                             f"Input: {json.dumps(tool_input)}\n"
                             f"Result:\n{result_text}"
                         )
+
+                        # Structured tool call record
+                        structured_tool_calls.append({
+                            "index": tool_call_count + 1,
+                            "tool_name": tool_name,
+                            "input": tool_input,
+                            "result_length": len(result_text),
+                            "result_preview": result_text[:500],
+                        })
+
                         tool_call_count += 1
 
                         if tool_call_count >= self.max_tool_calls:
@@ -270,6 +281,9 @@ class AgenticSensingAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
+        prediction["_total_tool_calls"] = tool_call_count  # alias for compatibility
+        prediction["_tool_calls"] = structured_tool_calls
+        prediction["_conversation_length"] = len(messages)
         prediction["_version"] = "v5"
         prediction["_model"] = self.model
         prediction["_final_response"] = last_text

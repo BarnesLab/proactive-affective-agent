@@ -156,9 +156,17 @@ class ClaudeCodeAgent:
 
         prediction = self._parse_prediction(output)
         prediction["_reasoning"] = output
+        prediction["_raw_output"] = output
+        prediction["_raw_output_length"] = len(output)
         prediction["_version"] = "v5-cc"
         prediction["_model"] = self.model
         prediction["_final_response"] = output
+
+        # Best-effort structured tool call extraction from stdout
+        parsed_tool_calls = self._parse_tool_calls_from_output(output)
+        prediction["_tool_calls"] = parsed_tool_calls
+        prediction["_n_tool_calls"] = len(parsed_tool_calls)
+        prediction["_total_tool_calls"] = len(parsed_tool_calls)
 
         logger.info(
             f"[V5-CC] User {self.study_id} done | "
@@ -282,6 +290,77 @@ Use the session memory above to calibrate against this person's known receptivit
 Then predict their emotional state in the required JSON format.
 
 Start by calling get_daily_summary for {ema_date}."""
+
+    def _parse_tool_calls_from_output(self, output: str) -> list[dict[str, Any]]:
+        """Best-effort extraction of tool calls from claude --print output.
+
+        The claude --print output may contain tool call traces in various formats.
+        This parser looks for common patterns:
+          - "Tool: <name>" or "Using tool: <name>" lines
+          - JSON-like input blocks following tool references
+          - Markdown-formatted tool call sections
+
+        Since the output format is not guaranteed, this is best-effort and may
+        return an empty list if no recognizable tool calls are found.
+        """
+        tool_calls: list[dict[str, Any]] = []
+
+        # Pattern 1: Look for structured tool invocations like:
+        #   [Tool: tool_name] or "Tool: tool_name" or "Using tool: tool_name"
+        # Also match MCP-style patterns: "calling tool `tool_name`" etc.
+        pattern = re.compile(
+            r'(?:'
+            r'\[Tool(?:\s*#\d+)?:\s*(\w+)\]'       # [Tool: name] or [Tool #1: name]
+            r'|(?:Using|Calling|Called)\s+(?:tool\s+)?[`"]?(\w+)[`"]?'  # Using tool name
+            r'|Tool(?:\s+call)?:\s*[`"]?(\w+)[`"]?'  # Tool: name or Tool call: name
+            r')',
+            re.IGNORECASE,
+        )
+
+        # Known tool names from the sensing toolkit for validation
+        known_tools = {
+            "get_daily_summary", "query_sensing", "query_raw_events",
+            "compare_to_baseline", "get_receptivity_history", "find_similar_days",
+        }
+
+        matches = list(pattern.finditer(output))
+        for idx, match in enumerate(matches):
+            # Extract the tool name from whichever capture group matched
+            tool_name = match.group(1) or match.group(2) or match.group(3)
+            if not tool_name:
+                continue
+
+            # Skip if not a known sensing tool (avoids false positives)
+            if tool_name.lower() not in {t.lower() for t in known_tools}:
+                continue
+
+            # Try to extract the context around this tool call
+            start = match.start()
+            # Grab up to the next tool call or 2000 chars, whichever is smaller
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else min(start + 2000, len(output))
+            context = output[start:end]
+
+            # Try to find a JSON input block near the tool call
+            input_dict: dict[str, Any] = {}
+            json_match = re.search(r'\{[^{}]*\}', context)
+            if json_match:
+                try:
+                    candidate = json.loads(json_match.group())
+                    # Only accept if it looks like tool input (has string keys, reasonable size)
+                    if isinstance(candidate, dict) and len(candidate) <= 10:
+                        input_dict = candidate
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+            tool_calls.append({
+                "index": len(tool_calls) + 1,
+                "tool_name": tool_name,
+                "input": input_dict,
+                "result_length": len(context),
+                "result_preview": context[:500],
+            })
+
+        return tool_calls
 
     def _parse_prediction(self, text: str) -> dict[str, Any]:
         from src.think.parser import parse_prediction as _parse
