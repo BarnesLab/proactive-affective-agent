@@ -31,3 +31,4 @@ outputs/
 
 # Logs
 *.log
+test_logs/

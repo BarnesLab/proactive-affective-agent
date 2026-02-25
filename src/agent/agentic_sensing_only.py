@@ -182,6 +182,9 @@ class AgenticSensingOnlyAgent:
             if response.stop_reason == "tool_use":
                 tool_results: list[dict] = []
 
+                # Process ALL tool_use blocks in this response (the model may
+                # issue parallel tool calls).  Every tool_use MUST have a
+                # matching tool_result — otherwise the next API call fails.
                 for block in response.content:
                     if block.type == "tool_use":
                         tool_name = block.name
@@ -215,12 +218,11 @@ class AgenticSensingOnlyAgent:
 
                         tool_call_count += 1
 
-                        if tool_call_count >= self.max_tool_calls:
-                            logger.info(f"[V2] Max tool calls ({self.max_tool_calls}) reached")
-                            break
-
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
+
+                if tool_call_count >= self.max_tool_calls:
+                    logger.info(f"[V2] Max tool calls ({self.max_tool_calls}) reached")
 
             else:
                 logger.warning(f"[V2] Unexpected stop_reason: {response.stop_reason}")
@@ -233,10 +235,14 @@ class AgenticSensingOnlyAgent:
 
         if not self._has_prediction(last_text):
             logger.debug("[V2] No prediction in final response — requesting explicit prediction")
-            messages.append({
-                "role": "assistant",
-                "content": final_response.content if final_response else [],
-            })
+            # Only append assistant content if it wasn't already appended in the loop.
+            # When the loop exits via tool_use processing, messages already contains
+            # the final assistant + tool_results. When it exits via end_turn, it doesn't.
+            if final_response and final_response.stop_reason == "end_turn":
+                messages.append({
+                    "role": "assistant",
+                    "content": final_response.content,
+                })
             messages.append({"role": "user", "content": PREDICTION_REQUEST})
 
             try:

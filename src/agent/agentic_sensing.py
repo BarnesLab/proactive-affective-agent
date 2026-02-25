@@ -200,7 +200,10 @@ class AgenticSensingAgent:
                 break
 
             if response.stop_reason == "tool_use":
-                # Build tool_results list and record reasoning
+                # Build tool_results list and record reasoning.
+                # Process ALL tool_use blocks in this response (the model may
+                # issue parallel tool calls).  Every tool_use MUST have a
+                # matching tool_result — otherwise the next API call fails.
                 tool_results: list[dict] = []
 
                 for block in response.content:
@@ -226,7 +229,6 @@ class AgenticSensingAgent:
                             f"Result:\n{result_text}"
                         )
 
-                        # Structured tool call record
                         structured_tool_calls.append({
                             "index": tool_call_count + 1,
                             "tool_name": tool_name,
@@ -237,13 +239,12 @@ class AgenticSensingAgent:
 
                         tool_call_count += 1
 
-                        if tool_call_count >= self.max_tool_calls:
-                            logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
-                            break
-
                 # Extend conversation: assistant turn + tool results
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
+
+                if tool_call_count >= self.max_tool_calls:
+                    logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
 
             else:
                 # Unexpected stop reason (max_tokens, etc.)
@@ -258,10 +259,14 @@ class AgenticSensingAgent:
         # If the agent didn't produce a prediction yet, explicitly request one
         if not self._has_prediction(last_text):
             logger.debug("[V4] No prediction in final response — requesting explicit prediction")
-            messages.append({
-                "role": "assistant",
-                "content": final_response.content if final_response else [],
-            })
+            # Only append assistant content if it wasn't already appended in the loop.
+            # When the loop exits via tool_use processing, messages already contains
+            # the final assistant + tool_results. When it exits via end_turn, it doesn't.
+            if final_response and final_response.stop_reason == "end_turn":
+                messages.append({
+                    "role": "assistant",
+                    "content": final_response.content,
+                })
             messages.append({"role": "user", "content": PREDICTION_REQUEST})
 
             try:
