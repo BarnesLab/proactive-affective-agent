@@ -150,7 +150,8 @@ class AgenticSensingOnlyAgent:
         )
         messages: list[dict] = [{"role": "user", "content": initial_context}]
 
-        tool_call_count = 0
+        tool_call_count = 0  # total individual tool uses (for logging)
+        round_count = 0      # API rounds (parallel calls = one round)
         full_reasoning: list[str] = []
         structured_tool_calls: list[dict[str, Any]] = []
         final_response = None
@@ -158,12 +159,12 @@ class AgenticSensingOnlyAgent:
         total_output_tokens = 0
 
         budget_nudged = False
-        logger.info(f"[V2] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (sensing-only, soft={self.soft_limit}, hard={self.hard_limit})")
+        logger.info(f"[V2] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (sensing-only, soft={self.soft_limit}, hard={self.hard_limit} rounds)")
 
         # ------------------------------------------------------------------
-        # Agentic tool-use loop with soft/hard budget (mirrors V4)
+        # Agentic tool-use loop with soft/hard budget (counted by ROUNDS)
         # ------------------------------------------------------------------
-        while tool_call_count < self.hard_limit:
+        while round_count < self.hard_limit:
             try:
                 response = self.client.messages.create(
                     model=self.model,
@@ -182,11 +183,12 @@ class AgenticSensingOnlyAgent:
                 total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
-                logger.debug(f"[V2] Agent ended turn after {tool_call_count} tool calls")
+                logger.debug(f"[V2] Agent ended turn after {round_count} rounds ({tool_call_count} tool calls)")
                 break
 
             if response.stop_reason == "tool_use":
                 tool_results: list[dict] = []
+                batch_size = 0
 
                 for block in response.content:
                     if block.type == "tool_use":
@@ -220,25 +222,31 @@ class AgenticSensingOnlyAgent:
                         })
 
                         tool_call_count += 1
+                        batch_size += 1
+
+                round_count += 1
+                if batch_size > 1:
+                    logger.debug(f"[V2] Round {round_count}: {batch_size} parallel tool calls")
 
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
 
-                # Soft budget nudge
-                if tool_call_count >= self.soft_limit and not budget_nudged:
-                    remaining = self.hard_limit - tool_call_count
+                # Soft budget nudge (by rounds, not individual calls)
+                if round_count >= self.soft_limit and not budget_nudged:
+                    remaining = self.hard_limit - round_count
                     nudge = (
-                        f"[Budget notice] You have used {tool_call_count} tool calls. "
-                        f"You have at most {remaining} remaining. Please wrap up your "
-                        f"investigation and provide your final JSON prediction now. "
-                        f"Only make additional tool calls if absolutely critical."
+                        f"[Budget notice] You have used {round_count} investigation rounds "
+                        f"({tool_call_count} total tool calls). You have at most {remaining} "
+                        f"rounds remaining. Please wrap up your investigation and provide "
+                        f"your final JSON prediction now. You may still issue parallel "
+                        f"tool calls within a single round if needed."
                     )
                     messages.append({"role": "user", "content": nudge})
                     budget_nudged = True
-                    logger.info(f"[V2] Soft limit reached ({tool_call_count}/{self.soft_limit}), nudged to wrap up")
+                    logger.info(f"[V2] Soft limit reached (round {round_count}/{self.soft_limit}, {tool_call_count} tools), nudged to wrap up")
 
-                if tool_call_count >= self.hard_limit:
-                    logger.info(f"[V2] Hard limit ({self.hard_limit}) reached")
+                if round_count >= self.hard_limit:
+                    logger.info(f"[V2] Hard limit ({self.hard_limit} rounds) reached")
 
             else:
                 logger.warning(f"[V2] Unexpected stop_reason: {response.stop_reason}")
@@ -281,7 +289,7 @@ class AgenticSensingOnlyAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
-        prediction["_total_tool_calls"] = tool_call_count
+        prediction["_n_rounds"] = round_count
         prediction["_tool_calls"] = structured_tool_calls
         prediction["_conversation_length"] = len(messages)
         prediction["_version"] = "v2"
@@ -292,7 +300,7 @@ class AgenticSensingOnlyAgent:
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
-            f"[V2] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"[V2] User {self.study_id} done: {round_count} rounds ({tool_call_count} tools), "
             f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )

@@ -182,7 +182,8 @@ class AgenticSensingAgent:
         )
         messages: list[dict] = [{"role": "user", "content": initial_context}]
 
-        tool_call_count = 0
+        tool_call_count = 0  # total individual tool uses (for logging)
+        round_count = 0      # API rounds (one round may have multiple parallel tool calls)
         full_reasoning: list[str] = []
         structured_tool_calls: list[dict[str, Any]] = []
         final_response = None
@@ -190,12 +191,13 @@ class AgenticSensingAgent:
         total_output_tokens = 0
 
         budget_nudged = False
-        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (soft={self.soft_limit}, hard={self.hard_limit})")
+        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (soft={self.soft_limit}, hard={self.hard_limit} rounds)")
 
         # ------------------------------------------------------------------
-        # Agentic tool-use loop with soft/hard budget
+        # Agentic tool-use loop with soft/hard budget (counted by ROUNDS,
+        # not individual tool uses — parallel calls in one round are free)
         # ------------------------------------------------------------------
-        while tool_call_count < self.hard_limit:
+        while round_count < self.hard_limit:
             try:
                 response = self.client.messages.create(
                     model=self.model,
@@ -214,13 +216,15 @@ class AgenticSensingAgent:
                 total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
-                logger.debug(f"[V4] Agent ended turn after {tool_call_count} tool calls")
+                logger.debug(f"[V4] Agent ended turn after {round_count} rounds ({tool_call_count} tool calls)")
                 break
 
             if response.stop_reason == "tool_use":
                 # Process ALL tool_use blocks (parallel tool calls). Every
-                # tool_use MUST have a matching tool_result.
+                # tool_use MUST have a matching tool_result. A batch of
+                # parallel calls counts as ONE round.
                 tool_results: list[dict] = []
+                batch_size = 0
 
                 for block in response.content:
                     if block.type == "tool_use":
@@ -254,27 +258,34 @@ class AgenticSensingAgent:
                         })
 
                         tool_call_count += 1
+                        batch_size += 1
+
+                round_count += 1  # one round, regardless of batch size
+                if batch_size > 1:
+                    logger.debug(f"[V4] Round {round_count}: {batch_size} parallel tool calls")
 
                 # Extend conversation: assistant turn + tool results
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
 
-                # -- Soft budget nudge: once we pass soft_limit, tell the
-                #    model to wrap up instead of hard-stopping.
-                if tool_call_count >= self.soft_limit and not budget_nudged:
-                    remaining = self.hard_limit - tool_call_count
+                # -- Soft budget nudge: counted by ROUNDS, not individual calls.
+                #    This means parallel calls are "free" — the agent is not
+                #    penalized for investigating multiple signals at once.
+                if round_count >= self.soft_limit and not budget_nudged:
+                    remaining = self.hard_limit - round_count
                     nudge = (
-                        f"[Budget notice] You have used {tool_call_count} tool calls. "
-                        f"You have at most {remaining} remaining. Please wrap up your "
-                        f"investigation and provide your final JSON prediction now. "
-                        f"Only make additional tool calls if absolutely critical."
+                        f"[Budget notice] You have used {round_count} investigation rounds "
+                        f"({tool_call_count} total tool calls). You have at most {remaining} "
+                        f"rounds remaining. Please wrap up your investigation and provide "
+                        f"your final JSON prediction now. You may still issue parallel "
+                        f"tool calls within a single round if needed."
                     )
                     messages.append({"role": "user", "content": nudge})
                     budget_nudged = True
-                    logger.info(f"[V4] Soft limit reached ({tool_call_count}/{self.soft_limit}), nudged to wrap up")
+                    logger.info(f"[V4] Soft limit reached (round {round_count}/{self.soft_limit}, {tool_call_count} tools), nudged to wrap up")
 
-                if tool_call_count >= self.hard_limit:
-                    logger.info(f"[V4] Hard limit ({self.hard_limit}) reached")
+                if round_count >= self.hard_limit:
+                    logger.info(f"[V4] Hard limit ({self.hard_limit} rounds) reached")
 
             else:
                 # Unexpected stop reason (max_tokens, etc.)
@@ -319,7 +330,7 @@ class AgenticSensingAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
-        prediction["_total_tool_calls"] = tool_call_count  # alias for compatibility
+        prediction["_n_rounds"] = round_count
         prediction["_tool_calls"] = structured_tool_calls
         prediction["_conversation_length"] = len(messages)
         prediction["_version"] = "v4"
@@ -330,7 +341,7 @@ class AgenticSensingAgent:
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
-            f"[V4] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"[V4] User {self.study_id} done: {round_count} rounds ({tool_call_count} tools), "
             f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )
