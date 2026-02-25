@@ -434,7 +434,7 @@ _HOURLY_FORMATTERS = {
 
 
 # ---------------------------------------------------------------------------
-# SensingQueryEngine — Parquet-backed, primary engine for V5 agentic agent
+# SensingQueryEngine — Parquet-backed, primary engine for V2/V4 agentic agents
 # ---------------------------------------------------------------------------
 
 class SensingQueryEngine:

@@ -1,5 +1,9 @@
 """PilotSimulator: runs the pilot study for CALLM, V1, V2, V3, V4.
 
+2x2 design:
+  V1/V3 (structured) use pre-formatted sensing summaries + single LLM call.
+  V2/V4 (agentic) use tool-use loops over raw sensing data via SensingQueryEngine.
+
 Iterates users -> EMA entries chronologically -> calls agent.predict() ->
 collects results. Supports checkpointing, dry-run mode, and per-user output.
 No group dependency: uses combined test data from all 5 splits.
@@ -21,6 +25,7 @@ from src.data.preprocessing import align_sensing_to_ema, get_user_trait_profile,
 from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
+from src.sense.query_tools import SensingQueryEngine
 from src.think.llm_client import ClaudeCodeClient
 from src.utils.mappings import SENSING_COLUMNS
 
@@ -58,6 +63,8 @@ class PilotSimulator:
         dry_run: bool = False,
         model: str = "sonnet",
         delay: float = 2.0,
+        agentic_model: str = "claude-sonnet-4-6",
+        agentic_max_tool_calls: int = 8,
     ) -> None:
         self.loader = loader
         self.output_dir = output_dir
@@ -65,6 +72,8 @@ class PilotSimulator:
         self.dry_run = dry_run
         self.model = model
         self.delay = delay
+        self.agentic_model = agentic_model
+        self.agentic_max_tool_calls = agentic_max_tool_calls
 
         self.reporter = Reporter(output_dir)
 
@@ -75,6 +84,7 @@ class PilotSimulator:
         self._train_df: pd.DataFrame | None = None
         self._retriever: TFIDFRetriever | None = None
         self._mm_retriever: MultiModalRetriever | None = None
+        self._query_engine: SensingQueryEngine | None = None
 
     def setup(self) -> None:
         """Load and prepare all data for the pilot."""
@@ -97,10 +107,21 @@ class PilotSimulator:
         self._retriever.fit(self._train_df)
         logger.info("TF-IDF retriever fitted")
 
-        # Build MultiModal retriever (for V3/V4: diary search → return diary + sensing)
+        # Build MultiModal retriever (for V3: diary search -> return diary + sensing)
         self._mm_retriever = MultiModalRetriever()
         self._mm_retriever.fit(self._train_df, sensing_dfs=self._sensing_dfs)
         logger.info("MultiModal retriever fitted")
+
+        # Build SensingQueryEngine (for V2/V4 agentic tool-use)
+        processed_hourly_dir = self.loader.data_root / "processed" / "hourly"
+        if processed_hourly_dir.exists():
+            self._query_engine = SensingQueryEngine(
+                processed_dir=processed_hourly_dir,
+                ema_df=self._all_ema,
+            )
+            logger.info("SensingQueryEngine initialized for V2/V4 agentic agents")
+        else:
+            logger.warning(f"Hourly processed dir not found: {processed_hourly_dir}. V2/V4 will not be available.")
 
         # Determine pilot users
         if self.pilot_user_ids is None:
@@ -156,7 +177,7 @@ class PilotSimulator:
             # Select retriever based on version
             if version == "callm":
                 retriever = self._retriever
-            elif version in ("v3", "v4"):
+            elif version == "v3":
                 retriever = self._mm_retriever
             else:
                 retriever = None
@@ -168,6 +189,9 @@ class PilotSimulator:
                 profile=user_data["profile"],
                 memory_doc=user_data["memory"],
                 retriever=retriever,
+                query_engine=self._query_engine if version in ("v2", "v4") else None,
+                agentic_model=self.agentic_model,
+                agentic_max_tool_calls=self.agentic_max_tool_calls,
             )
 
             user_preds = []
@@ -192,7 +216,6 @@ class PilotSimulator:
                         ema_row=ema_row,
                         sensing_day=sensing_day,
                         date_str=date_str,
-                        sensing_dfs=self._sensing_dfs if version in ("v2",) else None,
                     )
                 except Exception as e:
                     logger.error(f"  Error predicting: {e}")

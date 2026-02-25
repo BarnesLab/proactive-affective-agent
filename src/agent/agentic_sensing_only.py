@@ -1,17 +1,17 @@
-"""V4: Agentic Multimodal Agent (diary + sensing, autonomous tool-use).
+"""V2: Agentic Sensing-Only Agent (no diary, autonomous tool-use).
 
-The key contribution of the 2×2 design. Unlike V1/V3 (which receive pre-formatted
-sensing summaries in a single LLM call), V4 has tool access to raw processed
-sensing data AND diary text. It autonomously decides what to investigate via
-an SDK-driven tool-use loop.
+Sensing-only counterpart to V4. Uses the same Anthropic SDK tool-use loop to
+autonomously investigate raw sensing data, but does NOT receive diary text.
 
-2×2 matrix position: Multimodal × Agentic
-  V1: Sensing-only × Structured (fixed pipeline)
-  V2: Sensing-only × Agentic (tool-use, no diary)
-  V3: Multimodal × Structured (fixed pipeline)
-  V4: Multimodal × Agentic (tool-use + diary) ← this file
+2x2 matrix position: Sensing-only x Agentic
+  V1: Sensing-only x Structured (fixed pipeline)
+  V2: Sensing-only x Agentic (tool-use, no diary) <- this file
+  V3: Multimodal x Structured (fixed pipeline)
+  V4: Multimodal x Agentic (tool-use + diary)
 
-Uses the Anthropic Python SDK directly (not claude CLI) for proper tool use support.
+The V2 vs V4 comparison isolates the value of diary text when the agent
+has autonomous tool access. The V1 vs V2 comparison isolates the value
+of agentic investigation vs pre-formatted summaries.
 """
 
 from __future__ import annotations
@@ -30,12 +30,12 @@ from src.sense.query_tools import SENSING_TOOLS, SensingQueryEngine
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System prompt (same as V4 but without diary references)
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are an expert behavioral data scientist specializing in affective computing and just-in-time adaptive interventions (JITAI) for cancer survivorship.
 
-Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using their passive smartphone sensing data.
+Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using ONLY their passive smartphone sensing data. You do NOT have access to any diary text or self-report — your prediction must be based entirely on behavioral signals.
 
 You have access to tools that let you query their behavioral data (motion, location, screen usage, keyboard activity, etc.). Use these tools like a detective — investigate the signals that matter, compare to their personal baseline, look for behavioral anomalies.
 
@@ -63,7 +63,7 @@ Your final prediction must be in valid JSON format enclosed in ```json ... ``` f
 # Prediction request template
 # ---------------------------------------------------------------------------
 
-PREDICTION_REQUEST = """Based on your investigation, provide your final prediction in the following JSON format enclosed in ```json ... ``` fences:
+PREDICTION_REQUEST = """Based on your investigation of the sensing data, provide your final prediction in the following JSON format enclosed in ```json ... ``` fences:
 
 ```json
 {
@@ -93,16 +93,15 @@ PREDICTION_REQUEST = """Based on your investigation, provide your final predicti
 
 
 # ---------------------------------------------------------------------------
-# AgenticSensingAgent
+# AgenticSensingOnlyAgent
 # ---------------------------------------------------------------------------
 
-class AgenticSensingAgent:
-    """V4 agentic multimodal agent (diary + sensing, autonomous tool-use).
+class AgenticSensingOnlyAgent:
+    """V2 agentic sensing-only agent (no diary, autonomous tool-use).
 
-    Uses the Anthropic SDK tool-use loop to iteratively query sensing data
-    and build evidence before making a final emotional state prediction.
-    Unlike V1/V3 (structured), V4 actively chooses what to investigate.
-    Unlike V2 (sensing-only agentic), V4 also receives diary text.
+    Identical architecture to V4 (AgenticSensingAgent) but deliberately
+    excludes diary text from the context. This isolates the contribution
+    of diary information in the agentic setting.
     """
 
     def __init__(
@@ -114,16 +113,6 @@ class AgenticSensingAgent:
         model: str = "claude-sonnet-4-6",
         max_tool_calls: int = 8,
     ) -> None:
-        """Initialize the agentic sensing agent.
-
-        Args:
-            study_id: Participant Study_ID (int).
-            profile: UserProfile dataclass with demographic and trait data.
-            memory_doc: Pre-generated longitudinal memory document text.
-            query_engine: SensingQueryEngine providing tool implementations.
-            model: Anthropic model ID to use.
-            max_tool_calls: Maximum number of tool call iterations before forcing prediction.
-        """
         self.study_id = study_id
         self.profile = profile
         self.memory_doc = memory_doc
@@ -136,22 +125,13 @@ class AgenticSensingAgent:
     def predict(
         self,
         ema_row: pd.Series,
-        diary_text: str | None,
         session_memory: str | None = None,
     ) -> dict[str, Any]:
-        """Run autonomous investigation and produce an emotional state prediction.
-
-        Drives the agentic tool-use loop:
-          1. Send initial context (+ accumulated session memory) to the model
-          2. Process tool calls until end_turn or max_tool_calls reached
-          3. If no prediction extracted yet, explicitly request one
-          4. Parse and return the prediction dict
+        """Run sensing-only autonomous investigation (no diary text).
 
         Args:
-            ema_row: A single row from the EMA DataFrame (current entry to predict).
-            diary_text: Free-text diary entry for this EMA slot, or None.
-            session_memory: Accumulated per-user memory from prior EMA entries (receptivity
-                + optional PA/NA in oracle mode). Never contains current EMA labels.
+            ema_row: A single row from the EMA DataFrame (for timestamp/date only).
+            session_memory: Accumulated per-user memory from prior EMA entries.
 
         Returns:
             Dict with all prediction targets plus _reasoning, _n_tool_calls, _version.
@@ -161,7 +141,7 @@ class AgenticSensingAgent:
         ema_slot = self._get_ema_slot(ema_row)
 
         initial_context = self._build_initial_context(
-            ema_timestamp, ema_date, ema_slot, diary_text, session_memory
+            ema_timestamp, ema_date, ema_slot, session_memory
         )
         messages: list[dict] = [{"role": "user", "content": initial_context}]
 
@@ -172,10 +152,10 @@ class AgenticSensingAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
-        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
+        logger.info(f"[V2] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (sensing-only)")
 
         # ------------------------------------------------------------------
-        # Agentic tool-use loop
+        # Agentic tool-use loop (identical to V4)
         # ------------------------------------------------------------------
         while tool_call_count < self.max_tool_calls:
             try:
@@ -187,7 +167,7 @@ class AgenticSensingAgent:
                     messages=messages,
                 )
             except Exception as exc:
-                logger.error(f"[V4] Anthropic API error: {exc}")
+                logger.error(f"[V2] Anthropic API error: {exc}")
                 break
 
             final_response = response
@@ -196,11 +176,10 @@ class AgenticSensingAgent:
                 total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
-                logger.debug(f"[V4] Agent ended turn after {tool_call_count} tool calls")
+                logger.debug(f"[V2] Agent ended turn after {tool_call_count} tool calls")
                 break
 
             if response.stop_reason == "tool_use":
-                # Build tool_results list and record reasoning
                 tool_results: list[dict] = []
 
                 for block in response.content:
@@ -208,7 +187,7 @@ class AgenticSensingAgent:
                         tool_name = block.name
                         tool_input = block.input if isinstance(block.input, dict) else {}
 
-                        logger.debug(f"[V4] Tool call: {tool_name}({tool_input})")
+                        logger.debug(f"[V2] Tool call: {tool_name}({tool_input})")
 
                         result_text = self._execute_tool(
                             tool_name, tool_input, ema_timestamp, ema_date
@@ -226,7 +205,6 @@ class AgenticSensingAgent:
                             f"Result:\n{result_text}"
                         )
 
-                        # Structured tool call record
                         structured_tool_calls.append({
                             "index": tool_call_count + 1,
                             "tool_name": tool_name,
@@ -238,26 +216,23 @@ class AgenticSensingAgent:
                         tool_call_count += 1
 
                         if tool_call_count >= self.max_tool_calls:
-                            logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
+                            logger.info(f"[V2] Max tool calls ({self.max_tool_calls}) reached")
                             break
 
-                # Extend conversation: assistant turn + tool results
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
 
             else:
-                # Unexpected stop reason (max_tokens, etc.)
-                logger.warning(f"[V4] Unexpected stop_reason: {response.stop_reason}")
+                logger.warning(f"[V2] Unexpected stop_reason: {response.stop_reason}")
                 break
 
         # ------------------------------------------------------------------
-        # Extract final text from last response
+        # Extract final text
         # ------------------------------------------------------------------
         last_text = self._extract_text(final_response)
 
-        # If the agent didn't produce a prediction yet, explicitly request one
         if not self._has_prediction(last_text):
-            logger.debug("[V4] No prediction in final response — requesting explicit prediction")
+            logger.debug("[V2] No prediction in final response — requesting explicit prediction")
             messages.append({
                 "role": "assistant",
                 "content": final_response.content if final_response else [],
@@ -276,7 +251,7 @@ class AgenticSensingAgent:
                     total_output_tokens += pred_response.usage.output_tokens or 0
                 last_text = self._extract_text(pred_response)
             except Exception as exc:
-                logger.error(f"[V4] Error requesting prediction: {exc}")
+                logger.error(f"[V2] Error requesting prediction: {exc}")
 
         # ------------------------------------------------------------------
         # Parse prediction
@@ -284,10 +259,10 @@ class AgenticSensingAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
-        prediction["_total_tool_calls"] = tool_call_count  # alias for compatibility
+        prediction["_total_tool_calls"] = tool_call_count
         prediction["_tool_calls"] = structured_tool_calls
         prediction["_conversation_length"] = len(messages)
-        prediction["_version"] = "v4"
+        prediction["_version"] = "v2"
         prediction["_model"] = self.model
         prediction["_final_response"] = last_text
         prediction["_input_tokens"] = total_input_tokens
@@ -295,14 +270,14 @@ class AgenticSensingAgent:
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
-            f"[V4] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"[V2] User {self.study_id} done: {tool_call_count} tool calls, "
             f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )
         return prediction
 
     # ------------------------------------------------------------------
-    # Private: agentic loop helpers
+    # Private helpers
     # ------------------------------------------------------------------
 
     def _build_initial_context(
@@ -310,16 +285,9 @@ class AgenticSensingAgent:
         ema_timestamp: str,
         ema_date: str,
         ema_slot: str,
-        diary_text: str | None,
         session_memory: str | None = None,
     ) -> str:
-        """Build the initial investigation context message for the agent."""
-        diary_section = (
-            f'Diary entry: "{diary_text}"'
-            if diary_text and diary_text.strip() and diary_text.lower() != "nan"
-            else "No diary entry for this EMA."
-        )
-
+        """Build initial context — sensing-only, NO diary text."""
         memory_excerpt = ""
         if self.memory_doc:
             memory_excerpt = f"""## Baseline Personal History (pre-study memory)
@@ -333,7 +301,6 @@ class AgenticSensingAgent:
 {trimmed}
 """
 
-        # Check which Parquet modality files exist for this participant
         available_modalities = [
             mod for mod in self.engine.MODALITIES
             if self.engine._parquet_path(self.study_id, mod).exists()
@@ -345,7 +312,7 @@ class AgenticSensingAgent:
 ## Current Situation
 Timestamp: {ema_timestamp} ({ema_slot} EMA)
 Date: {ema_date}
-{diary_section}
+(No diary text available — you must rely entirely on passive sensing data.)
 
 ## User Profile
 {self.profile.to_text()}
@@ -355,8 +322,8 @@ Date: {ema_date}
 
 ## Your Task
 Investigate the sensing data to understand this person's behavioral state leading up to this EMA.
-Use the available tools to build your evidence. Use the session memory above to calibrate against
-this person's known receptivity and behavioral patterns. Then predict their emotional state.
+Use the available tools to build your evidence. You do NOT have diary text — base your
+prediction entirely on behavioral sensing signals and user history.
 
 Start by calling get_daily_summary for {ema_date} to orient yourself."""
 
@@ -367,22 +334,6 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         ema_timestamp: str,
         ema_date: str,
     ) -> str:
-        """Dispatch a tool call to SensingQueryEngine.call_tool().
-
-        The Parquet-backed SensingQueryEngine.call_tool() handles all routing
-        internally using the SENSING_TOOLS schema signatures. This keeps the
-        dispatch logic in one place.
-
-        Args:
-            tool_name: The tool name from the Anthropic tool_use block.
-            tool_input: The input dict from the tool_use block.
-            ema_timestamp: EMA timestamp (injected into call_tool for cutoff enforcement).
-            ema_date: EMA date string (used for fallback defaults in tool_input).
-
-        Returns:
-            String result to return to the model as a tool_result.
-        """
-        # Inject date default for tools that need it
         if tool_name == "get_daily_summary" and "date" not in tool_input:
             tool_input = {**tool_input, "date": ema_date}
 
@@ -394,7 +345,6 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         )
 
     def _extract_text(self, response: anthropic.types.Message | None) -> str:
-        """Extract all TextBlock content from an Anthropic message."""
         if response is None:
             return ""
         parts = []
@@ -404,29 +354,16 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         return "\n".join(parts)
 
     def _has_prediction(self, text: str) -> bool:
-        """Check whether the text contains a JSON prediction block."""
         if not text:
             return False
-        # Look for PANAS_Pos in JSON-like content
         return bool(re.search(r'"PANAS_Pos"\s*:', text))
 
     def _parse_prediction(self, text: str) -> dict[str, Any]:
-        """Parse the final prediction JSON from the agent's response text.
-
-        Tries multiple extraction strategies:
-          1. ```json ... ``` fenced block
-          2. First { ... } object in the text
-          3. Fallback to a neutral default prediction
-
-        Returns:
-            Parsed prediction dict with all expected fields.
-        """
         from src.think.parser import parse_prediction as _parse
         result = _parse(text)
 
         if result.get("_parse_error"):
-            logger.warning(f"[V4] Failed to parse prediction from response: {text[:300]}")
-            # Return a neutral fallback so we don't crash the pipeline
+            logger.warning(f"[V2] Failed to parse prediction from response: {text[:300]}")
             result = self._fallback_prediction()
             result["_parse_error"] = True
             result["_raw_response"] = text[:500]
@@ -434,26 +371,20 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         return result
 
     def _fallback_prediction(self) -> dict[str, Any]:
-        """Return a neutral prediction used when parsing fails entirely."""
         from src.utils.mappings import BINARY_STATE_TARGETS
         pred: dict[str, Any] = {
             "PANAS_Pos": 15.0,
             "PANAS_Neg": 8.0,
             "ER_desire": 3.0,
             "INT_availability": "yes",
-            "reasoning": "[V4 fallback: prediction parsing failed]",
+            "reasoning": "[V2 fallback: prediction parsing failed]",
             "confidence": 0.1,
         }
         for target in BINARY_STATE_TARGETS:
             pred[target] = False
         return pred
 
-    # ------------------------------------------------------------------
-    # Private: utilities
-    # ------------------------------------------------------------------
-
     def _get_ema_slot(self, ema_row: pd.Series) -> str:
-        """Determine the EMA slot (morning / afternoon / evening) from timestamp."""
         try:
             ts = pd.to_datetime(ema_row.get("timestamp_local", ""))
             hour = ts.hour

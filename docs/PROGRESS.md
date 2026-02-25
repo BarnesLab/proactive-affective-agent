@@ -9,14 +9,14 @@
 
 The core novelty is **agentic investigation** applied across two data conditions:
 
-| | **Structured** (fixed pipeline) | **Agentic** (autonomous investigation) |
+| | **Structured** (fixed pipeline) | **Agentic** (autonomous tool-use) |
 |---|---|---|
-| **Sensing-only** | V2-structured | **V2-agentic** ← agentic loop |
-| **Multimodal** (diary + sensing) | V4-structured | **V4-agentic** ← agentic loop |
+| **Sensing-only** | V1 | V2 |
+| **Multimodal** (diary + sensing) | V3 | **V4** ← key contribution |
 
 Alongside: CALLM (diary+RAG baseline, CHI 2025), ML baselines (RF/XGBoost).
 
-**Key insight**: The agentic tool-use loop (V5 in earlier naming, now V2/V4-agentic) uses Anthropic SDK tool calls to query raw hourly Parquet data autonomously, rather than consuming pre-formatted feature summaries.
+**Key insight**: V2/V4 (agentic) use Anthropic SDK tool calls to query raw hourly Parquet data autonomously, rather than consuming pre-formatted feature summaries like V1/V3 (structured).
 
 ---
 
@@ -49,10 +49,9 @@ Alongside: CALLM (diary+RAG baseline, CHI 2025), ML baselines (RF/XGBoost).
 |--------|---------------|-------------------|
 | CALLM | ✅ | ✅ Mean MAE~1.16, BA~0.63, F1~0.44 |
 | V1 (structured, sensing) | ✅ | ✅ Weak (~BA 0.52) |
-| V2 (autonomous, sensing) | ✅ | ✅ Weak (MAE 7.06, BA 0.52) |
+| V2 (agentic, sensing-only) | ✅ | ⏳ Run `scripts/run_agentic_pilot.py` |
 | V3 (structured, multimodal) | ✅ | ⏳ Pending BUCS Parquet data |
-| V4 (autonomous, multimodal) | ✅ | ⏳ Pending BUCS Parquet data |
-| V2-agentic / V4-agentic | ✅ | ⏳ Run `scripts/run_agentic_pilot.py` |
+| V4 (agentic, multimodal) | ✅ | ⏳ Run `scripts/run_agentic_pilot.py` |
 | ML baselines | ✅ | ⏳ Pending |
 
 ---
@@ -81,13 +80,13 @@ Alongside: CALLM (diary+RAG baseline, CHI 2025), ML baselines (RF/XGBoost).
 
 ### Must-do before experiments
 - [ ] Run Phase 1 heavy: `python scripts/offline/process_accel.py` and `process_gps.py` (overnight)
-- [ ] Dry-run V5 agentic: `python scripts/run_agentic_pilot.py --users 71 --dry-run`
+- [ ] Dry-run V2/V4 agentic: `python scripts/run_agentic_pilot.py --users 71 --dry-run`
 - [ ] Verify diary-present filtering works correctly
 
 ### Experiments to run
 - [ ] V3-structured: `python scripts/run_pilot.py --version v3 --users 71,164,119,458,310`
-- [ ] V4-autonomous: `python scripts/run_pilot.py --version v4 --users 71,164,119,458,310`
-- [ ] V4-agentic: `python scripts/run_agentic_pilot.py --users 71,164,119 --model claude-opus-4-6`
+- [ ] V2-agentic: `python scripts/run_agentic_pilot.py --version v2 --users 71,164,119`
+- [ ] V4-agentic: `python scripts/run_agentic_pilot.py --version v4 --users 71,164,119 --model claude-opus-4-6`
 - [ ] ML baselines: `python scripts/run_ml_baselines.py`
 - [ ] Full comparison: `src/evaluation/unified_comparison.py`
 

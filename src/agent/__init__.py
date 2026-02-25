@@ -1,1 +1,1 @@
-"""PersonalAgent: per-user agent with 5 workflow versions (CALLM, V1-V4)."""
+"""PersonalAgent: per-user agent with CALLM + V1-V4 (2x2 structured/agentic x sensing/multimodal)."""

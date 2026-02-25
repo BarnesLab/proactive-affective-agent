@@ -1,4 +1,4 @@
-"""V5-CC: Claude Code subprocess variant of the agentic sensing agent.
+"""V4-CC: Claude Code subprocess variant of the V4 agentic multimodal agent.
 
 Instead of calling the Anthropic SDK directly (which bills against ANTHROPIC_API_KEY),
 this agent invokes `claude --print` as a subprocess, routing all inference through
@@ -90,7 +90,7 @@ Your final prediction MUST be in valid JSON enclosed in ```json ... ``` fences:
 
 
 class ClaudeCodeAgent:
-    """V5-CC: Agentic sensing agent using claude --print subprocess (Max subscription).
+    """V4-CC: Agentic multimodal agent using claude --print subprocess (Max subscription).
 
     Launches the sensing MCP server as a child process of claude --print,
     which handles the full tool-use agentic loop natively. All tokens are
@@ -150,7 +150,7 @@ class ClaudeCodeAgent:
 
         prompt = self._build_prompt(ema_timestamp, ema_date, ema_slot, diary_text, session_memory)
 
-        logger.info(f"[V5-CC] User {self.study_id} | {ema_date} {ema_slot} | launching claude --print")
+        logger.info(f"[V4-CC] User {self.study_id} | {ema_date} {ema_slot} | launching claude --print")
 
         output = self._run_claude(ema_timestamp, ema_date, prompt)
 
@@ -158,7 +158,7 @@ class ClaudeCodeAgent:
         prediction["_reasoning"] = output
         prediction["_raw_output"] = output
         prediction["_raw_output_length"] = len(output)
-        prediction["_version"] = "v5-cc"
+        prediction["_version"] = "v4-cc"
         prediction["_model"] = self.model
         prediction["_final_response"] = output
 
@@ -169,7 +169,7 @@ class ClaudeCodeAgent:
         prediction["_total_tool_calls"] = len(parsed_tool_calls)
 
         logger.info(
-            f"[V5-CC] User {self.study_id} done | "
+            f"[V4-CC] User {self.study_id} done | "
             f"confidence={prediction.get('confidence', '?')}"
         )
         return prediction
@@ -234,15 +234,15 @@ class ClaudeCodeAgent:
             )
 
             if result.returncode != 0:
-                logger.warning(f"[V5-CC] claude --print exited {result.returncode}: {result.stderr[:300]}")
+                logger.warning(f"[V4-CC] claude --print exited {result.returncode}: {result.stderr[:300]}")
 
             return result.stdout.strip()
 
         except subprocess.TimeoutExpired:
-            logger.error("[V5-CC] claude --print timed out after 300s")
+            logger.error("[V4-CC] claude --print timed out after 300s")
             return ""
         except Exception as exc:
-            logger.error(f"[V5-CC] subprocess error: {exc}")
+            logger.error(f"[V4-CC] subprocess error: {exc}")
             return ""
         finally:
             Path(mcp_config_path).unlink(missing_ok=True)
@@ -367,7 +367,7 @@ Start by calling get_daily_summary for {ema_date}."""
         result = _parse(text)
 
         if result.get("_parse_error"):
-            logger.warning(f"[V5-CC] Failed to parse prediction: {text[:300]}")
+            logger.warning(f"[V4-CC] Failed to parse prediction: {text[:300]}")
             result = self._fallback_prediction()
             result["_parse_error"] = True
             result["_raw_response"] = text[:500]
@@ -381,7 +381,7 @@ Start by calling get_daily_summary for {ema_date}."""
             "PANAS_Neg": 8.0,
             "ER_desire": 3.0,
             "INT_availability": "yes",
-            "reasoning": "[V5-CC fallback: prediction parsing failed]",
+            "reasoning": "[V4-CC fallback: prediction parsing failed]",
             "confidence": 0.1,
         }
         for target in BINARY_STATE_TARGETS:

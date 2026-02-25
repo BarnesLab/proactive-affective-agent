@@ -1,14 +1,15 @@
-"""Prompt templates for all five agent versions: CALLM, V1, V2, V3, V4.
+"""Prompt templates for CALLM + V1/V3 structured agent versions.
 
-Each function builds a complete prompt string from structured inputs.
-All versions share the same JSON output schema.
+V2/V4 (agentic) use their own system prompts in agentic_sensing_only.py and
+agentic_sensing.py respectively — they don't use templates from here because
+their prompts are constructed dynamically within the tool-use loop.
 
-Version matrix:
-  CALLM: diary + TF-IDF RAG (diary only) — CHI baseline
-  V1: sensing only — structured pipeline
-  V2: sensing only — autonomous reasoning
-  V3: diary + sensing + multimodal RAG — structured pipeline
-  V4: diary + sensing + multimodal RAG — autonomous reasoning
+2x2 design:
+                    Structured (fixed pipeline)    Agentic (autonomous tool-use)
+  Sensing-only      V1 (prompts here)              V2 (own prompts)
+  Multimodal        V3 (prompts here)              V4 (own prompts)
+
+  CALLM: diary + TF-IDF RAG — CHI 2025 baseline (prompts here)
 """
 
 from __future__ import annotations
@@ -234,7 +235,8 @@ def format_sensing_summary(sensing_day) -> str:
     return "\n\n".join(sections) if sections else "Minimal sensing data available."
 
 
-# --- V2 Autonomous (single-call, full context) ---
+# --- DEPRECATED: Old V2 single-call prompts (kept for backward compat with autonomous.py) ---
+# The real V2 is now an agentic tool-use agent in agentic_sensing_only.py with its own prompts.
 
 def v2_system_prompt(trait_profile: str) -> str:
     """System prompt for V2 autonomous workflow."""
@@ -347,7 +349,8 @@ Analyze all available data following these 5 steps:
 Based on your analysis, provide your predictions as JSON."""
 
 
-# --- V4 Autonomous Full (diary + sensing + multimodal RAG) ---
+# --- DEPRECATED: Old V4 single-call prompts (kept for backward compat with autonomous_full.py) ---
+# The real V4 is now an agentic tool-use agent in agentic_sensing.py with its own prompts.
 
 def v4_system_prompt(trait_profile: str) -> str:
     """System prompt for V4 autonomous full workflow."""
