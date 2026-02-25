@@ -155,7 +155,7 @@ def get_receptivity_history(lookback_days: int = 14) -> str:
     """
     return _engine.call_tool(
         tool_name="get_receptivity_history",
-        tool_input={"lookback_days": lookback_days},
+        tool_input={"n_days": lookback_days},
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
@@ -170,7 +170,7 @@ def find_similar_days(top_k: int = 3) -> str:
     """
     return _engine.call_tool(
         tool_name="find_similar_days",
-        tool_input={"top_k": top_k},
+        tool_input={"n": top_k},
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )

@@ -61,6 +61,7 @@ class AutonomousWorkflow:
 
         result = parse_prediction(response)
         result["_version"] = "v2"
+        result["_prompt_length"] = len(prompt) + len(system)
         result["_llm_calls"] = 1
         result["_full_prompt"] = prompt
         result["_full_response"] = response

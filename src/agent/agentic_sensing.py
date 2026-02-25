@@ -1,12 +1,12 @@
-"""V4: Autonomous Sensing Agent.
+"""V5: Autonomous Sensing Agent.
 
-Unlike V1-V4 (which receive pre-formatted sensing summaries), V4 has tool access
+Unlike V1-V4 (which receive pre-formatted sensing summaries), V5 has tool access
 to the raw processed sensing data. It autonomously decides what to investigate
 and builds its reasoning from first principles — like a detective with access
 to behavioral telemetry.
 
 Key insight: The "missing puzzle piece" is the current emotional state.
-All past data is visible. V4 finds the patterns that predict it.
+All past data is visible. V5 finds the patterns that predict it.
 
 Uses the Anthropic Python SDK directly (not claude CLI) for proper tool use support.
 """
@@ -94,11 +94,11 @@ PREDICTION_REQUEST = """Based on your investigation, provide your final predicti
 # ---------------------------------------------------------------------------
 
 class AgenticSensingAgent:
-    """V4 autonomous sensing agent.
+    """V5 autonomous sensing agent.
 
     Uses the Anthropic SDK tool-use loop to iteratively query sensing data
     and build evidence before making a final emotional state prediction.
-    Unlike V1-V4, V4 actively chooses what to investigate rather than
+    Unlike V1-V4, V5 actively chooses what to investigate rather than
     receiving pre-formatted summaries.
     """
 
@@ -168,7 +168,7 @@ class AgenticSensingAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
-        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
+        logger.info(f"[V5] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
 
         # ------------------------------------------------------------------
         # Agentic tool-use loop
@@ -183,7 +183,7 @@ class AgenticSensingAgent:
                     messages=messages,
                 )
             except Exception as exc:
-                logger.error(f"[V4] Anthropic API error: {exc}")
+                logger.error(f"[V5] Anthropic API error: {exc}")
                 break
 
             final_response = response
@@ -192,7 +192,7 @@ class AgenticSensingAgent:
                 total_output_tokens += response.usage.output_tokens or 0
 
             if response.stop_reason == "end_turn":
-                logger.debug(f"[V4] Agent ended turn after {tool_call_count} tool calls")
+                logger.debug(f"[V5] Agent ended turn after {tool_call_count} tool calls")
                 break
 
             if response.stop_reason == "tool_use":
@@ -204,7 +204,7 @@ class AgenticSensingAgent:
                         tool_name = block.name
                         tool_input = block.input if isinstance(block.input, dict) else {}
 
-                        logger.debug(f"[V4] Tool call: {tool_name}({tool_input})")
+                        logger.debug(f"[V5] Tool call: {tool_name}({tool_input})")
 
                         result_text = self._execute_tool(
                             tool_name, tool_input, ema_timestamp, ema_date
@@ -224,7 +224,7 @@ class AgenticSensingAgent:
                         tool_call_count += 1
 
                         if tool_call_count >= self.max_tool_calls:
-                            logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
+                            logger.info(f"[V5] Max tool calls ({self.max_tool_calls}) reached")
                             break
 
                 # Extend conversation: assistant turn + tool results
@@ -233,7 +233,7 @@ class AgenticSensingAgent:
 
             else:
                 # Unexpected stop reason (max_tokens, etc.)
-                logger.warning(f"[V4] Unexpected stop_reason: {response.stop_reason}")
+                logger.warning(f"[V5] Unexpected stop_reason: {response.stop_reason}")
                 break
 
         # ------------------------------------------------------------------
@@ -243,7 +243,7 @@ class AgenticSensingAgent:
 
         # If the agent didn't produce a prediction yet, explicitly request one
         if not self._has_prediction(last_text):
-            logger.debug("[V4] No prediction in final response — requesting explicit prediction")
+            logger.debug("[V5] No prediction in final response — requesting explicit prediction")
             messages.append({
                 "role": "assistant",
                 "content": final_response.content if final_response else [],
@@ -262,7 +262,7 @@ class AgenticSensingAgent:
                     total_output_tokens += pred_response.usage.output_tokens or 0
                 last_text = self._extract_text(pred_response)
             except Exception as exc:
-                logger.error(f"[V4] Error requesting prediction: {exc}")
+                logger.error(f"[V5] Error requesting prediction: {exc}")
 
         # ------------------------------------------------------------------
         # Parse prediction
@@ -270,7 +270,7 @@ class AgenticSensingAgent:
         prediction = self._parse_prediction(last_text)
         prediction["_reasoning"] = "\n\n".join(full_reasoning)
         prediction["_n_tool_calls"] = tool_call_count
-        prediction["_version"] = "v4"
+        prediction["_version"] = "v5"
         prediction["_model"] = self.model
         prediction["_final_response"] = last_text
         prediction["_input_tokens"] = total_input_tokens
@@ -278,7 +278,7 @@ class AgenticSensingAgent:
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
 
         logger.info(
-            f"[V4] User {self.study_id} done: {tool_call_count} tool calls, "
+            f"[V5] User {self.study_id} done: {tool_call_count} tool calls, "
             f"tokens={total_input_tokens}in+{total_output_tokens}out, "
             f"confidence={prediction.get('confidence', '?')}"
         )
@@ -306,7 +306,7 @@ class AgenticSensingAgent:
         memory_excerpt = ""
         if self.memory_doc:
             memory_excerpt = f"""## Baseline Personal History (pre-study memory)
-{self.memory_doc[:1200]}
+{self.memory_doc[:3000]}
 """
 
         session_section = ""
@@ -408,7 +408,7 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
         result = _parse(text)
 
         if result.get("_parse_error"):
-            logger.warning(f"[V4] Failed to parse prediction from response: {text[:300]}")
+            logger.warning(f"[V5] Failed to parse prediction from response: {text[:300]}")
             # Return a neutral fallback so we don't crash the pipeline
             result = self._fallback_prediction()
             result["_parse_error"] = True
@@ -424,7 +424,7 @@ Start by calling get_daily_summary for {ema_date} to orient yourself."""
             "PANAS_Neg": 8.0,
             "ER_desire": 3.0,
             "INT_availability": "yes",
-            "reasoning": "[V4 fallback: prediction parsing failed]",
+            "reasoning": "[V5 fallback: prediction parsing failed]",
             "confidence": 0.1,
         }
         for target in BINARY_STATE_TARGETS:

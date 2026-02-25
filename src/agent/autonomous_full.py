@@ -99,6 +99,7 @@ class AutonomousFullWorkflow:
 
         # Comprehensive trace
         result["_version"] = "v4"
+        result["_prompt_length"] = len(prompt) + len(system)
         result["_llm_calls"] = 1
         result["_emotion_driver"] = emotion_driver
         result["_sensing_summary"] = sensing_summary
