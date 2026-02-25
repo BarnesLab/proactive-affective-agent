@@ -16,11 +16,22 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+# Load .env file if present
+_env_path = PROJECT_ROOT / ".env"
+if _env_path.exists():
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _, _val = _line.partition("=")
+                os.environ.setdefault(_key.strip(), _val.strip())
 
 from src.data.loader import DataLoader
 from src.simulation.simulator import PilotSimulator
@@ -93,6 +104,13 @@ def main():
 
     # Initialize
     loader = DataLoader(data_dir=data_dir)
+    # Map short aliases to full model IDs for agentic agents (SDK)
+    agentic_model_map = {
+        "sonnet": "claude-sonnet-4-6",
+        "haiku": "claude-haiku-4-5-20251001",
+    }
+    agentic_model = agentic_model_map.get(args.model, args.model)
+
     simulator = PilotSimulator(
         loader=loader,
         output_dir=output_dir,
@@ -100,6 +118,7 @@ def main():
         dry_run=args.dry_run,
         model=args.model,
         delay=args.delay,
+        agentic_model=agentic_model,
     )
 
     # Setup (load data)

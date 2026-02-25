@@ -113,7 +113,7 @@ class PilotSimulator:
         logger.info("MultiModal retriever fitted")
 
         # Build SensingQueryEngine (for V2/V4 agentic tool-use)
-        processed_hourly_dir = self.loader.data_root / "processed" / "hourly"
+        processed_hourly_dir = self.loader.data_dir / "processed" / "hourly"
         if processed_hourly_dir.exists():
             self._query_engine = SensingQueryEngine(
                 processed_dir=processed_hourly_dir,
