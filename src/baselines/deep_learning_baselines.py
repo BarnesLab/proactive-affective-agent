@@ -38,38 +38,67 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# MLP architecture
+# MLP architecture & hyperparameter configs
 # ---------------------------------------------------------------------------
 
-def _build_mlp(input_dim: int) -> "nn.Module":
-    """Return a 3-layer MLP: input → 256 → 64 → 1."""
-    return nn.Sequential(
-        nn.Linear(input_dim, 256),
-        nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(256, 64),
-        nn.ReLU(),
-        nn.Linear(64, 1),
-    )
+# Lightweight grid of configs to search over per target.
+# Each config is small enough that 4 × 30 epochs is fast.
+MLP_CONFIGS: list[dict[str, Any]] = [
+    {"hidden_dims": [128, 32], "dropout": 0.2, "lr": 1e-3},
+    {"hidden_dims": [256, 64], "dropout": 0.3, "lr": 1e-3},
+    {"hidden_dims": [256, 128], "dropout": 0.3, "lr": 5e-4},
+    {"hidden_dims": [512, 128], "dropout": 0.4, "lr": 5e-4},
+]
+
+
+def _build_mlp(
+    input_dim: int,
+    hidden_dims: list[int] | None = None,
+    dropout: float = 0.3,
+) -> "nn.Module":
+    """Build a variable-depth MLP: input → [hidden → ReLU → Dropout]* → 1.
+
+    Args:
+        input_dim: Number of input features.
+        hidden_dims: Sizes of hidden layers (default ``[256, 64]``).
+        dropout: Dropout probability applied after each hidden layer.
+    """
+    if hidden_dims is None:
+        hidden_dims = [256, 64]
+
+    layers: list[nn.Module] = []
+    in_dim = input_dim
+    for h_dim in hidden_dims:
+        layers.extend([nn.Linear(in_dim, h_dim), nn.ReLU(), nn.Dropout(dropout)])
+        in_dim = h_dim
+    layers.append(nn.Linear(in_dim, 1))
+    return nn.Sequential(*layers)
 
 
 def _train_mlp(
-    model: "nn.Module",
     X_train: np.ndarray,
     y_train: np.ndarray,
     task: str = "regression",
     epochs: int = 30,
     batch_size: int = 64,
     lr: float = 1e-3,
+    hidden_dims: list[int] | None = None,
+    dropout: float = 0.3,
     patience: int = 5,
     val_fraction: float = 0.15,
-) -> "nn.Module":
-    """Train model with early stopping and return best weights.
+) -> tuple["nn.Module", float]:
+    """Build, train, and return (model, best_val_loss).
 
     Holds out *val_fraction* of the training data for validation monitoring.
     Training stops when validation loss has not improved for *patience* epochs,
     and the best-performing weights are restored before returning.
+
+    Returns:
+        A tuple of (trained_model, best_validation_loss).
     """
+    input_dim = X_train.shape[1]
+    model = _build_mlp(input_dim, hidden_dims=hidden_dims, dropout=dropout)
+
     # Reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
@@ -135,7 +164,78 @@ def _train_mlp(
     if best_state is not None:
         model.load_state_dict(best_state)
 
-    return model
+    return model, best_val_loss
+
+
+def _search_best_mlp(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    task: str = "regression",
+    configs: list[dict[str, Any]] | None = None,
+    epochs: int = 30,
+    batch_size: int = 64,
+    patience: int = 5,
+    val_fraction: float = 0.15,
+) -> "nn.Module":
+    """Train one MLP per config and return the model with the lowest val loss.
+
+    This is a lightweight grid search: each config in *configs* is trained
+    independently with the same train/val split (deterministic seed), and the
+    model achieving the best validation loss is selected.
+
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training target vector.
+        task: ``"regression"`` or ``"classification"``.
+        configs: List of dicts with keys ``hidden_dims``, ``dropout``, ``lr``.
+            Defaults to :data:`MLP_CONFIGS`.
+        epochs: Maximum training epochs per config.
+        batch_size: Mini-batch size.
+        patience: Early-stopping patience (epochs without val improvement).
+        val_fraction: Fraction of training data held out for validation.
+
+    Returns:
+        The best-performing trained model.
+    """
+    if configs is None:
+        configs = MLP_CONFIGS
+
+    best_model: nn.Module | None = None
+    best_loss = float("inf")
+    best_cfg: dict[str, Any] = {}
+
+    for cfg in configs:
+        model, val_loss = _train_mlp(
+            X_train,
+            y_train,
+            task=task,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=cfg.get("lr", 1e-3),
+            hidden_dims=cfg.get("hidden_dims"),
+            dropout=cfg.get("dropout", 0.3),
+            patience=patience,
+            val_fraction=val_fraction,
+        )
+        logger.debug(
+            "  Config hidden_dims=%s dropout=%.2f lr=%.4f → val_loss=%.4f",
+            cfg.get("hidden_dims"), cfg.get("dropout", 0.3), cfg.get("lr", 1e-3), val_loss,
+        )
+        if val_loss < best_loss:
+            best_loss = val_loss
+            best_model = model
+            best_cfg = cfg
+
+    logger.info(
+        "  Best MLP config: hidden_dims=%s, dropout=%.2f, lr=%.4f (val_loss=%.4f)",
+        best_cfg.get("hidden_dims"),
+        best_cfg.get("dropout", 0.3),
+        best_cfg.get("lr", 1e-3),
+        best_loss,
+    )
+
+    assert best_model is not None  # at least one config must have been evaluated
+    return best_model
 
 
 def _predict_mlp(
@@ -270,7 +370,6 @@ class DLBaselinePipeline:
             scaler = StandardScaler()
             X_train_np = scaler.fit_transform(X_train_df.values.astype(np.float32))
             X_test_np = scaler.transform(X_test_df.values.astype(np.float32))
-            input_dim = X_train_np.shape[1]
 
             for model_name in self.model_names:
                 if model_name != "mlp":
@@ -287,9 +386,8 @@ class DLBaselinePipeline:
                         continue
 
                     try:
-                        net = _build_mlp(input_dim)
-                        net = _train_mlp(
-                            net, X_train_np[mask_tr], y_tr[mask_tr].astype(np.float32),
+                        net = _search_best_mlp(
+                            X_train_np[mask_tr], y_tr[mask_tr].astype(np.float32),
                             task="regression",
                         )
                         preds = _predict_mlp(net, X_test_np[mask_te], task="regression")
@@ -327,9 +425,8 @@ class DLBaselinePipeline:
                         continue
 
                     try:
-                        net = _build_mlp(input_dim)
-                        net = _train_mlp(
-                            net, X_train_np[mask_tr], y_tr_int.astype(np.float32),
+                        net = _search_best_mlp(
+                            X_train_np[mask_tr], y_tr_int.astype(np.float32),
                             task="classification",
                         )
                         preds = _predict_mlp(net, X_test_np[mask_te], task="classification")
@@ -428,7 +525,11 @@ class DLBaselinePipeline:
             json.dump(aggregated, f, indent=2, default=str)
 
         lines = ["# Deep Learning Baseline Results (5-fold CV)\n"]
-        lines.append("Architecture: Linear(→256) → ReLU → Dropout(0.3) → Linear(→64) → ReLU → Linear(→1)\n")
+        lines.append("Architecture: MLP with hyperparameter search over 4 configs")
+        lines.append("  Configs: " + ", ".join(
+            f"{c['hidden_dims']} dr={c['dropout']} lr={c['lr']}" for c in MLP_CONFIGS
+        ))
+        lines.append("  Best config selected per target via validation loss\n")
         for model_name, targets in aggregated.items():
             agg = targets.get("_aggregate", {})
             lines.append(f"## {model_name.upper()}")
