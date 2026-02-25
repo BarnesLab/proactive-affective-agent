@@ -6,6 +6,7 @@ Provides daily aggregate features (current) and hourly features (placeholder).
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any
 
 import numpy as np
@@ -133,8 +134,47 @@ def _sensing_day_to_vector(sensing_day) -> dict[str, float]:
     return {name: data.get(name, np.nan) for name in DAILY_FEATURE_NAMES}
 
 
+def fit_imputer(
+    X_train: pd.DataFrame, strategy: str = "median"
+) -> dict[str, float]:
+    """Fit an imputer on training data, returning per-column fill values.
+
+    Args:
+        X_train: Training feature DataFrame (used to compute statistics).
+        strategy: "median" or "mean".
+
+    Returns:
+        Dict mapping column name to its fill value (median or mean from X_train).
+    """
+    if strategy == "median":
+        fill_values = X_train.median()
+    elif strategy == "mean":
+        fill_values = X_train.mean()
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+    return fill_values.to_dict()
+
+
+def apply_imputer(X: pd.DataFrame, imputer: dict[str, float]) -> pd.DataFrame:
+    """Apply a fitted imputer to a DataFrame.
+
+    Args:
+        X: Feature DataFrame with possible NaN values.
+        imputer: Dict of column -> fill value (from :func:`fit_imputer`).
+
+    Returns:
+        Imputed DataFrame with NaN values filled using the provided statistics.
+    """
+    return X.fillna(imputer)
+
+
 def impute_features(X: pd.DataFrame, strategy: str = "median") -> pd.DataFrame:
     """Impute missing values in the feature matrix.
+
+    .. deprecated::
+        This function computes fill statistics from *X* itself, which causes
+        data leakage when applied to a test set.  Use :func:`fit_imputer` +
+        :func:`apply_imputer` instead.
 
     Args:
         X: Feature DataFrame with possible NaN values.
@@ -143,6 +183,12 @@ def impute_features(X: pd.DataFrame, strategy: str = "median") -> pd.DataFrame:
     Returns:
         Imputed DataFrame (NaN columns filled with column median/mean).
     """
+    warnings.warn(
+        "impute_features() computes statistics from the input itself, which "
+        "causes train/test leakage. Use fit_imputer() + apply_imputer() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if strategy == "median":
         return X.fillna(X.median())
     elif strategy == "mean":

@@ -46,16 +46,25 @@ class MLBaseline:
     # K candidates expressed as fractions of n_features (evaluated at fit time)
     K_FRACTIONS = [0.25, 0.5, 0.75, 1.0]
 
-    def __init__(self, model_name: str, task: str = "regression", n_jobs: int = -1) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        task: str = "regression",
+        n_jobs: int = -1,
+        scale_pos_weight: float | None = None,
+    ) -> None:
         """
         Args:
             model_name: "rf", "xgboost", "logistic", or "ridge".
             task: "regression" or "classification".
             n_jobs: Parallelism for GridSearchCV and RF (default: -1 = all cores).
+            scale_pos_weight: For XGBClassifier, ratio of negative to positive
+                samples (n_neg / n_pos) to handle class imbalance.
         """
         self.model_name = model_name
         self.task = task
         self.n_jobs = n_jobs
+        self.scale_pos_weight = scale_pos_weight
         self._estimator = self._create_model(model_name, task)
         # pipeline and grid search are built in fit() once n_features is known
         self._pipeline: Pipeline | None = None
@@ -81,9 +90,11 @@ class MLBaseline:
                     random_state=42, verbosity=0,
                 )
             else:
+                spw = self.scale_pos_weight if self.scale_pos_weight is not None else 1.0
                 return XGBClassifier(
                     n_estimators=100, max_depth=6, learning_rate=0.1,
                     random_state=42, verbosity=0, eval_metric="logloss",
+                    scale_pos_weight=spw,
                 )
         elif name == "logistic":
             if task != "classification":
@@ -159,7 +170,7 @@ class MLBaselinePipeline:
         Args:
             splits_dir: Directory with group_{1-5}_{train,test}.csv files.
             sensing_dfs: Pre-loaded legacy sensing DataFrames (None if using Parquet).
-            feature_builder: Module with build_daily_features/build_parquet_features/impute_features.
+            feature_builder: Module with build_daily_features/build_parquet_features/fit_imputer/apply_imputer.
             output_dir: Where to save results.
             model_names: Which models to run (default: all available).
             processed_hourly_dir: Path to data/processed/hourly/ for Parquet mode.
@@ -217,9 +228,10 @@ class MLBaselinePipeline:
                     test_df, self.sensing_dfs
                 )
 
-            # Impute missing values
-            X_train = self.fb.impute_features(X_train)
-            X_test = self.fb.impute_features(X_test)
+            # Impute missing values (fit on train, apply to both)
+            imputer = self.fb.fit_imputer(X_train)
+            X_train = self.fb.apply_imputer(X_train, imputer)
+            X_test = self.fb.apply_imputer(X_test, imputer)
 
             X_train_np = X_train.values
             X_test_np = X_test.values
@@ -271,15 +283,24 @@ class MLBaselinePipeline:
                 if len(set(y_tr_int)) < 2:
                     continue
 
+                # Compute scale_pos_weight for XGBoost class imbalance handling
+                n_pos = int(y_tr_int.sum())
+                n_neg = len(y_tr_int) - n_pos
+                spw = n_neg / max(n_pos, 1)
+
                 clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic")]
                 for model_name in clf_models:
                     try:
-                        model = MLBaseline(model_name, task="classification", n_jobs=self.n_jobs)
+                        model = MLBaseline(
+                            model_name, task="classification", n_jobs=self.n_jobs,
+                            scale_pos_weight=spw if model_name == "xgboost" else None,
+                        )
                         model.fit(X_train_np[mask_tr], y_tr_int)
                         preds = model.predict(X_test_np[mask_te])
 
                         ba = float(balanced_accuracy_score(y_te_int, preds))
-                        f1 = float(f1_score(y_te_int, preds, zero_division=0))
+                        # binary F1: measures detection of the positive (elevated) state
+                        f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
 
                         key = f"{model_name}"
                         all_results.setdefault(key, {}).setdefault(target, []).append({
@@ -317,7 +338,7 @@ class MLBaselinePipeline:
                     maes = [r["mae"] for r in fold_results]
                     avg = {
                         "mae_mean": float(np.mean(maes)),
-                        "mae_std": float(np.std(maes)),
+                        "mae_std": float(np.std(maes, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     aggregated[model_name][target] = avg
@@ -327,7 +348,7 @@ class MLBaselinePipeline:
                     f1s = [r["f1"] for r in fold_results]
                     avg = {
                         "ba_mean": float(np.mean(bas)),
-                        "ba_std": float(np.std(bas)),
+                        "ba_std": float(np.std(bas, ddof=1)),
                         "f1_mean": float(np.mean(f1s)),
                         "f1_std": float(np.std(f1s)),
                         "n_folds": len(fold_results),
