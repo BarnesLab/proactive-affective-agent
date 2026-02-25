@@ -68,8 +68,8 @@ SPLITS_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
 # Default test user with 4 sensing modalities + diary entries
 DEFAULT_USER = 275
 
-# Number of EMA entries to test per version
-N_TEST_ENTRIES = 2
+# Number of EMA entries to test per version (evenly sampled across date range)
+N_TEST_ENTRIES = 10
 
 # Expected prediction fields
 EXPECTED_CONTINUOUS = list(CONTINUOUS_TARGETS.keys())
@@ -110,7 +110,13 @@ def setup_logging(log_dir: Path) -> logging.Logger:
 
 
 def load_test_data(user_id: int, n_entries: int = N_TEST_ENTRIES):
-    """Load EMA test data and pick entries with diary text + diverse EMA slots."""
+    """Load EMA test data and pick entries with diary text + diverse coverage.
+
+    Selection strategy:
+    - Sort by timestamp, then evenly sample across the full date range
+    - This ensures coverage of early/mid/late study periods AND different time slots
+    - When n_entries >= total available, return all entries
+    """
     test_csv = SPLITS_DIR / "group_1_test.csv"
     if not test_csv.exists():
         raise FileNotFoundError(f"Test CSV not found: {test_csv}")
@@ -129,33 +135,22 @@ def load_test_data(user_id: int, n_entries: int = N_TEST_ENTRIES):
     diary_df = user_df[diary_mask]
 
     if diary_df.empty:
-        # Fall back to any entries
         diary_df = user_df
 
-    # Pick entries from different time slots for diversity
+    # Sort by timestamp for temporal ordering
     diary_df = diary_df.copy()
     diary_df["timestamp_local"] = pd.to_datetime(diary_df["timestamp_local"])
-    diary_df["hour"] = diary_df["timestamp_local"].dt.hour
-    diary_df["slot"] = diary_df["hour"].apply(
-        lambda h: "morning" if h < 12 else ("afternoon" if h < 17 else "evening")
-    )
+    diary_df = diary_df.sort_values("timestamp_local").reset_index(drop=True)
 
-    # Try to get one from each slot
-    selected = []
-    for slot in ["morning", "afternoon", "evening"]:
-        slot_entries = diary_df[diary_df["slot"] == slot]
-        if not slot_entries.empty:
-            selected.append(slot_entries.iloc[0])
-            if len(selected) >= n_entries:
-                break
-    # Fill remaining from any slot
-    while len(selected) < n_entries and len(selected) < len(diary_df):
-        for _, row in diary_df.iterrows():
-            already = {s.get("timestamp_local") for s in selected}
-            if row["timestamp_local"] not in already:
-                selected.append(row)
-                if len(selected) >= n_entries:
-                    break
+    # Return all if n_entries >= available
+    if n_entries >= len(diary_df):
+        return df, [diary_df.iloc[i] for i in range(len(diary_df))]
+
+    # Evenly sample across the sorted entries (covers full date range + slot diversity)
+    indices = np.linspace(0, len(diary_df) - 1, n_entries, dtype=int)
+    # Ensure unique indices
+    indices = sorted(set(indices))
+    selected = [diary_df.iloc[i] for i in indices]
 
     return df, selected[:n_entries]
 
