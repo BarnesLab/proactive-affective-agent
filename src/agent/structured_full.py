@@ -98,6 +98,8 @@ class StructuredFullWorkflow:
         result["_version"] = "v3"
         result["_prompt_length"] = len(prompt) + len(system)
         result["_emotion_driver"] = emotion_driver
+        result["_has_diary"] = bool(emotion_driver.strip())
+        result["_diary_length"] = len(emotion_driver) if emotion_driver.strip() else 0
         result["_sensing_summary"] = sensing_summary
         result["_full_prompt"] = prompt
         result["_system_prompt"] = system

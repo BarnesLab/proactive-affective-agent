@@ -151,6 +151,8 @@ class PersonalAgent:
         result["_version"] = "callm"
         result["_prompt_length"] = len(prompt)
         result["_emotion_driver"] = emotion_driver
+        result["_has_diary"] = bool(emotion_driver.strip())
+        result["_diary_length"] = len(emotion_driver) if emotion_driver.strip() else 0
         result["_full_prompt"] = prompt
         result["_full_response"] = raw_response
         result["_rag_top5"] = [

@@ -148,3 +148,14 @@ class Reporter:
         with open(path, "w") as f:
             json.dump(trace_data, f, indent=2, default=str)
         return path
+
+    def save_unified_record(self, record: dict, version: str, study_id: int) -> Path:
+        """Append one unified record to the JSONL log.
+
+        Each line is a self-contained JSON object with everything needed for
+        post-hoc analysis of a single (user, EMA) prediction.
+        """
+        path = self.output_dir / f"{version}_user{study_id}_records.jsonl"
+        with open(path, "a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+        return path

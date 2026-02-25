@@ -22,8 +22,29 @@ from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
 from src.think.llm_client import ClaudeCodeClient
+from src.utils.mappings import SENSING_COLUMNS
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+ALL_MODALITY_NAMES = sorted(SENSING_COLUMNS.keys())
+
+
+def _ema_slot(timestamp_str: str) -> str:
+    """Classify an EMA timestamp into morning/afternoon/evening."""
+    try:
+        hour = pd.Timestamp(timestamp_str).hour
+        if hour < 12:
+            return "morning"
+        if hour < 17:
+            return "afternoon"
+        return "evening"
+    except Exception:
+        return "unknown"
 
 
 class PilotSimulator:
@@ -161,9 +182,11 @@ class PilotSimulator:
                     continue
 
                 date_str = str(ema_row.get("date_local", ""))
+                timestamp_str = str(ema_row.get("timestamp_local", ""))
 
                 logger.info(f"  Entry {i+1}/{n_entries} ({date_str})")
 
+                t0 = time.monotonic()
                 try:
                     pred = agent.predict(
                         ema_row=ema_row,
@@ -174,17 +197,65 @@ class PilotSimulator:
                 except Exception as e:
                     logger.error(f"  Error predicting: {e}")
                     pred = {"_error": str(e)}
+                elapsed = time.monotonic() - t0
 
                 # Extract ground truth
                 gt = _extract_ground_truth(ema_row)
 
-                # Save trace immediately
+                # Save trace immediately (backward compat)
                 trace_data = {k: v for k, v in pred.items() if k.startswith("_")}
                 if trace_data:
                     self.reporter.save_trace(trace_data, sid, i, version)
 
                 # Clean prediction for evaluation
                 clean_pred = {k: v for k, v in pred.items() if not k.startswith("_")}
+
+                # --- Build unified record ---
+                modalities_available = []
+                if sensing_day is not None and hasattr(sensing_day, "available_modalities"):
+                    modalities_available = sensing_day.available_modalities()
+                modalities_missing = [m for m in ALL_MODALITY_NAMES if m not in modalities_available]
+
+                # Diary info: prefer trace fields, fall back to ema_row
+                has_diary = pred.get("_has_diary", False)
+                diary_length = pred.get("_diary_length", 0)
+                if not has_diary and ema_row is not None:
+                    raw_diary = str(ema_row.get("emotion_driver", ""))
+                    if raw_diary and raw_diary.lower() != "nan" and raw_diary.strip():
+                        has_diary = True
+                        diary_length = len(raw_diary)
+
+                unified_record = {
+                    # Identity
+                    "study_id": sid,
+                    "entry_idx": i,
+                    "date_local": date_str,
+                    "timestamp_local": timestamp_str,
+                    "ema_slot": _ema_slot(timestamp_str),
+                    "version": version,
+                    # Data availability
+                    "modalities_available": modalities_available,
+                    "modalities_missing": modalities_missing,
+                    "has_diary": has_diary,
+                    "diary_length": diary_length if has_diary else None,
+                    # Prediction & ground truth
+                    "prediction": clean_pred,
+                    "ground_truth": gt,
+                    "reasoning": pred.get("reasoning", pred.get("_reasoning", "")),
+                    "confidence": pred.get("confidence", 0.0),
+                    # Context given to LLM
+                    "prompt_length": pred.get("_prompt_length"),
+                    "sensing_summary": pred.get("_sensing_summary", ""),
+                    "rag_cases": pred.get("_rag_top5", []),
+                    "memory_excerpt": pred.get("_memory_excerpt", ""),
+                    # LLM response
+                    "full_response": pred.get("_full_response", pred.get("_final_response", "")),
+                    "system_prompt": pred.get("_system_prompt", ""),
+                    # Performance
+                    "elapsed_seconds": round(elapsed, 3),
+                    "llm_calls": pred.get("_llm_calls", 1),
+                }
+                self.reporter.save_unified_record(unified_record, version, sid)
 
                 user_preds.append(clean_pred)
                 user_gts.append(gt)

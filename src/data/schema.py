@@ -147,6 +147,25 @@ class SensingDay:
                 result["top_apps"] = v
         return result
 
+    def available_modalities(self) -> list[str]:
+        """Return list of modality names that have data."""
+        available = []
+        if self.sleep_duration_min is not None or self.android_sleep_min is not None:
+            available.append("sleep")
+        if self.accel_sleep_duration_min is not None:
+            available.append("accelerometer")
+        if self.travel_km is not None or self.gps_captures is not None:
+            available.append("gps")
+        if self.stationary_min is not None or self.walking_min is not None:
+            available.append("motion")
+        if self.screen_minutes is not None or self.screen_sessions is not None:
+            available.append("screen")
+        if self.words_typed is not None or self.chars_typed is not None:
+            available.append("key_input")
+        if self.total_app_seconds is not None:
+            available.append("app_usage")
+        return available
+
 
 @dataclass
 class PredictionOutput:
