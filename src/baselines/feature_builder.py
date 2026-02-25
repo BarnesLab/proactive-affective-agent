@@ -156,16 +156,28 @@ def fit_imputer(
 
 
 def apply_imputer(X: pd.DataFrame, imputer: dict[str, float]) -> pd.DataFrame:
-    """Apply a fitted imputer to a DataFrame.
+    """Apply a fitted imputer to a DataFrame, aligning columns to the training set.
+
+    Ensures the output has exactly the same columns (in the same order) as the
+    training data that was used to fit the imputer.  Columns present in the
+    imputer but missing from *X* are added and filled with the imputer values;
+    columns present in *X* but absent from the imputer are dropped.
 
     Args:
         X: Feature DataFrame with possible NaN values.
         imputer: Dict of column -> fill value (from :func:`fit_imputer`).
 
     Returns:
-        Imputed DataFrame with NaN values filled using the provided statistics.
+        Imputed DataFrame with columns matching the imputer's column set,
+        NaN values filled using the provided statistics.
     """
-    return X.fillna(imputer)
+    train_cols = list(imputer.keys())
+
+    # Reindex to match training columns: adds missing cols as NaN, drops extras
+    X_aligned = X.reindex(columns=train_cols)
+
+    # Fill NaN values (both original missing values and newly introduced columns)
+    return X_aligned.fillna(imputer)
 
 
 def impute_features(X: pd.DataFrame, strategy: str = "median") -> pd.DataFrame:

@@ -283,28 +283,25 @@ class CombinedBaselinePipeline:
                 y_bin_tr = pd.DataFrame({t: train_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS})
                 y_bin_te = pd.DataFrame({t: test_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS})
 
+            # Align columns BEFORE imputation so that the imputer sees the
+            # same feature set for both train and test.  Use the training
+            # columns as the canonical set; add missing cols as NaN in test
+            # and drop any test-only columns.
+            train_sens_cols = list(X_sens_tr_df.columns)
+            X_sens_te_df = X_sens_te_df.reindex(columns=train_sens_cols)
+
             # Impute (fit on train only to avoid data leakage)
             imputer = SimpleImputer(strategy="median")
             X_sens_tr_df = pd.DataFrame(
                 imputer.fit_transform(X_sens_tr_df),
-                columns=X_sens_tr_df.columns,
+                columns=train_sens_cols,
                 index=X_sens_tr_df.index,
             )
             X_sens_te_df = pd.DataFrame(
                 imputer.transform(X_sens_te_df),
-                columns=X_sens_te_df.columns,
+                columns=train_sens_cols,
                 index=X_sens_te_df.index,
             )
-
-            # Align columns
-            all_sens_cols = sorted(set(X_sens_tr_df.columns) | set(X_sens_te_df.columns))
-            for col in all_sens_cols:
-                if col not in X_sens_tr_df.columns:
-                    X_sens_tr_df[col] = 0.0
-                if col not in X_sens_te_df.columns:
-                    X_sens_te_df[col] = 0.0
-            X_sens_tr_df = X_sens_tr_df[all_sens_cols]
-            X_sens_te_df = X_sens_te_df[all_sens_cols]
 
             # Scale sensor features
             sens_scaler = StandardScaler()

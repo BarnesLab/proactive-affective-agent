@@ -520,28 +520,25 @@ class DLBaselinePipeline:
                     {t: test_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS}
                 )
 
+            # Align columns BEFORE imputation so that the imputer sees the
+            # same feature set for both train and test.  Use the training
+            # columns as the canonical set; add missing cols as NaN in test
+            # and drop any test-only columns.
+            train_cols = list(X_train_df.columns)
+            X_test_df = X_test_df.reindex(columns=train_cols)
+
             # Impute (fit on train only to avoid data leakage)
             imputer = SimpleImputer(strategy="median")
             X_train_df = pd.DataFrame(
                 imputer.fit_transform(X_train_df),
-                columns=X_train_df.columns,
+                columns=train_cols,
                 index=X_train_df.index,
             )
             X_test_df = pd.DataFrame(
                 imputer.transform(X_test_df),
-                columns=X_test_df.columns,
+                columns=train_cols,
                 index=X_test_df.index,
             )
-
-            # Align columns
-            all_cols = sorted(set(X_train_df.columns) | set(X_test_df.columns))
-            for col in all_cols:
-                if col not in X_train_df.columns:
-                    X_train_df[col] = 0.0
-                if col not in X_test_df.columns:
-                    X_test_df[col] = 0.0
-            X_train_df = X_train_df[all_cols]
-            X_test_df = X_test_df[all_cols]
 
             scaler = StandardScaler()
             X_train_np = scaler.fit_transform(X_train_df.values.astype(np.float32))
