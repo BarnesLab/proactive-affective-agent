@@ -18,6 +18,7 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
 )
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -60,25 +61,53 @@ def _train_mlp(
     epochs: int = 30,
     batch_size: int = 64,
     lr: float = 1e-3,
+    patience: int = 5,
+    val_fraction: float = 0.15,
 ) -> "nn.Module":
-    """Train model in-place and return it."""
+    """Train model with early stopping and return best weights.
+
+    Holds out *val_fraction* of the training data for validation monitoring.
+    Training stops when validation loss has not improved for *patience* epochs,
+    and the best-performing weights are restored before returning.
+    """
+    # Reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    X_t = torch.tensor(X_train, dtype=torch.float32)
-    y_t = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
+    # --- Validation split (shuffled, deterministic via seed above) ---
+    n = len(X_train)
+    indices = np.random.permutation(n)
+    n_val = max(1, int(n * val_fraction))
+    val_idx, train_idx = indices[:n_val], indices[n_val:]
 
-    dataset = TensorDataset(X_t, y_t)
+    X_tr = torch.tensor(X_train[train_idx], dtype=torch.float32)
+    y_tr = torch.tensor(y_train[train_idx], dtype=torch.float32).unsqueeze(1)
+    X_val = torch.tensor(X_train[val_idx], dtype=torch.float32).to(device)
+    y_val = torch.tensor(y_train[val_idx], dtype=torch.float32).unsqueeze(1).to(device)
+
+    dataset = TensorDataset(X_tr, y_tr)
     loader = TorchDataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if task == "regression":
         criterion = nn.MSELoss()
     else:
-        criterion = nn.BCEWithLogitsLoss()
+        # Compute pos_weight from training labels to handle class imbalance
+        n_pos = float(y_train[train_idx].sum())
+        n_neg = float(len(train_idx) - n_pos)
+        pw = torch.tensor([n_neg / max(n_pos, 1.0)], dtype=torch.float32).to(device)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pw)
 
-    model.train()
-    for _ in range(epochs):
+    best_val_loss = float("inf")
+    best_state = None
+    epochs_no_improve = 0
+
+    for _epoch in range(epochs):
+        # --- Training ---
+        model.train()
         for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
             optimizer.zero_grad()
@@ -86,6 +115,25 @@ def _train_mlp(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+
+        # --- Validation ---
+        model.eval()
+        with torch.no_grad():
+            val_loss = criterion(model(X_val), y_val).item()
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                logger.debug(f"Early stopping at epoch {_epoch + 1} (patience={patience})")
+                break
+
+    # Restore best weights
+    if best_state is not None:
+        model.load_state_dict(best_state)
 
     return model
 
@@ -196,9 +244,18 @@ class DLBaselinePipeline:
                     {t: test_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS}
                 )
 
-            # Impute and scale
-            X_train_df = feature_builder.impute_features(X_train_df)
-            X_test_df = feature_builder.impute_features(X_test_df)
+            # Impute (fit on train only to avoid data leakage)
+            imputer = SimpleImputer(strategy="median")
+            X_train_df = pd.DataFrame(
+                imputer.fit_transform(X_train_df),
+                columns=X_train_df.columns,
+                index=X_train_df.index,
+            )
+            X_test_df = pd.DataFrame(
+                imputer.transform(X_test_df),
+                columns=X_test_df.columns,
+                index=X_test_df.index,
+            )
 
             # Align columns
             all_cols = sorted(set(X_train_df.columns) | set(X_test_df.columns))

@@ -24,6 +24,7 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
 )
+from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -159,8 +160,18 @@ class CombinedBaselinePipeline:
                 y_bin_tr = pd.DataFrame({t: train_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS})
                 y_bin_te = pd.DataFrame({t: test_df.get(t, pd.Series(dtype=float)) for t in BINARY_STATE_TARGETS})
 
-            X_sens_tr_df = feature_builder.impute_features(X_sens_tr_df)
-            X_sens_te_df = feature_builder.impute_features(X_sens_te_df)
+            # Impute (fit on train only to avoid data leakage)
+            imputer = SimpleImputer(strategy="median")
+            X_sens_tr_df = pd.DataFrame(
+                imputer.fit_transform(X_sens_tr_df),
+                columns=X_sens_tr_df.columns,
+                index=X_sens_tr_df.index,
+            )
+            X_sens_te_df = pd.DataFrame(
+                imputer.transform(X_sens_te_df),
+                columns=X_sens_te_df.columns,
+                index=X_sens_te_df.index,
+            )
 
             # Align columns
             all_sens_cols = sorted(set(X_sens_tr_df.columns) | set(X_sens_te_df.columns))
