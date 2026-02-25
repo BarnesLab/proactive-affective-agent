@@ -1,5 +1,10 @@
 """Deep learning baseline pipeline: MLP on hourly Parquet features.
 
+Optimized for multi-GPU servers (e.g. 2x RTX A5000/A6000 + 40 CPU cores):
+- Config search parallelized via ThreadPoolExecutor (MLP is tiny, fits many on one GPU)
+- Target-level parallelism via joblib ProcessPoolExecutor across CPU cores
+- Round-robin GPU assignment when multiple GPUs are available
+
 Requires PyTorch. If torch is not installed the pipeline raises ImportError
 gracefully when instantiated so the caller can decide whether to skip.
 """
@@ -8,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +45,28 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+# GPU device helpers
+# ---------------------------------------------------------------------------
+
+def _get_available_devices() -> list[str]:
+    """Return list of available torch device strings, e.g. ['cuda:0', 'cuda:1'] or ['cpu']."""
+    if not HAS_TORCH or not torch.cuda.is_available():
+        return ["cpu"]
+    return [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+
+
+def _pick_device(index: int = 0) -> "torch.device":
+    """Round-robin device selection based on an integer index."""
+    devices = _get_available_devices()
+    return torch.device(devices[index % len(devices)])
+
+
+# ---------------------------------------------------------------------------
 # MLP architecture & hyperparameter configs
 # ---------------------------------------------------------------------------
 
 # Lightweight grid of configs to search over per target.
-# Each config is small enough that 4 × 30 epochs is fast.
+# Each config is small enough that 4 x 30 epochs is fast.
 MLP_CONFIGS: list[dict[str, Any]] = [
     {"hidden_dims": [128, 32], "dropout": 0.2, "lr": 1e-3},
     {"hidden_dims": [256, 64], "dropout": 0.3, "lr": 1e-3},
@@ -56,7 +80,7 @@ def _build_mlp(
     hidden_dims: list[int] | None = None,
     dropout: float = 0.3,
 ) -> "nn.Module":
-    """Build a variable-depth MLP: input → [hidden → ReLU → Dropout]* → 1.
+    """Build a variable-depth MLP: input -> [hidden -> ReLU -> Dropout]* -> 1.
 
     Args:
         input_dim: Number of input features.
@@ -86,6 +110,8 @@ def _train_mlp(
     dropout: float = 0.3,
     patience: int = 5,
     val_fraction: float = 0.15,
+    seed: int = 42,
+    device: "torch.device | None" = None,
 ) -> tuple["nn.Module", float]:
     """Build, train, and return (model, best_val_loss).
 
@@ -93,17 +119,35 @@ def _train_mlp(
     Training stops when validation loss has not improved for *patience* epochs,
     and the best-performing weights are restored before returning.
 
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training target vector.
+        task: ``"regression"`` or ``"classification"``.
+        epochs: Maximum training epochs.
+        batch_size: Mini-batch size.
+        lr: Learning rate for Adam optimizer.
+        hidden_dims: Hidden layer sizes.
+        dropout: Dropout probability.
+        patience: Early-stopping patience.
+        val_fraction: Fraction held out for validation.
+        seed: Random seed for reproducibility.
+        device: Torch device to train on. Auto-detected if None.
+
     Returns:
         A tuple of (trained_model, best_validation_loss).
     """
+    # Prevent thread oversubscription in worker processes
+    torch.set_num_threads(1)
+
     input_dim = X_train.shape[1]
     model = _build_mlp(input_dim, hidden_dims=hidden_dims, dropout=dropout)
 
     # Reproducibility
-    torch.manual_seed(42)
-    np.random.seed(42)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     # --- Validation split (shuffled, deterministic via seed above) ---
@@ -176,12 +220,14 @@ def _search_best_mlp(
     batch_size: int = 64,
     patience: int = 5,
     val_fraction: float = 0.15,
+    seed: int = 42,
+    device: "torch.device | None" = None,
 ) -> "nn.Module":
-    """Train one MLP per config and return the model with the lowest val loss.
+    """Train one MLP per config **in parallel** and return the best model.
 
-    This is a lightweight grid search: each config in *configs* is trained
-    independently with the same train/val split (deterministic seed), and the
-    model achieving the best validation loss is selected.
+    All configs are trained concurrently using a ThreadPoolExecutor. Threads
+    are efficient here because PyTorch releases the GIL during GPU/BLAS ops,
+    and the MLP is tiny enough that multiple configs fit in GPU memory at once.
 
     Args:
         X_train: Training feature matrix.
@@ -193,6 +239,8 @@ def _search_best_mlp(
         batch_size: Mini-batch size.
         patience: Early-stopping patience (epochs without val improvement).
         val_fraction: Fraction of training data held out for validation.
+        seed: Base random seed (each config gets the same seed for fair comparison).
+        device: Torch device. Auto-detected if None.
 
     Returns:
         The best-performing trained model.
@@ -204,7 +252,8 @@ def _search_best_mlp(
     best_loss = float("inf")
     best_cfg: dict[str, Any] = {}
 
-    for cfg in configs:
+    def _train_one_config(cfg: dict[str, Any]) -> tuple["nn.Module", float, dict[str, Any]]:
+        """Train a single config and return (model, val_loss, cfg)."""
         model, val_loss = _train_mlp(
             X_train,
             y_train,
@@ -216,15 +265,28 @@ def _search_best_mlp(
             dropout=cfg.get("dropout", 0.3),
             patience=patience,
             val_fraction=val_fraction,
+            seed=seed,
+            device=device,
         )
-        logger.debug(
-            "  Config hidden_dims=%s dropout=%.2f lr=%.4f → val_loss=%.4f",
-            cfg.get("hidden_dims"), cfg.get("dropout", 0.3), cfg.get("lr", 1e-3), val_loss,
-        )
-        if val_loss < best_loss:
-            best_loss = val_loss
-            best_model = model
-            best_cfg = cfg
+        return model, val_loss, cfg
+
+    # Train all configs in parallel using threads (MLP is tiny, GIL released
+    # during CUDA/BLAS ops, so threads give real concurrency here).
+    with ThreadPoolExecutor(max_workers=len(configs)) as pool:
+        futures = {
+            pool.submit(_train_one_config, cfg): cfg
+            for cfg in configs
+        }
+        for future in as_completed(futures):
+            model, val_loss, cfg = future.result()
+            logger.debug(
+                "  Config hidden_dims=%s dropout=%.2f lr=%.4f -> val_loss=%.4f",
+                cfg.get("hidden_dims"), cfg.get("dropout", 0.3), cfg.get("lr", 1e-3), val_loss,
+            )
+            if val_loss < best_loss:
+                best_loss = val_loss
+                best_model = model
+                best_cfg = cfg
 
     logger.info(
         "  Best MLP config: hidden_dims=%s, dropout=%.2f, lr=%.4f (val_loss=%.4f)",
@@ -242,9 +304,12 @@ def _predict_mlp(
     model: "nn.Module",
     X_test: np.ndarray,
     task: str = "regression",
+    device: "torch.device | None" = None,
 ) -> np.ndarray:
     """Run inference and return numpy predictions."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     model.eval()
     with torch.no_grad():
         X_t = torch.tensor(X_test, dtype=torch.float32).to(device)
@@ -260,12 +325,114 @@ def _predict_mlp(
 
 
 # ---------------------------------------------------------------------------
+# Standalone target training function (must be top-level for pickling)
+# ---------------------------------------------------------------------------
+
+def _train_and_evaluate_target(
+    target: str,
+    task_type: str,
+    X_train_np: np.ndarray,
+    X_test_np: np.ndarray,
+    y_tr_vals: np.ndarray,
+    y_te_vals: np.ndarray,
+    mask_tr: np.ndarray,
+    mask_te: np.ndarray,
+    target_index: int,
+    device_str: str,
+) -> dict[str, Any] | None:
+    """Train MLP for a single target and return the result dict.
+
+    This is a top-level function (not a method) so it can be pickled for
+    multiprocessing. Each worker process gets its own GIL and torch threads.
+
+    Args:
+        target: Target column name.
+        task_type: ``"regression"`` or ``"classification"``.
+        X_train_np: Scaled training features (all rows, pre-imputed).
+        X_test_np: Scaled test features (all rows, pre-imputed).
+        y_tr_vals: Training target values (with NaN for missing).
+        y_te_vals: Test target values (with NaN for missing).
+        mask_tr: Boolean mask for valid training rows.
+        mask_te: Boolean mask for valid test rows.
+        target_index: Index for deterministic seed = 42 + target_index.
+        device_str: Torch device string, e.g. "cuda:0" or "cpu".
+
+    Returns:
+        Dict with metrics, or None if the target was skipped.
+    """
+    # Prevent thread oversubscription inside worker process
+    import os as _worker_os
+    _worker_os.environ["OMP_NUM_THREADS"] = "1"
+    _worker_os.environ["MKL_NUM_THREADS"] = "1"
+    torch.set_num_threads(1)
+
+    device = torch.device(device_str)
+    seed = 42 + target_index
+
+    try:
+        if task_type == "regression":
+            net = _search_best_mlp(
+                X_train_np[mask_tr],
+                y_tr_vals[mask_tr].astype(np.float32),
+                task="regression",
+                seed=seed,
+                device=device,
+            )
+            preds = _predict_mlp(net, X_test_np[mask_te], task="regression", device=device)
+            mae = float(mean_absolute_error(y_te_vals[mask_te], preds))
+            return {
+                "target": target,
+                "task_type": task_type,
+                "fold_result": {
+                    "mae": mae,
+                    "n_train": int(mask_tr.sum()),
+                    "n_test": int(mask_te.sum()),
+                },
+            }
+        else:
+            y_tr_int = y_tr_vals[mask_tr].astype(int)
+            y_te_int = y_te_vals[mask_te].astype(int)
+            net = _search_best_mlp(
+                X_train_np[mask_tr],
+                y_tr_int.astype(np.float32),
+                task="classification",
+                seed=seed,
+                device=device,
+            )
+            preds = _predict_mlp(net, X_test_np[mask_te], task="classification", device=device)
+
+            ba = float(balanced_accuracy_score(y_te_int, preds))
+            f1_val = float(f1_score(y_te_int, preds, zero_division=0))
+
+            return {
+                "target": target,
+                "task_type": task_type,
+                "fold_result": {
+                    "balanced_accuracy": ba,
+                    "f1": f1_val,
+                    "n_train": int(mask_tr.sum()),
+                    "n_test": int(mask_te.sum()),
+                },
+            }
+    except Exception as e:
+        logger.warning(f"  mlp/{target}: {e}")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
 
 class DLBaselinePipeline:
-    """MLP on hourly Parquet features, 5-fold CV matching MLBaselinePipeline."""
+    """MLP on hourly Parquet features, 5-fold CV matching MLBaselinePipeline.
+
+    Parallelism strategy (optimized for 2-GPU + 40-core servers):
+    - **Config search** (inner loop): ThreadPoolExecutor trains 4 MLP configs
+      simultaneously on the same GPU. The MLP is tiny (<1 MB) so all fit easily.
+    - **Target training** (outer loop): joblib or ProcessPoolExecutor distributes
+      independent targets across CPU cores. Each worker gets a GPU via round-robin.
+    """
 
     def __init__(
         self,
@@ -273,6 +440,7 @@ class DLBaselinePipeline:
         output_dir: Path,
         processed_hourly_dir: Path | None = None,
         model_names: list[str] | None = None,
+        n_workers: int | None = None,
     ) -> None:
         """
         Args:
@@ -280,6 +448,9 @@ class DLBaselinePipeline:
             output_dir: Where to save results.
             processed_hourly_dir: Path to data/processed/hourly/ for Parquet features.
             model_names: Currently only ["mlp"] is supported (kept for interface parity).
+            n_workers: Number of parallel workers for target-level parallelism.
+                Defaults to min(num_targets, cpu_count) capped at 20 to avoid
+                memory pressure. Set to 1 to disable parallelism.
         """
         if not HAS_TORCH:
             raise ImportError(
@@ -292,6 +463,7 @@ class DLBaselinePipeline:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.processed_hourly_dir = Path(processed_hourly_dir) if processed_hourly_dir else None
         self.model_names = model_names if model_names is not None else ["mlp"]
+        self.n_workers = n_workers
 
     # ------------------------------------------------------------------
     # Public API
@@ -299,6 +471,9 @@ class DLBaselinePipeline:
 
     def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
         """Run CV for MLP on Parquet hourly features.
+
+        Targets within each fold are trained in parallel using process-based
+        parallelism. GPU devices are distributed round-robin across workers.
 
         Args:
             folds: List of fold indices to run (e.g. [1], [3, 4]). If None, runs all 5 folds.
@@ -310,6 +485,7 @@ class DLBaselinePipeline:
         from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 
         all_results: dict[str, Any] = {}
+        devices = _get_available_devices()
 
         for fold in (folds if folds is not None else range(1, 6)):
             logger.info(f"=== DL Baseline Fold {fold}/5 ===")
@@ -375,7 +551,10 @@ class DLBaselinePipeline:
                 if model_name != "mlp":
                     continue
 
-                # Continuous regression
+                # ---- Collect all target tasks for parallel execution ----
+                target_tasks: list[dict[str, Any]] = []
+
+                # Continuous regression targets
                 for target in CONTINUOUS_TARGETS:
                     y_tr = pd.to_numeric(y_cont_tr[target], errors="coerce").values if target in y_cont_tr.columns else np.full(len(train_df), np.nan)
                     y_te = pd.to_numeric(y_cont_te[target], errors="coerce").values if target in y_cont_te.columns else np.full(len(test_df), np.nan)
@@ -385,24 +564,16 @@ class DLBaselinePipeline:
                     if mask_tr.sum() < 10 or mask_te.sum() < 5:
                         continue
 
-                    try:
-                        net = _search_best_mlp(
-                            X_train_np[mask_tr], y_tr[mask_tr].astype(np.float32),
-                            task="regression",
-                        )
-                        preds = _predict_mlp(net, X_test_np[mask_te], task="regression")
-                        mae = float(mean_absolute_error(y_te[mask_te], preds))
+                    target_tasks.append({
+                        "target": target,
+                        "task_type": "regression",
+                        "y_tr_vals": y_tr,
+                        "y_te_vals": y_te,
+                        "mask_tr": mask_tr,
+                        "mask_te": mask_te,
+                    })
 
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "mae": mae,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  mlp/{target} fold {fold}: {e}")
-
-                # Binary classification
+                # Binary classification targets
                 binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
                 for target in binary_targets:
                     src_df_tr = y_bin_tr if target in (y_bin_tr.columns if hasattr(y_bin_tr, "columns") else []) else train_df
@@ -420,29 +591,111 @@ class DLBaselinePipeline:
                         continue
 
                     y_tr_int = y_tr[mask_tr].astype(int)
-                    y_te_int = y_te[mask_te].astype(int)
                     if len(set(y_tr_int)) < 2:
                         continue
 
-                    try:
-                        net = _search_best_mlp(
-                            X_train_np[mask_tr], y_tr_int.astype(np.float32),
-                            task="classification",
+                    target_tasks.append({
+                        "target": target,
+                        "task_type": "classification",
+                        "y_tr_vals": y_tr,
+                        "y_te_vals": y_te,
+                        "mask_tr": mask_tr,
+                        "mask_te": mask_te,
+                    })
+
+                # ---- Execute all targets in parallel ----
+                n_targets = len(target_tasks)
+                if n_targets == 0:
+                    continue
+
+                # Default workers: min(num_targets, cpu_count, 20)
+                max_workers = self.n_workers
+                if max_workers is None:
+                    cpu_count = mp.cpu_count() or 4
+                    max_workers = min(n_targets, cpu_count, 20)
+                max_workers = max(1, max_workers)
+
+                logger.info(
+                    f"  Fold {fold}: Training {n_targets} targets with "
+                    f"{max_workers} parallel workers on devices={devices}"
+                )
+
+                if max_workers == 1:
+                    # Sequential fallback (useful for debugging)
+                    results_list = []
+                    for idx, tt in enumerate(target_tasks):
+                        device_str = devices[idx % len(devices)]
+                        result = _train_and_evaluate_target(
+                            target=tt["target"],
+                            task_type=tt["task_type"],
+                            X_train_np=X_train_np,
+                            X_test_np=X_test_np,
+                            y_tr_vals=tt["y_tr_vals"],
+                            y_te_vals=tt["y_te_vals"],
+                            mask_tr=tt["mask_tr"],
+                            mask_te=tt["mask_te"],
+                            target_index=idx,
+                            device_str=device_str,
                         )
-                        preds = _predict_mlp(net, X_test_np[mask_te], task="classification")
+                        results_list.append(result)
+                else:
+                    # Parallel execution via joblib (loky backend handles pickling
+                    # and process reuse better than raw ProcessPoolExecutor).
+                    try:
+                        from joblib import Parallel, delayed
 
-                        ba = float(balanced_accuracy_score(y_te_int, preds))
-                        f1 = float(f1_score(y_te_int, preds, zero_division=0))
+                        results_list = Parallel(
+                            n_jobs=max_workers,
+                            backend="loky",
+                            verbose=0,
+                        )(
+                            delayed(_train_and_evaluate_target)(
+                                target=tt["target"],
+                                task_type=tt["task_type"],
+                                X_train_np=X_train_np,
+                                X_test_np=X_test_np,
+                                y_tr_vals=tt["y_tr_vals"],
+                                y_te_vals=tt["y_te_vals"],
+                                mask_tr=tt["mask_tr"],
+                                mask_te=tt["mask_te"],
+                                target_index=idx,
+                                device_str=devices[idx % len(devices)],
+                            )
+                            for idx, tt in enumerate(target_tasks)
+                        )
+                    except ImportError:
+                        # Fallback: use ProcessPoolExecutor if joblib not available
+                        from concurrent.futures import ProcessPoolExecutor
 
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "balanced_accuracy": ba,
-                            "f1": f1,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  mlp/{target} fold {fold}: {e}")
+                        logger.info("  joblib not available, falling back to ProcessPoolExecutor")
+                        with ProcessPoolExecutor(max_workers=max_workers) as pool:
+                            futures = []
+                            for idx, tt in enumerate(target_tasks):
+                                device_str = devices[idx % len(devices)]
+                                fut = pool.submit(
+                                    _train_and_evaluate_target,
+                                    target=tt["target"],
+                                    task_type=tt["task_type"],
+                                    X_train_np=X_train_np,
+                                    X_test_np=X_test_np,
+                                    y_tr_vals=tt["y_tr_vals"],
+                                    y_te_vals=tt["y_te_vals"],
+                                    mask_tr=tt["mask_tr"],
+                                    mask_te=tt["mask_te"],
+                                    target_index=idx,
+                                    device_str=device_str,
+                                )
+                                futures.append(fut)
+                            results_list = [f.result() for f in futures]
+
+                # ---- Collect results ----
+                for result in results_list:
+                    if result is None:
+                        continue
+                    target = result["target"]
+                    fold_result = result["fold_result"]
+                    fold_result["fold"] = fold
+                    all_results.setdefault(model_name, {}).setdefault(target, []).append(fold_result)
 
         aggregated = self._aggregate_folds(all_results)
         self._save_results(all_results, aggregated)
