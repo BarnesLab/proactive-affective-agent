@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegressionCV, RidgeCV
 from sklearn.metrics import (
     balanced_accuracy_score,
     f1_score,
@@ -289,22 +289,27 @@ class CombinedBaselinePipeline:
         if name == "rf":
             if task == "regression":
                 return RandomForestRegressor(
-                    n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+                    n_estimators=100, max_depth=None, random_state=42, n_jobs=-1
                 )
             else:
                 return RandomForestClassifier(
-                    n_estimators=100, max_depth=10, random_state=42,
+                    n_estimators=100, max_depth=None, random_state=42,
                     n_jobs=-1, class_weight="balanced",
                 )
         elif name == "ridge":
             if task != "regression":
                 raise ValueError("Ridge only for regression")
-            return Ridge(alpha=1.0)
+            return RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
         elif name == "logistic":
             if task != "classification":
                 raise ValueError("LogisticRegression only for classification")
-            return LogisticRegression(
-                max_iter=1000, class_weight="balanced", random_state=42
+            return LogisticRegressionCV(
+                Cs=[0.01, 0.1, 1.0, 10.0],
+                cv=3,
+                class_weight="balanced",
+                max_iter=1000,
+                scoring="balanced_accuracy",
+                random_state=42,
             )
         else:
             raise ValueError(f"Unknown model: {name}")
@@ -348,7 +353,7 @@ class CombinedBaselinePipeline:
                     maes = [r["mae"] for r in fold_results]
                     aggregated[model_name][target] = {
                         "mae_mean": float(np.mean(maes)),
-                        "mae_std": float(np.std(maes)),
+                        "mae_std": float(np.std(maes, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     all_mae.append(float(np.mean(maes)))
@@ -357,9 +362,9 @@ class CombinedBaselinePipeline:
                     f1s = [r["f1"] for r in fold_results]
                     aggregated[model_name][target] = {
                         "ba_mean": float(np.mean(bas)),
-                        "ba_std": float(np.std(bas)),
+                        "ba_std": float(np.std(bas, ddof=1)),
                         "f1_mean": float(np.mean(f1s)),
-                        "f1_std": float(np.std(f1s)),
+                        "f1_std": float(np.std(f1s, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     all_ba.append(float(np.mean(bas)))

@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegressionCV, RidgeCV
 from sklearn.metrics import (
     balanced_accuracy_score,
     f1_score,
@@ -144,7 +144,7 @@ class TransformerBaselinePipeline:
                         continue
 
                     try:
-                        reg = Ridge(alpha=1.0)
+                        reg = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
                         reg.fit(X_train[valid_tr], y_tr[valid_tr])
                         preds = reg.predict(X_test[valid_te])
                         mae = float(mean_absolute_error(y_te[valid_te], preds))
@@ -178,8 +178,13 @@ class TransformerBaselinePipeline:
                         continue
 
                     try:
-                        clf = LogisticRegression(
-                            max_iter=1000, class_weight="balanced", random_state=42
+                        clf = LogisticRegressionCV(
+                            Cs=[0.01, 0.1, 1.0, 10.0],
+                            cv=3,
+                            class_weight="balanced",
+                            max_iter=1000,
+                            scoring="balanced_accuracy",
+                            random_state=42,
                         )
                         clf.fit(X_train[valid_tr], y_tr_int)
                         preds = clf.predict(X_test[valid_te])
