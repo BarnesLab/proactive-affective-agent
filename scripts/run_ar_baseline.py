@@ -15,6 +15,15 @@ the gap between behavioral sensing and direct affect measurement.
 
 ER_desire binary: >= 5 (scale midpoint, consistent with run_agentic_pilot.py).
 
+Evaluation methodology:
+  - Per-fold evaluation (5-fold CV, same splits as all other baselines)
+  - For each fold, AR predictions are computed per-user within that fold's
+    test data using shift(1) (last_value) or rolling mean (rolling_mean)
+  - The first EMA entry per user per fold has no prior history and is skipped
+    (NaN from shift(1)). This means the AR baseline evaluates on slightly
+    fewer samples per fold than baselines that predict every test row.
+  - Metrics are computed per-fold, then aggregated as mean +/- std (ddof=1)
+
 Usage:
     python scripts/run_ar_baseline.py
     python scripts/run_ar_baseline.py --window 3 --output-dir outputs/ar_baseline
@@ -73,58 +82,97 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Load all EMA data
+    # Resolve data directory
     # ------------------------------------------------------------------
     data_dir = Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data"
     splits_dir = data_dir / "processed" / "splits"
 
-    dfs = []
-    for group in range(1, 6):
-        p = splits_dir / f"group_{group}_test.csv"
-        if p.exists():
-            dfs.append(pd.read_csv(p))
-
-    if not dfs:
-        logger.error(f"No split CSVs found in {splits_dir}")
+    # Verify splits exist
+    missing = [g for g in range(1, 6) if not (splits_dir / f"group_{g}_test.csv").exists()]
+    if missing:
+        logger.error(f"Missing test split CSVs for groups {missing} in {splits_dir}")
         sys.exit(1)
 
-    df = pd.concat(dfs, ignore_index=True)
-    df["timestamp_local"] = pd.to_datetime(df["timestamp_local"])
-    df = df.sort_values(["Study_ID", "timestamp_local"]).reset_index(drop=True)
-
-    # Apply midpoint threshold for ER_desire binary (consistent with V4 pipeline)
-    er = pd.to_numeric(df["ER_desire"], errors="coerce")
-    df["Individual_level_ER_desire_State"] = (er >= 5).where(er.notna(), other=None)
-
-    logger.info(f"Loaded {len(df)} EMA entries for {df['Study_ID'].nunique()} users")
-
     # ------------------------------------------------------------------
-    # Compute AR predictions (participant-level, chronological)
+    # Define variants
     # ------------------------------------------------------------------
     variants = {
         "last_value": _predict_last_value,
         f"rolling_mean_w{args.window}": lambda g: _predict_rolling_mean(g, args.window),
     }
 
-    results = {}
+    # ------------------------------------------------------------------
+    # Per-fold evaluation for each variant
+    # ------------------------------------------------------------------
+    # raw_results: {variant: {target: [fold_dicts]}}
+    raw_results: dict[str, dict[str, list[dict]]] = {}
+    aggregated_results: dict[str, Any] = {}
+
     for variant_name, pred_fn in variants.items():
         logger.info(f"Running variant: {variant_name}")
-        all_preds, all_gts = _run_variant(df, pred_fn)
-        metrics = _compute_metrics(all_preds, all_gts)
-        results[variant_name] = {
-            "n_predictions": len(all_preds),
-            "metrics": metrics,
-        }
-        _print_variant_summary(variant_name, metrics, len(all_preds))
+        raw_results[variant_name] = {}
+
+        for fold in range(1, 6):
+            logger.info(f"  Fold {fold}/5")
+
+            # Load only this fold's test data
+            fold_df = pd.read_csv(splits_dir / f"group_{fold}_test.csv")
+            fold_df["timestamp_local"] = pd.to_datetime(fold_df["timestamp_local"])
+            fold_df = fold_df.sort_values(["Study_ID", "timestamp_local"]).reset_index(drop=True)
+
+            # Apply midpoint threshold for ER_desire binary
+            er = pd.to_numeric(fold_df["ER_desire"], errors="coerce")
+            fold_df["Individual_level_ER_desire_State"] = (er >= 5).where(er.notna(), other=None)
+
+            # Compute AR predictions and evaluate within this fold
+            all_preds, all_gts = _run_variant(fold_df, pred_fn)
+            fold_metrics = _compute_fold_metrics(all_preds, all_gts)
+
+            # Store per-fold results
+            for col, metrics in fold_metrics["continuous"].items():
+                raw_results[variant_name].setdefault(col, []).append({
+                    "fold": fold,
+                    "mae": metrics["mae"],
+                    "n_test": metrics["n"],
+                    "mean_true": metrics["mean_true"],
+                    "mean_pred": metrics["mean_pred"],
+                })
+
+            for col, metrics in fold_metrics["binary"].items():
+                raw_results[variant_name].setdefault(col, []).append({
+                    "fold": fold,
+                    "balanced_accuracy": metrics["balanced_accuracy"],
+                    "f1": metrics["f1"],
+                    "n_test": metrics["n"],
+                    "prevalence": metrics["prevalence"],
+                })
+
+        # Aggregate across folds for this variant
+        aggregated_results[variant_name] = _aggregate_folds(raw_results[variant_name])
+        _print_variant_summary(variant_name, aggregated_results[variant_name])
 
     # ------------------------------------------------------------------
-    # Save results
+    # Save results (two files, matching other baselines' conventions)
     # ------------------------------------------------------------------
-    output_path = output_dir / "ar_results.json"
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=2, default=str)
-    logger.info(f"\nResults saved to: {output_path}")
-    print(f"\nResults saved to: {output_path}")
+    # 1. Raw per-fold results
+    raw_path = output_dir / "ar_baseline_folds.json"
+    with open(raw_path, "w") as f:
+        json.dump(raw_results, f, indent=2, default=str)
+    logger.info(f"Per-fold results saved to: {raw_path}")
+
+    # 2. Aggregated metrics (mean +/- std across folds)
+    agg_path = output_dir / "ar_baseline_metrics.json"
+    with open(agg_path, "w") as f:
+        json.dump(aggregated_results, f, indent=2, default=str)
+    logger.info(f"Aggregated metrics saved to: {agg_path}")
+
+    # 3. Also save the legacy ar_results.json for backward compatibility,
+    #    now containing the corrected per-fold aggregated numbers
+    legacy_path = output_dir / "ar_results.json"
+    with open(legacy_path, "w") as f:
+        json.dump(aggregated_results, f, indent=2, default=str)
+
+    print(f"\nResults saved to: {output_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +225,7 @@ def _run_variant(
         group = group.sort_values("timestamp_local").reset_index(drop=True)
         group = pred_fn(group)
 
-        # Skip first row (no prior history)
+        # Skip first row per user (no prior history)
         for _, row in group.iloc[1:].iterrows():
             pred: dict[str, Any] = {}
             gt: dict[str, Any] = {}
@@ -206,10 +254,11 @@ def _run_variant(
     return all_preds, all_gts
 
 
-def _compute_metrics(
+def _compute_fold_metrics(
     preds: list[dict],
     gts: list[dict],
 ) -> dict[str, Any]:
+    """Compute metrics for a single fold's predictions."""
     results: dict[str, Any] = {"continuous": {}, "binary": {}}
 
     for col in CONTINUOUS_TARGETS:
@@ -229,43 +278,100 @@ def _compute_metrics(
         if len(y_true) >= 2 and len(set(y_true)) > 1:
             results["binary"][col] = {
                 "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
-                "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+                # binary F1: measures detection of the positive (elevated) state
+                "f1": float(f1_score(y_true, y_pred, average='binary', zero_division=0)),
                 "n": len(y_true),
                 "prevalence": float(np.mean(y_true)),
             }
 
-    # Aggregate
-    all_mae = [v["mae"] for v in results["continuous"].values()]
-    all_ba = [v["balanced_accuracy"] for v in results["binary"].values()]
-    all_f1 = [v["f1"] for v in results["binary"].values()]
-    results["aggregate"] = {
-        "mean_mae": float(np.mean(all_mae)) if all_mae else None,
-        "mean_balanced_accuracy": float(np.mean(all_ba)) if all_ba else None,
-        "mean_f1": float(np.mean(all_f1)) if all_f1 else None,
-    }
-
     return results
 
 
-def _print_variant_summary(name: str, metrics: dict, n: int) -> None:
-    agg = metrics.get("aggregate", {})
+def _aggregate_folds(fold_results: dict[str, list[dict]]) -> dict[str, Any]:
+    """Average metrics across 5 folds for each target, matching ML/DL baseline format.
+
+    Output structure matches other baselines:
+        {target: {metric_mean, metric_std, n_folds}, ..., _aggregate: {mean_mae, mean_ba, mean_f1}}
+    """
+    aggregated: dict[str, Any] = {}
+    all_mae_means: list[float] = []
+    all_ba_means: list[float] = []
+    all_f1_means: list[float] = []
+
+    for target, fold_dicts in fold_results.items():
+        if not fold_dicts:
+            continue
+
+        if "mae" in fold_dicts[0]:
+            # Continuous target
+            maes = [r["mae"] for r in fold_dicts]
+            aggregated[target] = {
+                "mae_mean": float(np.mean(maes)),
+                "mae_std": float(np.std(maes, ddof=1)),
+                "n_folds": len(fold_dicts),
+                "per_fold": fold_dicts,
+            }
+            all_mae_means.append(aggregated[target]["mae_mean"])
+        else:
+            # Binary target
+            bas = [r["balanced_accuracy"] for r in fold_dicts]
+            f1s = [r["f1"] for r in fold_dicts]
+            aggregated[target] = {
+                "ba_mean": float(np.mean(bas)),
+                "ba_std": float(np.std(bas, ddof=1)),
+                "f1_mean": float(np.mean(f1s)),
+                "f1_std": float(np.std(f1s, ddof=1)),
+                "n_folds": len(fold_dicts),
+                "per_fold": fold_dicts,
+            }
+            all_ba_means.append(aggregated[target]["ba_mean"])
+            all_f1_means.append(aggregated[target]["f1_mean"])
+
+    aggregated["_aggregate"] = {
+        "mean_mae": float(np.mean(all_mae_means)) if all_mae_means else None,
+        "mean_ba": float(np.mean(all_ba_means)) if all_ba_means else None,
+        "mean_f1": float(np.mean(all_f1_means)) if all_f1_means else None,
+    }
+
+    return aggregated
+
+
+def _print_variant_summary(name: str, aggregated: dict) -> None:
+    """Print a human-readable summary of aggregated results for one variant."""
+    agg = aggregated.get("_aggregate", {})
     print(f"\n{'='*60}")
-    print(f"AR Baseline: {name}  (n={n} predictions)")
+    print(f"AR Baseline: {name}")
     print(f"{'='*60}")
-    print(f"  Mean MAE (continuous):           {agg.get('mean_mae', 'N/A'):.4f}" if agg.get('mean_mae') else "  Mean MAE: N/A")
-    print(f"  Mean Balanced Accuracy (binary): {agg.get('mean_balanced_accuracy', 'N/A'):.4f}" if agg.get('mean_balanced_accuracy') else "  Mean BA: N/A")
-    print(f"  Mean F1 (binary):                {agg.get('mean_f1', 'N/A'):.4f}" if agg.get('mean_f1') else "  Mean F1: N/A")
-    print("\nContinuous:")
-    for col, v in metrics.get("continuous", {}).items():
-        print(f"  {col}: MAE={v['mae']:.3f} (n={v['n']})")
-    print("\nBinary (top 5 by BA):")
-    binary_sorted = sorted(
-        metrics.get("binary", {}).items(),
-        key=lambda x: x[1].get("balanced_accuracy", 0),
-        reverse=True,
-    )
+    if agg.get("mean_mae") is not None:
+        print(f"  Mean MAE (continuous):           {agg['mean_mae']:.4f}")
+    else:
+        print("  Mean MAE: N/A")
+    if agg.get("mean_ba") is not None:
+        print(f"  Mean Balanced Accuracy (binary): {agg['mean_ba']:.4f}")
+    else:
+        print("  Mean BA: N/A")
+    if agg.get("mean_f1") is not None:
+        print(f"  Mean F1 (binary):                {agg['mean_f1']:.4f}")
+    else:
+        print("  Mean F1: N/A")
+
+    # Continuous targets detail
+    print("\nContinuous targets:")
+    for col in CONTINUOUS_TARGETS:
+        if col in aggregated and "mae_mean" in aggregated[col]:
+            v = aggregated[col]
+            print(f"  {col}: MAE={v['mae_mean']:.3f} +/- {v['mae_std']:.3f} ({v['n_folds']} folds)")
+
+    # Binary targets detail (top 5 by BA)
+    binary_items = [
+        (col, aggregated[col])
+        for col in BINARY_TARGETS
+        if col in aggregated and "ba_mean" in aggregated[col]
+    ]
+    binary_sorted = sorted(binary_items, key=lambda x: x[1]["ba_mean"], reverse=True)
+    print(f"\nBinary targets (top 5 by BA, {len(binary_sorted)} total):")
     for col, v in binary_sorted[:5]:
-        print(f"  {col}: BA={v['balanced_accuracy']:.3f} F1={v['f1']:.3f} (n={v['n']})")
+        print(f"  {col}: BA={v['ba_mean']:.3f}+/-{v['ba_std']:.3f}  F1={v['f1_mean']:.3f}+/-{v['f1_std']:.3f}")
 
 
 # ---------------------------------------------------------------------------

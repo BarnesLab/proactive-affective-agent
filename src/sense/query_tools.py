@@ -850,10 +850,11 @@ class SensingQueryEngine:
         tod = _time_of_day(ema_dt.hour)
         header = f"[Baseline Comparison: {feature}]"
 
-        baseline_key = f"{study_id}_{modality}_{feature}_{tod}"
+        # Include ema_dt in cache key to ensure temporal cutoff is respected
+        baseline_key = f"{study_id}_{modality}_{feature}_{tod}_{ema_dt.isoformat()}"
         if baseline_key not in self._baseline_cache:
             self._baseline_cache[baseline_key] = self._compute_baseline(
-                study_id, modality, feature, tod
+                study_id, modality, feature, tod, before_timestamp=ema_dt
             )
         baseline = self._baseline_cache[baseline_key]
 
@@ -900,9 +901,17 @@ class SensingQueryEngine:
         modality: str,
         feature: str,
         tod: str,
+        before_timestamp: datetime | None = None,
     ) -> dict[str, Any]:
         df = self._load_modality_df(study_id, modality)
         if df.empty or "hour_start" not in df.columns:
+            return {}
+
+        # Temporal cutoff: only use data strictly before the EMA timestamp
+        # to prevent future-data leakage into the baseline z-score.
+        if before_timestamp is not None:
+            df = df[df["hour_start"] < before_timestamp]
+        if df.empty:
             return {}
 
         # Find the column (accept feature as-is or stripped of prefix)

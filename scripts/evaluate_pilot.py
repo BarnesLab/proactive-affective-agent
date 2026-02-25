@@ -133,7 +133,8 @@ def compute_binary_metrics(
         return None
     return {
         "ba": float(balanced_accuracy_score(y, yhat)),
-        "f1": float(f1_score(y, yhat, zero_division=0)),
+        # binary F1: measures detection of the positive (elevated) state
+        "f1": float(f1_score(y, yhat, average='binary', zero_division=0)),
         "n": len(y),
         "pos_rate_gt": float(np.mean(y)),
         "pos_rate_pred": float(np.mean(yhat)),

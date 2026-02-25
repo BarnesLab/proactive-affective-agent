@@ -73,7 +73,8 @@ def compute_all(
         if len(y_true) >= 2 and len(set(y_true)) > 1:
             results["binary"][target] = {
                 "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
-                "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+                # binary F1: measures detection of the positive (elevated) state
+                "f1": float(f1_score(y_true, y_pred, average='binary', zero_division=0)),
                 "n": len(y_true),
                 "prevalence": float(np.mean(y_true)),
             }
@@ -83,7 +84,8 @@ def compute_all(
     if len(avail_true) >= 2 and len(set(avail_true)) > 1:
         results["availability"] = {
             "balanced_accuracy": float(balanced_accuracy_score(avail_true, avail_pred)),
-            "f1": float(f1_score(avail_true, avail_pred, zero_division=0)),
+            # binary F1: measures detection of the positive (elevated) state
+            "f1": float(f1_score(avail_true, avail_pred, average='binary', zero_division=0)),
             "n": len(avail_true),
         }
 
@@ -173,7 +175,7 @@ def compute_personal_threshold(
                 continue
 
             user_mean = np.mean(pvals)
-            user_sd = np.std(pvals)
+            user_sd = np.std(pvals, ddof=1)
 
             if user_sd < 1e-6:  # no variance
                 continue
@@ -190,7 +192,8 @@ def compute_personal_threshold(
         if len(all_pt_true) >= 2 and len(set(all_pt_true)) > 1:
             results[cont_target] = {
                 "balanced_accuracy": float(balanced_accuracy_score(all_pt_true, all_pt_pred)),
-                "f1": float(f1_score(all_pt_true, all_pt_pred, zero_division=0)),
+                # binary F1: measures detection of the positive (elevated) state
+                "f1": float(f1_score(all_pt_true, all_pt_pred, average='binary', zero_division=0)),
                 "n": len(all_pt_true),
                 "n_users": len(user_preds),
                 "state_col": state_col,

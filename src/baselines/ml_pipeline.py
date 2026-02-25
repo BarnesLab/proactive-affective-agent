@@ -350,7 +350,7 @@ class MLBaselinePipeline:
                         "ba_mean": float(np.mean(bas)),
                         "ba_std": float(np.std(bas, ddof=1)),
                         "f1_mean": float(np.mean(f1s)),
-                        "f1_std": float(np.std(f1s)),
+                        "f1_std": float(np.std(f1s, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     aggregated[model_name][target] = avg

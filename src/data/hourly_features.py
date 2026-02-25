@@ -526,8 +526,12 @@ class HourlyFeatureLoader:
             ts = ts.tz_localize(None)
 
         ema_dt = ts.to_pydatetime()
-        window_end = ema_dt.replace(minute=0, second=0, microsecond=0)
-        window_start = window_end - timedelta(hours=lookback_hours)
+        # Use the actual EMA timestamp as window_end (not truncated to hour
+        # boundary) so we don't lose up to 59 min of valid pre-EMA data.
+        # The slice filter uses strict less-than (hour_start < window_end),
+        # which correctly includes any hour bucket that started before the EMA.
+        window_end = ema_dt
+        window_start = ema_dt.replace(minute=0, second=0, microsecond=0) - timedelta(hours=lookback_hours)
 
         ctx = SensingContext(
             study_id=study_id,

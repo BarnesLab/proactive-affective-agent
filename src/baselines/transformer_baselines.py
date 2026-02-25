@@ -185,7 +185,8 @@ class TransformerBaselinePipeline:
                         preds = clf.predict(X_test[valid_te])
 
                         ba = float(balanced_accuracy_score(y_te_int, preds))
-                        f1 = float(f1_score(y_te_int, preds, zero_division=0))
+                        # binary F1: measures detection of the positive (elevated) state
+                        f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
 
                         all_results.setdefault(model_name, {}).setdefault(target, []).append({
                             "fold": fold,
@@ -244,7 +245,7 @@ class TransformerBaselinePipeline:
                     maes = [r["mae"] for r in fold_results]
                     aggregated[model_name][target] = {
                         "mae_mean": float(np.mean(maes)),
-                        "mae_std": float(np.std(maes)),
+                        "mae_std": float(np.std(maes, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     all_mae.append(float(np.mean(maes)))
@@ -253,9 +254,9 @@ class TransformerBaselinePipeline:
                     f1s = [r["f1"] for r in fold_results]
                     aggregated[model_name][target] = {
                         "ba_mean": float(np.mean(bas)),
-                        "ba_std": float(np.std(bas)),
+                        "ba_std": float(np.std(bas, ddof=1)),
                         "f1_mean": float(np.mean(f1s)),
-                        "f1_std": float(np.std(f1s)),
+                        "f1_std": float(np.std(f1s, ddof=1)),
                         "n_folds": len(fold_results),
                     }
                     all_ba.append(float(np.mean(bas)))
