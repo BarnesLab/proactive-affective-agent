@@ -58,10 +58,14 @@ class PersonalAgent:
             self._v2 = AutonomousWorkflow(llm_client)
         elif version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
-            self._v3 = StructuredFullWorkflow(llm_client, retriever=mm_retriever)
+            self._v3 = StructuredFullWorkflow(
+                llm_client, retriever=mm_retriever, study_id=study_id
+            )
         elif version == "v4":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
-            self._v4 = AutonomousFullWorkflow(llm_client, retriever=mm_retriever)
+            self._v4 = AutonomousFullWorkflow(
+                llm_client, retriever=mm_retriever, study_id=study_id
+            )
         elif version == "v5":
             if query_engine is None:
                 raise ValueError(
@@ -123,7 +127,9 @@ class PersonalAgent:
         rag_examples = "No similar cases available."
         rag_raw = []
         if self.retriever and emotion_driver:
-            rag_raw = self.retriever.search(emotion_driver, top_k=20)
+            rag_raw = self.retriever.search(
+                emotion_driver, top_k=20, exclude_study_id=self.study_id
+            )
             rag_examples = self.retriever.format_examples(rag_raw, max_examples=10)
 
         trait_text = build_trait_summary(self.profile)

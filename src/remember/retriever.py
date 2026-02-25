@@ -57,12 +57,17 @@ class TFIDFRetriever:
             self.vectorizer = fallback
         self._fitted = True
 
-    def search(self, query: str, top_k: int = 20) -> list[dict[str, Any]]:
+    def search(
+        self, query: str, top_k: int = 20, exclude_study_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """Find the top-k most similar training cases to the query text.
 
         Args:
             query: The emotion_driver text from the current EMA entry.
             top_k: Number of similar cases to return.
+            exclude_study_id: If provided, exclude entries from this Study_ID
+                to prevent data leakage (the target participant's own entries
+                should not appear as "similar cases from other participants").
 
         Returns:
             List of dicts with keys: text, similarity, Study_ID, _row_idx,
@@ -76,6 +81,12 @@ class TFIDFRetriever:
 
         query_vec = self.vectorizer.transform([query])
         sims = cosine_similarity(query_vec, self._matrix).flatten()
+
+        # Mask out entries belonging to the excluded participant to prevent
+        # data leakage (their own past entries contain ground-truth labels).
+        if exclude_study_id is not None and "Study_ID" in self._train_df.columns:
+            exclude_mask = self._train_df["Study_ID"].values == exclude_study_id
+            sims[exclude_mask] = -1.0
 
         # Get top-k indices
         top_indices = np.argsort(sims)[::-1][:top_k]
@@ -165,18 +176,20 @@ class MultiModalRetriever(TFIDFRetriever):
             self._sensing_dfs = sensing_dfs
 
     def search_with_sensing(
-        self, query: str, top_k: int = 10
+        self, query: str, top_k: int = 10, exclude_study_id: int | None = None
     ) -> list[dict[str, Any]]:
         """Search diary text and attach sensing data for each matched case.
 
         Args:
             query: Diary text to search for similar cases.
             top_k: Number of results.
+            exclude_study_id: If provided, exclude entries from this Study_ID
+                to prevent data leakage.
 
         Returns:
             List of dicts with diary text, outcomes, and sensing summary.
         """
-        results = self.search(query, top_k=top_k)
+        results = self.search(query, top_k=top_k, exclude_study_id=exclude_study_id)
 
         for r in results:
             sensing_summary = self._get_sensing_for_result(r)

@@ -29,9 +29,11 @@ class StructuredFullWorkflow:
         self,
         llm_client: ClaudeCodeClient,
         retriever: MultiModalRetriever | None = None,
+        study_id: int | None = None,
     ) -> None:
         self.llm = llm_client
         self.retriever = retriever
+        self.study_id = study_id
 
     def run(
         self,
@@ -67,7 +69,9 @@ class StructuredFullWorkflow:
         rag_examples = "No similar cases available."
         rag_raw = []
         if self.retriever and emotion_driver:
-            rag_raw = self.retriever.search_with_sensing(emotion_driver, top_k=10)
+            rag_raw = self.retriever.search_with_sensing(
+                emotion_driver, top_k=10, exclude_study_id=self.study_id
+            )
             rag_examples = self.retriever.format_examples_with_sensing(
                 rag_raw, max_examples=8
             )
