@@ -128,10 +128,14 @@ class MLBaseline:
             ("model", self._estimator),
         ])
 
+        # Build param_grid: always search over K + model-specific hyperparameters
+        param_grid: dict[str, list] = {"select__k": k_vals}
+        param_grid.update(self._model_param_grid())
+
         scoring = "balanced_accuracy" if self.task == "classification" else "neg_mean_absolute_error"
         grid = GridSearchCV(
             pipe,
-            param_grid={"select__k": k_vals},
+            param_grid=param_grid,
             cv=3,
             scoring=scoring,
             n_jobs=self.n_jobs,
@@ -141,8 +145,35 @@ class MLBaseline:
         self._pipeline = grid.best_estimator_
         self._best_k = grid.best_params_.get("select__k")
         logger.debug(
-            "  %s/%s: best_k=%d (from %s)", self.model_name, self.task, self._best_k, k_vals
+            "  %s/%s: best_k=%s (from %s), best_params=%s",
+            self.model_name, self.task, self._best_k, k_vals, grid.best_params_,
         )
+
+    def _model_param_grid(self) -> dict[str, list]:
+        """Return model-specific hyperparameter search space for GridSearchCV.
+
+        Keys use the ``model__`` prefix expected by the sklearn Pipeline.
+        RidgeCV handles alpha selection internally, so no extra params needed.
+        """
+        if self.model_name == "rf":
+            return {
+                "model__n_estimators": [100, 300],
+                "model__max_depth": [5, 10, None],
+                "model__min_samples_leaf": [1, 5],
+            }
+        elif self.model_name == "xgboost":
+            return {
+                "model__n_estimators": [100, 300],
+                "model__max_depth": [3, 6, 10],
+                "model__learning_rate": [0.01, 0.1],
+                "model__subsample": [0.8, 1.0],
+            }
+        elif self.model_name == "logistic":
+            return {
+                "model__C": [0.01, 0.1, 1.0, 10.0],
+            }
+        # ridge (RidgeCV) — alpha is tuned internally
+        return {}
 
     def predict(self, X_test: np.ndarray) -> np.ndarray:
         if self._pipeline is None:
