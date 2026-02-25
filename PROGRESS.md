@@ -1,7 +1,7 @@
 # Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-**Last updated:** 2026-02-24 (session 3 end — hand-off to session 4)
-**Status:** V3 pilot running locally (~10:30 PM done), Titan jobs running, next agent picks up
+**Last updated:** 2026-02-25 (session 5)
+**Status:** V3 done (best so far), V4 checkpoints empty (needs re-run after bug fix), all Titan baselines complete
 
 ---
 
@@ -80,61 +80,34 @@ Scripts:
 
 ---
 
-## 🔴 CURRENTLY RUNNING (2026-02-24 ~16:10)
+## 🔴 PENDING ACTION (2026-02-25)
 
-### Local Machine
+### V4 Pilot Re-run Required
 
-| Process | PID | Status | ETA |
-|---------|-----|--------|-----|
-| V3 pilot (all 5 users) | 71841 | Entry 17/93 user71 (~16s/entry after API) | ~22:30 tonight |
-| V4 chain watcher | 72549 | Sleeping, polls every 30s for V3 to finish | After V3 |
+V4 checkpoint files exist but all predictions are **empty `{}`** — caused by the parallel tool-use bug that was fixed in session 4. Must delete old checkpoints and re-run.
 
-**V3 checkpoint files:** `outputs/pilot/checkpoints/v3_user{71,119,164,310,458}_checkpoint.json`
+**Decision needed:** V3 was run with `claude-haiku-4-5-20251001`. User wants Sonnet for all future experiments. Options:
+1. Re-run V4 only with Sonnet (model mismatch with V3)
+2. Re-run both V3 + V4 with Sonnet (fair comparison, but V3 takes ~6h)
 
-**V3 command that was used:**
+**Command to re-run V4:**
 ```bash
-PYTHONPATH=. python3 scripts/run_pilot.py \
-    --version v3 \
-    --users 71,119,164,310,458 \
-    --model claude-haiku-4-5-20251001 \
-    --delay 1.0 \
-    --verbose \
-    > outputs/pilot/logs/v3_all_users.log 2>&1 &
-```
+# First, delete empty V4 checkpoints
+rm outputs/pilot/checkpoints/v4_user*_checkpoint.json
 
-**V4 chain watcher:** `/tmp/run_v4_after_v3.sh` — polls PID 71841, then runs V4 with same args.
-If watcher died: start V4 manually after V3 checkpoint files are complete (all 5 users).
-
-**V4 manual start command:**
-```bash
+# Then re-run V4 with Sonnet
 PYTHONPATH=. python3 scripts/run_pilot.py \
     --version v4 \
     --users 71,119,164,310,458 \
-    --model claude-haiku-4-5-20251001 \
+    --model sonnet \
     --delay 1.0 \
     --verbose \
-    > outputs/pilot/logs/v4_all_users.log 2>&1 &
+    > outputs/pilot/logs/v4_sonnet_rerun.log 2>&1 &
 ```
 
-### Titan Server (zhiyuan@172.29.39.82)
+### All Titan Baselines Complete (verified 2026-02-25)
 
-| Process | PID | Status | Output |
-|---------|-----|--------|--------|
-| ML Ridge re-run (5 folds parallel) | ~1341616+ | Running, all 5 folds started at 16:01 | `outputs/ml_baselines_ridge_v2/fold_N/` |
-| Combined baseline (all 5 folds) | 1212188 | Fold 3/5 started at ~16:07 | `outputs/advanced_baselines/combined/` |
-| DL MLP fold 5 re-run | (bg) | Started 16:05, fixing gradient explosion | `outputs/advanced_baselines_dl_fold5_rerun/` |
-
-**Check commands:**
-```bash
-# Ridge folds done?
-ssh zhiyuan@172.29.39.82 'for f in 1 2 3 4 5; do echo -n "Ridge fold_$f: "; cat ~/proactive-affective-agent/outputs/ml_baselines_ridge_v2/fold_$f/ml_baseline_summary.md 2>/dev/null | grep "Mean MAE" || echo "running"; done'
-
-# Combined done?
-ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines/combined/combined_baseline_summary.md 2>/dev/null'
-
-# DL fold 5 rerun done?
-ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines_dl_fold5_rerun/dl/fold_5/dl_baseline_summary.md 2>/dev/null'
-```
+Server is healthy: load avg 1.68, RAM 16GB/125GB used.
 
 ---
 
@@ -187,7 +160,7 @@ Per-fold RF results:
 
 **Ridge note:** Even with RidgeCV (alphas=[0.1, 1, 10, 100, 1000]) inside StandardScaler pipeline, 3/5 folds still diverge catastrophically (MAE ~1e12–1e14). Only folds 2 (MAE=9.5) and 3 (MAE=10.8) are reasonable. Root cause: extreme feature collinearity + outlier targets in some folds. Ridge is not reliable for this dataset — **exclude Ridge from final paper results.**
 
-### Baseline: DL MLP (Sensing features) — Folds 1-4 done, Fold 5 being re-run
+### Baseline: DL MLP (Sensing features) — Folds 1-4 done, Fold 5 diverged
 
 | Fold | MAE | BA | F1 | Notes |
 |------|-----|----|----|-------|
@@ -195,103 +168,94 @@ Per-fold RF results:
 | 2 | 4.695 | 0.509 | 0.448 | ✅ |
 | 3 | 4.511 | 0.510 | 0.440 | ✅ |
 | 4 | 4.506 | 0.501 | 0.436 | ✅ |
-| 5 | ~1e12 | 0.511 | 0.459 | ❌ still diverging after gradient clipping — fold 5 has extreme outlier targets |
+| 5 | ~1e12 | 0.511 | 0.459 | ❌ diverged even after rerun with gradient clipping |
 
 **4-fold mean (folds 1-4 only):** MAE=4.699, BA=0.507, F1=0.440
-**Conclusion: MLP fold 5 is irreparably unstable. Report 4-fold mean in paper, note fold 5 excluded.**
 
-### Pilot: CALLM, V1, V2 — All 5 users complete (427 entries each)
+### Baseline: Combined (Sensor + Diary embeddings, 5-fold CV) — DONE
 
-| Version | PANAS_Pos MAE | happy_State BA | Mean BA | Notes |
-|---------|--------------|----------------|---------|-------|
-| CALLM | 1.850 | 0.709 | 0.645 | Diary + TF-IDF RAG |
-| V1 | 8.016 | 0.547 | 0.539 | Sensing structured — mean regression |
-| V2 | 8.834 | 0.551 | 0.531 | Sensing autonomous — mean regression |
+| Model | Mean MAE | Mean BA | Mean F1 |
+|-------|----------|---------|---------|
+| RF | 3.935 | 0.620 | 0.568 |
+| Logistic | — | 0.615 | 0.575 |
+| Ridge | 87.5B (diverged) | — | — |
 
-**Key insight:** V1/V2 (sensing-only) produce mean-regressing predictions (pred std≈2.5 vs GT std≈8.0).
-CALLM diary→RAG is dramatically better. V3/V4 (diary+sensing) should bridge this gap.
+**Key: Combined RF (sensing + diary embeddings) gets BA=0.620 — best traditional ML result.**
+
+### Pilot: CALLM, V1, V2, V3 — All complete (5 users)
+
+| Version | Mean MAE | Mean BA | Mean F1 | N entries | Notes |
+|---------|----------|---------|---------|-----------|-------|
+| CALLM | 1.167 | 0.645 | 0.478 | 427 | Diary + TF-IDF RAG |
+| V1 | 6.977 | 0.539 | 0.316 | 427 | Sensing structured — mean regression |
+| V2 | 7.062 | 0.531 | 0.284 | 427 | Sensing autonomous — mean regression |
+| **V3** | **0.866** | **0.674** | **0.514** | **1306** | **Diary+sensing structured — BEST** |
+| V4 | — | — | — | 0 (empty) | Bug caused empty predictions; needs re-run |
+
+**Key insights:**
+- V3 (structured multimodal) is the best system so far: MAE=0.866, BA=0.674 (beats AR baseline 0.658!)
+- V1/V2 (sensing-only) produce mean-regressing predictions (pred std≈2.5 vs GT std≈8.0)
+- V3 has well-calibrated predictions: pred μ=15.8±6.6 vs GT μ=14.8±6.8
+- V4 needs re-run with fixed parallel tool-use bug
 
 ---
 
-## ❌ Pending Tasks (for Next Session)
+## ❌ Pending Tasks
 
-### HIGHEST PRIORITY — After jobs complete tonight
+### HIGHEST PRIORITY
 
-**1. Evaluate V3 + V4 pilot results**
-```bash
-cd /Users/zwang/Documents/proactive-affective-agent
-PYTHONPATH=. python3 scripts/evaluate_pilot.py
-```
-This reads `outputs/pilot/checkpoints/{callm,v1,v2,v3,v4}_user{71,...}_checkpoint.json` and prints comparison table. V3 finishes ~22:30, V4 after that.
+**1. Re-run V4 pilot with fixed code**
+V4 checkpoints are empty due to parallel tool-use bug (now fixed). Must delete + re-run.
+Decision: use Sonnet (user mandate) or Haiku (match V3)? See "PENDING ACTION" section above.
 
-**2. Merge ML Ridge v2 results (after all 5 folds done)**
-```bash
-# Check if done:
-ssh zhiyuan@172.29.39.82 'ls ~/proactive-affective-agent/outputs/ml_baselines_ridge_v2/fold_{1,2,3,4,5}/*.json 2>/dev/null | wc -l'
-
-# Merge (if merge script supports per-model output dir):
-ssh zhiyuan@172.29.39.82 'cd ~/proactive-affective-agent && PYTHONPATH=. python scripts/merge_baseline_results.py --output outputs/ml_baselines_ridge_v2 --type ml'
-```
-
-**3. Get Combined baseline results (after done)**
-```bash
-ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines/combined/combined_baseline_summary.md'
-```
-
-**4. Get DL fold 5 result (after rerun done)**
-```bash
-ssh zhiyuan@172.29.39.82 'cat ~/proactive-affective-agent/outputs/advanced_baselines_dl_fold5_rerun/dl/fold_5/dl_baseline_summary.md'
-```
-
-**5. Update PROGRESS.md results table with final numbers**
+**2. Consider re-running V3 with Sonnet**
+V3 was run with Haiku. For fair V3 vs V4 comparison, both should use same model.
+If V3 re-run is too costly, document the model difference in the paper.
 
 ### MEDIUM PRIORITY
 
-**6. Run full evaluation: CALLM vs V1-V4 comparison table**
-Once V3+V4 complete, run `scripts/evaluate_pilot.py` and update the results summary table.
+**3. Paper-ready results table**
+Once V4 is done, compile final comparison across all systems.
 
-**7. Investigate V3/V4 behavior**
-- Does V3 (structured diary+sensing) match CALLM performance?
-- Does V4 (autonomous) equal or beat V3?
-- Key metric: PANAS_Pos MAE and mean BA vs AR baseline (0.658)
+**4. Investigate V3 behavior in detail**
+- V3 beats AR baseline (BA=0.674 vs 0.658) — first system to do so!
+- V3 predictions are well-calibrated (pred std matches GT std)
+- What specific sensing+diary patterns drive V3's accuracy?
 
-**8. Paper-ready results table**
-Once all baselines + V3/V4 pilot are done, compile final comparison:
-- AR baseline (ceiling)
-- Text / Transformer (diary text only)
-- ML Sensing (RF, Ridge, XGB, Logistic)
-- DL Sensing (MLP)
-- Combined (sensor + diary)
-- CALLM / V1 / V2 / V3 / V4
+**5. Integration test: passed 50/50**
+10 EMA entries × 5 versions, all PASSED. Logs in `test_logs/run_20260225_120453/`.
 
 ---
 
-## Results Summary Table (Current State — Incomplete)
+## Results Summary Table (2026-02-25)
 
-| System | Method | PANAS_Pos MAE↓ | happy_State BA↑ | Mean BA | Status |
-|--------|---------|----------------|-----------------|---------|--------|
-| AR last_value | Autocorrelation | 2.758 | 0.658 | 0.658 | ✅ Done |
-| AR rolling_mean | Autocorrelation | 2.552 | 0.658 | 0.658 | ✅ Done |
-| Text TF-IDF | Diary text only | 3.999 | 0.613 | 0.613 | ✅ Done |
-| Text BoW | Diary text only | 4.043 | 0.607 | 0.607 | ✅ Done |
-| Transformer MiniLM | Diary text only | 3.898 | 0.629 | 0.629 | ✅ Done |
-| ML RF | Sensing features | 5.923 | ~0.501 | 0.501 | ✅ Done |
-| ML XGBoost | Sensing features | 9.374 | ~0.502 | 0.502 | ✅ Done |
-| ML Ridge | Sensing features | DIVERGED | — | — | ❌ RidgeCV still diverges (3/5 folds bad) |
-| ML Logistic | Sensing features | — | — | 0.500 | ✅ Done |
-| DL MLP | Sensing features | 4.699* | 0.507* | 0.440* | ✅ Done (4-fold; fold 5 excluded—extreme outliers) |
-| Combined | Sensor + diary | pending | pending | pending | ⏳ Running |
-| **CALLM** | Diary + TF-IDF RAG | **1.850** | **0.709** | **0.645** | ✅ Done (427 entries) |
-| **V1** | Sensing structured | 8.016 | 0.547 | 0.539 | ✅ Done (427 entries) |
-| **V2** | Sensing autonomous | 8.834 | 0.551 | 0.531 | ✅ Done (427 entries) |
-| **V3** | Diary+sensing structured | running | running | running | ⏳ ~22:30 tonight |
-| **V4** | Diary+sensing autonomous | pending | pending | pending | ⏳ After V3 |
+| System | Method | Mean MAE↓ | Mean BA↑ | Mean F1↑ | Status |
+|--------|---------|-----------|----------|----------|--------|
+| AR last_value | Autocorrelation | 2.758 | 0.658 | 0.617 | ✅ Done |
+| AR rolling_mean | Autocorrelation | 2.552 | 0.658 | 0.617 | ✅ Done |
+| Text TF-IDF | Diary text only | 3.999 | 0.613 | 0.570 | ✅ Done |
+| Text BoW | Diary text only | 4.043 | 0.607 | 0.561 | ✅ Done |
+| Transformer MiniLM | Diary text only | 3.898 | 0.629 | 0.588 | ✅ Done |
+| ML RF | Sensing features | 5.923 | 0.501 | 0.365 | ✅ Done |
+| ML XGBoost | Sensing features | 9.374 | 0.502 | 0.391 | ✅ Done |
+| ML Ridge | Sensing features | DIVERGED | — | — | ❌ Exclude |
+| ML Logistic | Sensing features | — | 0.500 | 0.302 | ✅ Done |
+| DL MLP | Sensing features | 4.699* | 0.507* | 0.440* | ✅ Done (4-fold) |
+| Combined RF | Sensor + diary | 3.935 | 0.620 | 0.568 | ✅ Done |
+| Combined Logistic | Sensor + diary | — | 0.615 | 0.575 | ✅ Done |
+| **CALLM** | Diary + TF-IDF RAG | 1.167 | 0.645 | 0.478 | ✅ Done (427 entries) |
+| **V1** | Sensing structured | 6.977 | 0.539 | 0.316 | ✅ Done (427 entries) |
+| **V2** | Sensing autonomous | 7.062 | 0.531 | 0.284 | ✅ Done (427 entries) |
+| **V3** | Diary+sensing structured | **0.866** | **0.674** | **0.514** | ✅ Done (1306 entries, Haiku) |
+| **V4** | Diary+sensing autonomous | — | — | — | ❌ Re-run needed (bug fix applied) |
 
 \* = 4-fold mean only, fold 5 diverged
 
+**Ranking by Mean BA:** V3 (0.674) > AR (0.658) > CALLM (0.645) > Combined RF (0.620) > MiniLM (0.629) > Text TF-IDF (0.613) > V1 (0.539) > V2 (0.531) > ML/DL (~0.50)
+
 ---
 
-## Bug Fixes Applied (This Session)
+## Bug Fixes Applied (Sessions 3-5)
 
 1. **V1 prompt missing OUTPUT_FORMAT** (`src/think/prompts.py`): Added `{OUTPUT_FORMAT}` schema at end of `v1_prompt()`. Existing V1 results were with old broken prompt.
 
@@ -306,6 +270,10 @@ Once all baselines + V3/V4 pilot are done, compile final comparison:
 6. **Ridge regression divergence** (`src/baselines/ml_pipeline.py`): Replaced `Ridge(alpha=1.0)` with `RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])`.
 
 7. **GPS/accelerometer data confirmed**: Both have data (gps: 12,926 rows, accel: 11,134 rows). PROGRESS.md corrected.
+
+8. **V2/V4 parallel tool-use bug** (session 4): Anthropic API returns multiple `tool_use` blocks in one response. Breaking mid-batch left unmatched `tool_result` blocks → API 400 error. Fix: process ALL tool_use blocks before checking max_tool_calls limit.
+
+9. **V2/V4 duplicate assistant message** (session 4): After tool loop exits via tool_use processing, assistant content was already appended. Fix: only append when `stop_reason == "end_turn"`.
 
 ---
 
@@ -352,7 +320,7 @@ All tests use dry-run mode for LLM calls — no API tokens consumed.
 4. **5-fold CV:** Across-subject (participant-level). All observations from a user in exactly one fold.
 5. **AR baseline role:** Empirical ceiling for autocorrelation-only prediction.
 6. **Feature selection:** SelectKBest with K as hyperparameter (25/50/75/100% fractions), 3-fold inner CV.
-7. **V3/V4 model:** `claude-haiku-4-5-20251001` (cost-efficient, ~10s/call)
+7. **Model for future experiments:** `claude-sonnet-4-6` (Sonnet). V3 pilot was run with Haiku; V4+ must use Sonnet.
 
 ---
 
