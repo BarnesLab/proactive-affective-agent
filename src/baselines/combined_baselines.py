@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegressionCV, RidgeCV
 from sklearn.metrics import (
@@ -79,6 +80,125 @@ def _embed_texts(
     return result
 
 
+def _make_model_standalone(name: str, task: str):
+    """Instantiate the requested sklearn model (module-level for joblib pickling)."""
+    if name == "rf":
+        if task == "regression":
+            return RandomForestRegressor(
+                n_estimators=100, max_depth=None, random_state=42, n_jobs=1,
+            )
+        else:
+            return RandomForestClassifier(
+                n_estimators=100, max_depth=None, random_state=42,
+                n_jobs=1, class_weight="balanced",
+            )
+    elif name == "ridge":
+        return RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
+    elif name == "logistic":
+        return LogisticRegressionCV(
+            Cs=[0.01, 0.1, 1.0, 10.0],
+            cv=3,
+            class_weight="balanced",
+            max_iter=1000,
+            scoring="balanced_accuracy",
+            random_state=42,
+        )
+    else:
+        raise ValueError(f"Unknown model: {name}")
+
+
+def _coerce_binary_standalone(arr) -> np.ndarray:
+    """Convert raw target column to float array with NaN for missing (module-level)."""
+    out = np.full(len(arr), np.nan, dtype=float)
+    for i, v in enumerate(arr):
+        if pd.isna(v):
+            continue
+        if isinstance(v, bool):
+            out[i] = float(v)
+        elif isinstance(v, str):
+            low = v.lower().strip()
+            if low in ("true", "1", "yes"):
+                out[i] = 1.0
+            elif low in ("false", "0", "no"):
+                out[i] = 0.0
+        else:
+            try:
+                out[i] = float(v)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def _fit_evaluate_one_combined(
+    model_name: str,
+    target: str,
+    task_type: str,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    y_tr_raw: np.ndarray,
+    y_te_raw: np.ndarray,
+    fold: int,
+) -> dict[str, Any] | None:
+    """Fit one (model, target) combination and return metrics.
+
+    Module-level function for joblib pickling. Returns None on skip/error.
+    """
+    try:
+        if task_type == "regression":
+            y_tr = pd.to_numeric(pd.Series(y_tr_raw), errors="coerce").values
+            y_te = pd.to_numeric(pd.Series(y_te_raw), errors="coerce").values
+            mask_tr = ~np.isnan(y_tr)
+            mask_te = ~np.isnan(y_te)
+            if mask_tr.sum() < 10 or mask_te.sum() < 5:
+                return None
+
+            model = _make_model_standalone(model_name, task="regression")
+            model.fit(X_train[mask_tr], y_tr[mask_tr])
+            preds = model.predict(X_test[mask_te])
+            mae = float(mean_absolute_error(y_te[mask_te], preds))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "mae": mae,
+                "n_train": int(mask_tr.sum()),
+                "n_test": int(mask_te.sum()),
+            }
+        else:  # classification
+            y_tr = _coerce_binary_standalone(y_tr_raw)
+            y_te = _coerce_binary_standalone(y_te_raw)
+            mask_tr = ~np.isnan(y_tr)
+            mask_te = ~np.isnan(y_te)
+            if mask_tr.sum() < 10 or mask_te.sum() < 5:
+                return None
+
+            y_tr_int = y_tr[mask_tr].astype(int)
+            y_te_int = y_te[mask_te].astype(int)
+            if len(set(y_tr_int)) < 2:
+                return None
+
+            clf = _make_model_standalone(model_name, task="classification")
+            clf.fit(X_train[mask_tr], y_tr_int)
+            preds = clf.predict(X_test[mask_te])
+
+            ba = float(balanced_accuracy_score(y_te_int, preds))
+            f1 = float(f1_score(y_te_int, preds, zero_division=0))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "balanced_accuracy": ba,
+                "f1": f1,
+                "n_train": int(mask_tr.sum()),
+                "n_test": int(mask_te.sum()),
+            }
+    except Exception as e:
+        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+        return None
+
+
 class CombinedBaselinePipeline:
     """Late fusion: Parquet sensor features + sentence-transformer diary embeddings.
 
@@ -123,6 +243,9 @@ class CombinedBaselinePipeline:
 
     def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
         """Run 5-fold CV for combined sensor + text features.
+
+        All (model, target) combinations within each fold are parallelized
+        via joblib for maximum throughput on multi-core machines.
 
         Args:
             folds: List of fold indices to run (e.g. [1]). If None, runs all 5 folds.
@@ -204,37 +327,28 @@ class CombinedBaselinePipeline:
             X_train = np.concatenate([X_sens_tr, X_emb_tr], axis=1)
             X_test = np.concatenate([X_sens_te, X_emb_te], axis=1)
 
-            # --- 4. Train and evaluate ---
+            # --- 4. Build all (model, target) tasks and run in parallel ---
             reg_models = [m for m in self.model_names if m in self.REGRESSION_MODELS]
             clf_models = [m for m in self.model_names if m in self.CLASSIFICATION_MODELS]
 
-            # Continuous regression
+            tasks = []
+
+            # Regression tasks
             for target in CONTINUOUS_TARGETS:
-                y_tr = pd.to_numeric(y_cont_tr[target], errors="coerce").values if target in y_cont_tr.columns else np.full(len(train_df), np.nan)
-                y_te = pd.to_numeric(y_cont_te[target], errors="coerce").values if target in y_cont_te.columns else np.full(len(test_df), np.nan)
-
-                mask_tr = ~np.isnan(y_tr)
-                mask_te = ~np.isnan(y_te)
-                if mask_tr.sum() < 10 or mask_te.sum() < 5:
-                    continue
-
+                y_tr_raw = (
+                    pd.to_numeric(y_cont_tr[target], errors="coerce").values
+                    if target in y_cont_tr.columns
+                    else np.full(len(train_df), np.nan)
+                )
+                y_te_raw = (
+                    pd.to_numeric(y_cont_te[target], errors="coerce").values
+                    if target in y_cont_te.columns
+                    else np.full(len(test_df), np.nan)
+                )
                 for model_name in reg_models:
-                    try:
-                        model = self._make_model(model_name, task="regression")
-                        model.fit(X_train[mask_tr], y_tr[mask_tr])
-                        preds = model.predict(X_test[mask_te])
-                        mae = float(mean_absolute_error(y_te[mask_te], preds))
+                    tasks.append((model_name, target, "regression", y_tr_raw, y_te_raw))
 
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "mae": mae,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
-
-            # Binary classification
+            # Classification tasks
             binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
             for target in binary_targets:
                 src_tr = y_bin_tr if target in (y_bin_tr.columns if hasattr(y_bin_tr, "columns") else []) else train_df
@@ -243,37 +357,26 @@ class CombinedBaselinePipeline:
                 y_tr_raw = src_tr[target].values if target in src_tr.columns else train_df.get(target, pd.Series(dtype=float)).values
                 y_te_raw = src_te[target].values if target in src_te.columns else test_df.get(target, pd.Series(dtype=float)).values
 
-                y_tr = self._coerce_binary(y_tr_raw)
-                y_te = self._coerce_binary(y_te_raw)
-
-                mask_tr = ~np.isnan(y_tr)
-                mask_te = ~np.isnan(y_te)
-                if mask_tr.sum() < 10 or mask_te.sum() < 5:
-                    continue
-
-                y_tr_int = y_tr[mask_tr].astype(int)
-                y_te_int = y_te[mask_te].astype(int)
-                if len(set(y_tr_int)) < 2:
-                    continue
-
                 for model_name in clf_models:
-                    try:
-                        clf = self._make_model(model_name, task="classification")
-                        clf.fit(X_train[mask_tr], y_tr_int)
-                        preds = clf.predict(X_test[mask_te])
+                    tasks.append((model_name, target, "classification", y_tr_raw, y_te_raw))
 
-                        ba = float(balanced_accuracy_score(y_te_int, preds))
-                        f1 = float(f1_score(y_te_int, preds, zero_division=0))
+            logger.info(f"  Fold {fold}: dispatching {len(tasks)} parallel (model, target) jobs")
 
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "balanced_accuracy": ba,
-                            "f1": f1,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+            results = Parallel(n_jobs=-1, prefer="threads")(
+                delayed(_fit_evaluate_one_combined)(
+                    model_name, target, task_type, X_train, X_test,
+                    y_tr_raw, y_te_raw, fold,
+                )
+                for model_name, target, task_type, y_tr_raw, y_te_raw in tasks
+            )
+
+            # Collect results into all_results dict
+            for res in results:
+                if res is None:
+                    continue
+                model_name = res.pop("model_name")
+                target = res.pop("target")
+                all_results.setdefault(model_name, {}).setdefault(target, []).append(res)
 
         aggregated = self._aggregate_folds(all_results)
         self._save_results(all_results, aggregated)
@@ -285,34 +388,12 @@ class CombinedBaselinePipeline:
 
     @staticmethod
     def _make_model(name: str, task: str):
-        """Instantiate the requested sklearn model."""
-        if name == "rf":
-            if task == "regression":
-                return RandomForestRegressor(
-                    n_estimators=100, max_depth=None, random_state=42, n_jobs=-1
-                )
-            else:
-                return RandomForestClassifier(
-                    n_estimators=100, max_depth=None, random_state=42,
-                    n_jobs=-1, class_weight="balanced",
-                )
-        elif name == "ridge":
-            if task != "regression":
-                raise ValueError("Ridge only for regression")
-            return RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
-        elif name == "logistic":
-            if task != "classification":
-                raise ValueError("LogisticRegression only for classification")
-            return LogisticRegressionCV(
-                Cs=[0.01, 0.1, 1.0, 10.0],
-                cv=3,
-                class_weight="balanced",
-                max_iter=1000,
-                scoring="balanced_accuracy",
-                random_state=42,
-            )
-        else:
-            raise ValueError(f"Unknown model: {name}")
+        """Instantiate the requested sklearn model.
+
+        Delegates to module-level factory. RF uses n_jobs=1 to avoid
+        contention with outer joblib parallelism.
+        """
+        return _make_model_standalone(name, task)
 
     @staticmethod
     def _coerce_binary(arr) -> np.ndarray:

@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.linear_model import LogisticRegressionCV, RidgeCV
 from sklearn.metrics import (
     balanced_accuracy_score,
@@ -37,6 +38,105 @@ except ImportError:
 # Embedding model name — small but effective
 EMBED_MODEL = "all-MiniLM-L6-v2"
 EMBED_DIM = 384
+
+
+def _coerce_binary_standalone(arr) -> np.ndarray:
+    """Convert raw target column to float array with NaN for missing (module-level)."""
+    out = np.full(len(arr), np.nan, dtype=float)
+    for i, v in enumerate(arr):
+        if pd.isna(v):
+            continue
+        if isinstance(v, bool):
+            out[i] = float(v)
+        elif isinstance(v, str):
+            low = v.lower().strip()
+            if low in ("true", "1", "yes"):
+                out[i] = 1.0
+            elif low in ("false", "0", "no"):
+                out[i] = 0.0
+        else:
+            try:
+                out[i] = float(v)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def _fit_evaluate_one_transformer(
+    model_name: str,
+    target: str,
+    task_type: str,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    y_tr_raw: np.ndarray,
+    y_te_raw: np.ndarray,
+    fold: int,
+) -> dict[str, Any] | None:
+    """Fit one (model_name, target) combination and return metrics.
+
+    Module-level function for joblib pickling. Returns None on skip/error.
+    """
+    try:
+        if task_type == "regression":
+            y_tr = pd.to_numeric(pd.Series(y_tr_raw), errors="coerce").values
+            y_te = pd.to_numeric(pd.Series(y_te_raw), errors="coerce").values
+            valid_tr = ~np.isnan(y_tr)
+            valid_te = ~np.isnan(y_te)
+            if valid_tr.sum() < 10 or valid_te.sum() < 5:
+                return None
+
+            reg = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
+            reg.fit(X_train[valid_tr], y_tr[valid_tr])
+            preds = reg.predict(X_test[valid_te])
+            mae = float(mean_absolute_error(y_te[valid_te], preds))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "mae": mae,
+                "n_train": int(valid_tr.sum()),
+                "n_test": int(valid_te.sum()),
+            }
+        else:  # classification
+            y_tr = _coerce_binary_standalone(y_tr_raw)
+            y_te = _coerce_binary_standalone(y_te_raw)
+            valid_tr = ~np.isnan(y_tr)
+            valid_te = ~np.isnan(y_te)
+            if valid_tr.sum() < 10 or valid_te.sum() < 5:
+                return None
+
+            y_tr_int = y_tr[valid_tr].astype(int)
+            y_te_int = y_te[valid_te].astype(int)
+            if len(set(y_tr_int)) < 2:
+                return None
+
+            clf = LogisticRegressionCV(
+                Cs=[0.01, 0.1, 1.0, 10.0],
+                cv=3,
+                class_weight="balanced",
+                max_iter=1000,
+                scoring="balanced_accuracy",
+                random_state=42,
+            )
+            clf.fit(X_train[valid_tr], y_tr_int)
+            preds = clf.predict(X_test[valid_te])
+
+            ba = float(balanced_accuracy_score(y_te_int, preds))
+            f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "balanced_accuracy": ba,
+                "f1": f1,
+                "n_train": int(valid_tr.sum()),
+                "n_test": int(valid_te.sum()),
+            }
+    except Exception as e:
+        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+        return None
 
 
 class TransformerBaselinePipeline:
@@ -81,6 +181,9 @@ class TransformerBaselinePipeline:
     def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
         """Run 5-fold CV for transformer embedding baselines.
 
+        Embedding is done sequentially (GPU-accelerated), then all target
+        fit+evaluate jobs are parallelized via joblib within each fold.
+
         Args:
             folds: List of fold indices to run (e.g. [1]). If None, runs all 5 folds.
 
@@ -111,7 +214,7 @@ class TransformerBaselinePipeline:
                 logger.warning(f"  Fold {fold}: not enough diary entries — skipping")
                 continue
 
-            # Embed texts
+            # Embed texts (sequential — GPU-accelerated, runs once per fold)
             logger.info(f"  Embedding {len(train_diary)} train + {len(test_diary)} test texts")
             X_train = self._embedder.encode(
                 train_diary["emotion_driver"].tolist(),
@@ -132,76 +235,38 @@ class TransformerBaselinePipeline:
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)
 
+            # Build all (model_name, target, task_type) tasks
+            tasks = []
+            binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
+
             for model_name in self.model_names:
-                # Continuous regression (Ridge)
                 for target in CONTINUOUS_TARGETS:
-                    y_tr = pd.to_numeric(train_diary[target], errors="coerce").values
-                    y_te = pd.to_numeric(test_diary[target], errors="coerce").values
+                    y_tr_raw = pd.to_numeric(train_diary[target], errors="coerce").values
+                    y_te_raw = pd.to_numeric(test_diary[target], errors="coerce").values
+                    tasks.append((model_name, target, "regression", y_tr_raw, y_te_raw))
 
-                    valid_tr = ~np.isnan(y_tr)
-                    valid_te = ~np.isnan(y_te)
-                    if valid_tr.sum() < 10 or valid_te.sum() < 5:
-                        continue
-
-                    try:
-                        reg = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
-                        reg.fit(X_train[valid_tr], y_tr[valid_tr])
-                        preds = reg.predict(X_test[valid_te])
-                        mae = float(mean_absolute_error(y_te[valid_te], preds))
-
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "mae": mae,
-                            "n_train": int(valid_tr.sum()),
-                            "n_test": int(valid_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
-
-                # Binary classification (LogisticRegression)
-                binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
                 for target in binary_targets:
                     y_tr_raw = train_diary[target].values if target in train_diary.columns else np.full(len(train_diary), np.nan)
                     y_te_raw = test_diary[target].values if target in test_diary.columns else np.full(len(test_diary), np.nan)
+                    tasks.append((model_name, target, "classification", y_tr_raw, y_te_raw))
 
-                    y_tr = self._coerce_binary(y_tr_raw)
-                    y_te = self._coerce_binary(y_te_raw)
+            logger.info(f"  Fold {fold}: dispatching {len(tasks)} parallel (model, target) jobs")
 
-                    valid_tr = ~np.isnan(y_tr)
-                    valid_te = ~np.isnan(y_te)
-                    if valid_tr.sum() < 10 or valid_te.sum() < 5:
-                        continue
+            results = Parallel(n_jobs=-1, prefer="threads")(
+                delayed(_fit_evaluate_one_transformer)(
+                    model_name, target, task_type, X_train, X_test,
+                    y_tr_raw, y_te_raw, fold,
+                )
+                for model_name, target, task_type, y_tr_raw, y_te_raw in tasks
+            )
 
-                    y_tr_int = y_tr[valid_tr].astype(int)
-                    y_te_int = y_te[valid_te].astype(int)
-                    if len(set(y_tr_int)) < 2:
-                        continue
-
-                    try:
-                        clf = LogisticRegressionCV(
-                            Cs=[0.01, 0.1, 1.0, 10.0],
-                            cv=3,
-                            class_weight="balanced",
-                            max_iter=1000,
-                            scoring="balanced_accuracy",
-                            random_state=42,
-                        )
-                        clf.fit(X_train[valid_tr], y_tr_int)
-                        preds = clf.predict(X_test[valid_te])
-
-                        ba = float(balanced_accuracy_score(y_te_int, preds))
-                        # binary F1: measures detection of the positive (elevated) state
-                        f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
-
-                        all_results.setdefault(model_name, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "balanced_accuracy": ba,
-                            "f1": f1,
-                            "n_train": int(valid_tr.sum()),
-                            "n_test": int(valid_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+            # Collect results into all_results dict
+            for res in results:
+                if res is None:
+                    continue
+                model_name = res.pop("model_name")
+                target = res.pop("target")
+                all_results.setdefault(model_name, {}).setdefault(target, []).append(res)
 
         aggregated = self._aggregate_folds(all_results)
         self._save_results(all_results, aggregated)
@@ -214,24 +279,7 @@ class TransformerBaselinePipeline:
     @staticmethod
     def _coerce_binary(arr) -> np.ndarray:
         """Convert raw column to float array with NaN for missing."""
-        out = np.full(len(arr), np.nan, dtype=float)
-        for i, v in enumerate(arr):
-            if pd.isna(v):
-                continue
-            if isinstance(v, bool):
-                out[i] = float(v)
-            elif isinstance(v, str):
-                low = v.lower().strip()
-                if low in ("true", "1", "yes"):
-                    out[i] = 1.0
-                elif low in ("false", "0", "no"):
-                    out[i] = 0.0
-            else:
-                try:
-                    out[i] = float(v)
-                except (ValueError, TypeError):
-                    pass
-        return out
+        return _coerce_binary_standalone(arr)
 
     def _aggregate_folds(self, all_results: dict) -> dict[str, Any]:
         """Average metrics across folds for each model x target."""

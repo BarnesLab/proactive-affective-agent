@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.linear_model import LogisticRegressionCV, RidgeCV
 from sklearn.metrics import (
@@ -23,6 +24,106 @@ from sklearn.metrics import (
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_binary_standalone(arr) -> np.ndarray:
+    """Convert raw target column to float array with NaN for missing (module-level)."""
+    out = np.full(len(arr), np.nan, dtype=float)
+    for i, v in enumerate(arr):
+        if pd.isna(v):
+            continue
+        if isinstance(v, bool):
+            out[i] = float(v)
+        elif isinstance(v, str):
+            low = v.lower().strip()
+            if low in ("true", "1", "yes"):
+                out[i] = 1.0
+            elif low in ("false", "0", "no"):
+                out[i] = 0.0
+        else:
+            try:
+                out[i] = float(v)
+            except (ValueError, TypeError):
+                pass
+    return out
+
+
+def _fit_evaluate_one_text(
+    model_name: str,
+    target: str,
+    task_type: str,
+    X_train,
+    X_test,
+    y_tr_raw: np.ndarray,
+    y_te_raw: np.ndarray,
+    fold: int,
+) -> dict[str, Any] | None:
+    """Fit one (model_name, target) combination and return metrics.
+
+    Module-level function for joblib pickling. Accepts sparse or dense X.
+    Returns None on skip/error.
+    """
+    try:
+        if task_type == "regression":
+            y_tr = pd.to_numeric(pd.Series(y_tr_raw), errors="coerce").values
+            y_te = pd.to_numeric(pd.Series(y_te_raw), errors="coerce").values
+            mask_tr = ~np.isnan(y_tr)
+            mask_te = ~np.isnan(y_te)
+            if mask_tr.sum() < 10 or mask_te.sum() < 5:
+                return None
+
+            reg = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
+            reg.fit(X_train[mask_tr], y_tr[mask_tr])
+            preds = reg.predict(X_test[mask_te])
+            mae = float(mean_absolute_error(y_te[mask_te], preds))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "mae": mae,
+                "n_train": int(mask_tr.sum()),
+                "n_test": int(mask_te.sum()),
+            }
+        else:  # classification
+            y_tr = _coerce_binary_standalone(y_tr_raw)
+            y_te = _coerce_binary_standalone(y_te_raw)
+            mask_tr = ~np.isnan(y_tr)
+            mask_te = ~np.isnan(y_te)
+            if mask_tr.sum() < 10 or mask_te.sum() < 5:
+                return None
+
+            y_tr_int = y_tr[mask_tr].astype(int)
+            y_te_int = y_te[mask_te].astype(int)
+            if len(set(y_tr_int)) < 2:
+                return None
+
+            clf = LogisticRegressionCV(
+                Cs=[0.01, 0.1, 1.0, 10.0],
+                cv=3,
+                class_weight="balanced",
+                max_iter=1000,
+                scoring="balanced_accuracy",
+                random_state=42,
+            )
+            clf.fit(X_train[mask_tr], y_tr_int)
+            preds = clf.predict(X_test[mask_te])
+
+            ba = float(balanced_accuracy_score(y_te_int, preds))
+            f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
+
+            return {
+                "model_name": model_name,
+                "target": target,
+                "fold": fold,
+                "balanced_accuracy": ba,
+                "f1": f1,
+                "n_train": int(mask_tr.sum()),
+                "n_test": int(mask_te.sum()),
+            }
+    except Exception as e:
+        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+        return None
 
 
 class TextBaselinePipeline:
@@ -62,6 +163,9 @@ class TextBaselinePipeline:
     def run_all_folds(self, folds: list | None = None) -> dict[str, Any]:
         """Run 5-fold CV for all text models and targets.
 
+        After vectorizing text for each model, all target fit+evaluate jobs
+        are parallelized via joblib within each (fold, model_name) pair.
+
         Args:
             folds: List of fold indices to run (e.g. [1]). If None, runs all 5 folds.
 
@@ -93,7 +197,9 @@ class TextBaselinePipeline:
             train_texts = train_df["emotion_driver"].fillna("").tolist()
             test_texts = test_df["emotion_driver"].fillna("").tolist()
 
-            # Build vectorizer pairs for each text model
+            binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
+
+            # Build vectorizer for each text model, then parallelize targets
             for model_name in self.model_names:
                 vectorizer = self._make_vectorizer(model_name)
                 try:
@@ -103,78 +209,35 @@ class TextBaselinePipeline:
                     logger.warning(f"  {model_name} vectorizer fold {fold}: {e}")
                     continue
 
-                # Continuous targets (Ridge)
+                # Build all target tasks
+                tasks = []
                 for target in CONTINUOUS_TARGETS:
-                    y_tr = pd.to_numeric(train_df[target], errors="coerce").values
-                    y_te = pd.to_numeric(test_df[target], errors="coerce").values
+                    y_tr_raw = pd.to_numeric(train_df[target], errors="coerce").values
+                    y_te_raw = pd.to_numeric(test_df[target], errors="coerce").values
+                    tasks.append((model_name, target, "regression", y_tr_raw, y_te_raw))
 
-                    mask_tr = ~np.isnan(y_tr)
-                    mask_te = ~np.isnan(y_te)
-                    if mask_tr.sum() < 10 or mask_te.sum() < 5:
-                        continue
-
-                    try:
-                        reg = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
-                        reg.fit(X_train[mask_tr], y_tr[mask_tr])
-                        preds = reg.predict(X_test[mask_te])
-                        mae = float(mean_absolute_error(y_te[mask_te], preds))
-
-                        key = model_name
-                        all_results.setdefault(key, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "mae": mae,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
-
-                # Binary targets (LogisticRegression)
-                binary_targets = list(BINARY_STATE_TARGETS) + ["INT_availability"]
                 for target in binary_targets:
                     y_tr_raw = train_df[target].values
                     y_te_raw = test_df[target].values
+                    tasks.append((model_name, target, "classification", y_tr_raw, y_te_raw))
 
-                    y_tr = self._coerce_binary(y_tr_raw)
-                    y_te = self._coerce_binary(y_te_raw)
+                logger.info(f"  Fold {fold}/{model_name}: dispatching {len(tasks)} parallel target jobs")
 
-                    mask_tr = ~np.isnan(y_tr)
-                    mask_te = ~np.isnan(y_te)
-                    if mask_tr.sum() < 10 or mask_te.sum() < 5:
+                results = Parallel(n_jobs=-1, prefer="threads")(
+                    delayed(_fit_evaluate_one_text)(
+                        mn, target, task_type, X_train, X_test,
+                        y_tr_raw, y_te_raw, fold,
+                    )
+                    for mn, target, task_type, y_tr_raw, y_te_raw in tasks
+                )
+
+                # Collect results into all_results dict
+                for res in results:
+                    if res is None:
                         continue
-
-                    y_tr_int = y_tr[mask_tr].astype(int)
-                    y_te_int = y_te[mask_te].astype(int)
-
-                    if len(set(y_tr_int)) < 2:
-                        continue
-
-                    try:
-                        clf = LogisticRegressionCV(
-                            Cs=[0.01, 0.1, 1.0, 10.0],
-                            cv=3,
-                            class_weight="balanced",
-                            max_iter=1000,
-                            scoring="balanced_accuracy",
-                            random_state=42,
-                        )
-                        clf.fit(X_train[mask_tr], y_tr_int)
-                        preds = clf.predict(X_test[mask_te])
-
-                        ba = float(balanced_accuracy_score(y_te_int, preds))
-                        # binary F1: measures detection of the positive (elevated) state
-                        f1 = float(f1_score(y_te_int, preds, average='binary', zero_division=0))
-
-                        key = model_name
-                        all_results.setdefault(key, {}).setdefault(target, []).append({
-                            "fold": fold,
-                            "balanced_accuracy": ba,
-                            "f1": f1,
-                            "n_train": int(mask_tr.sum()),
-                            "n_test": int(mask_te.sum()),
-                        })
-                    except Exception as e:
-                        logger.warning(f"  {model_name}/{target} fold {fold}: {e}")
+                    mn = res.pop("model_name")
+                    target = res.pop("target")
+                    all_results.setdefault(mn, {}).setdefault(target, []).append(res)
 
         aggregated = self._aggregate_folds(all_results)
         self._save_results(all_results, aggregated)
@@ -205,24 +268,7 @@ class TextBaselinePipeline:
     @staticmethod
     def _coerce_binary(arr) -> np.ndarray:
         """Convert raw target column to float array with NaN for missing."""
-        out = np.full(len(arr), np.nan, dtype=float)
-        for i, v in enumerate(arr):
-            if pd.isna(v):
-                continue
-            if isinstance(v, bool):
-                out[i] = float(v)
-            elif isinstance(v, str):
-                low = v.lower().strip()
-                if low in ("true", "1", "yes"):
-                    out[i] = 1.0
-                elif low in ("false", "0", "no"):
-                    out[i] = 0.0
-            else:
-                try:
-                    out[i] = float(v)
-                except (ValueError, TypeError):
-                    pass
-        return out
+        return _coerce_binary_standalone(arr)
 
     def _aggregate_folds(self, all_results: dict) -> dict[str, Any]:
         """Average metrics across folds for each model x target."""
