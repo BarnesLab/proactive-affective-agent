@@ -59,6 +59,9 @@ Be a rigorous analyst. Only claim signals you actually see in the data. If data 
 
 Your final prediction must be in valid JSON format enclosed in ```json ... ``` fences."""
 
+# Simplified system prompt for the final prediction request (no tool descriptions).
+PREDICTION_SYSTEM_PROMPT = """You are an expert behavioral data scientist. Your investigation is complete. Based on the sensing data you have already gathered in this conversation, synthesize your findings and provide your final emotional state prediction in valid JSON format enclosed in ```json ... ``` fences. Do not request more data — use what you have."""
+
 # ---------------------------------------------------------------------------
 # Prediction request template
 # ---------------------------------------------------------------------------
@@ -249,7 +252,7 @@ class AgenticSensingOnlyAgent:
                 pred_response = self.client.messages.create(
                     model=self.model,
                     max_tokens=2048,
-                    system=SYSTEM_PROMPT,
+                    system=PREDICTION_SYSTEM_PROMPT,
                     messages=messages,
                 )
                 if hasattr(pred_response, "usage") and pred_response.usage:
