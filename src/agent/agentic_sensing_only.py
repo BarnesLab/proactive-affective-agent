@@ -114,7 +114,8 @@ class AgenticSensingOnlyAgent:
         memory_doc: str | None,
         query_engine: SensingQueryEngine,
         model: str = "claude-sonnet-4-6",
-        max_tool_calls: int = 8,
+        soft_limit: int = 8,
+        hard_limit: int = 20,
     ) -> None:
         self.study_id = study_id
         self.profile = profile
@@ -122,7 +123,8 @@ class AgenticSensingOnlyAgent:
         self.engine = query_engine
         self.client = anthropic.Anthropic()
         self.model = model
-        self.max_tool_calls = max_tool_calls
+        self.soft_limit = soft_limit
+        self.hard_limit = hard_limit
         self.pid = str(study_id).zfill(3)
 
     def predict(
@@ -155,12 +157,13 @@ class AgenticSensingOnlyAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
-        logger.info(f"[V2] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (sensing-only)")
+        budget_nudged = False
+        logger.info(f"[V2] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (sensing-only, soft={self.soft_limit}, hard={self.hard_limit})")
 
         # ------------------------------------------------------------------
-        # Agentic tool-use loop (identical to V4)
+        # Agentic tool-use loop with soft/hard budget (mirrors V4)
         # ------------------------------------------------------------------
-        while tool_call_count < self.max_tool_calls:
+        while tool_call_count < self.hard_limit:
             try:
                 response = self.client.messages.create(
                     model=self.model,
@@ -185,9 +188,6 @@ class AgenticSensingOnlyAgent:
             if response.stop_reason == "tool_use":
                 tool_results: list[dict] = []
 
-                # Process ALL tool_use blocks in this response (the model may
-                # issue parallel tool calls).  Every tool_use MUST have a
-                # matching tool_result — otherwise the next API call fails.
                 for block in response.content:
                     if block.type == "tool_use":
                         tool_name = block.name
@@ -224,8 +224,21 @@ class AgenticSensingOnlyAgent:
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
 
-                if tool_call_count >= self.max_tool_calls:
-                    logger.info(f"[V2] Max tool calls ({self.max_tool_calls}) reached")
+                # Soft budget nudge
+                if tool_call_count >= self.soft_limit and not budget_nudged:
+                    remaining = self.hard_limit - tool_call_count
+                    nudge = (
+                        f"[Budget notice] You have used {tool_call_count} tool calls. "
+                        f"You have at most {remaining} remaining. Please wrap up your "
+                        f"investigation and provide your final JSON prediction now. "
+                        f"Only make additional tool calls if absolutely critical."
+                    )
+                    messages.append({"role": "user", "content": nudge})
+                    budget_nudged = True
+                    logger.info(f"[V2] Soft limit reached ({tool_call_count}/{self.soft_limit}), nudged to wrap up")
+
+                if tool_call_count >= self.hard_limit:
+                    logger.info(f"[V2] Hard limit ({self.hard_limit}) reached")
 
             else:
                 logger.warning(f"[V2] Unexpected stop_reason: {response.stop_reason}")

@@ -64,7 +64,8 @@ class PilotSimulator:
         model: str = "sonnet",
         delay: float = 2.0,
         agentic_model: str = "claude-sonnet-4-6",
-        agentic_max_tool_calls: int = 8,
+        agentic_soft_limit: int = 8,
+        agentic_hard_limit: int = 20,
     ) -> None:
         self.loader = loader
         self.output_dir = output_dir
@@ -73,7 +74,8 @@ class PilotSimulator:
         self.model = model
         self.delay = delay
         self.agentic_model = agentic_model
-        self.agentic_max_tool_calls = agentic_max_tool_calls
+        self.agentic_soft_limit = agentic_soft_limit
+        self.agentic_hard_limit = agentic_hard_limit
 
         self.reporter = Reporter(output_dir)
 
@@ -191,7 +193,8 @@ class PilotSimulator:
                 retriever=retriever,
                 query_engine=self._query_engine if version in ("v2", "v4") else None,
                 agentic_model=self.agentic_model,
-                agentic_max_tool_calls=self.agentic_max_tool_calls,
+                agentic_soft_limit=self.agentic_soft_limit,
+                agentic_hard_limit=self.agentic_hard_limit,
             )
 
             user_preds = []

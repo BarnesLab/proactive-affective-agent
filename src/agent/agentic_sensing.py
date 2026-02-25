@@ -35,25 +35,28 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert behavioral data scientist specializing in affective computing and just-in-time adaptive interventions (JITAI) for cancer survivorship.
 
-Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using their passive smartphone sensing data.
+Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using BOTH their diary text AND passive smartphone sensing data.
 
-You have access to tools that let you query their behavioral data (motion, location, screen usage, keyboard activity, etc.). Use these tools like a detective — investigate the signals that matter, compare to their personal baseline, look for behavioral anomalies.
+IMPORTANT — Diary-First Analysis:
+The participant's diary entry is your most direct window into their emotional state. Prior research shows diary content is highly predictive — it reveals what the person is experiencing, thinking, and feeling in their own words. Your investigation should be GUIDED by the diary:
+- First, carefully read the diary text. Identify emotional themes, concerns, stressors, positive events, social context, and coping language.
+- Then form hypotheses about their likely emotional state based on the diary content.
+- Use sensing tools to VALIDATE and CALIBRATE those hypotheses — look for behavioral evidence that confirms or contradicts what the diary suggests.
+- Pay special attention to cross-modal consistency: does their behavior (sleep, activity, screen use) align with what they wrote? Discrepancies are informative.
+
+You have access to tools that let you query their behavioral data (motion, location, screen usage, keyboard activity, etc.). Use these tools strategically — investigate the signals that MATTER given what the diary tells you, rather than exploring everything exhaustively.
 
 The data you can see: everything BEFORE the EMA timestamp. You cannot see the EMA response itself — that is what you are predicting.
 
 Investigation strategy:
-1. Start with get_daily_summary to orient yourself on today and recent days
-2. Use query_sensing to zoom into specific modalities that seem informative (hourly aggregates)
-3. Use query_raw_events to drill into raw event streams when you need fine-grained detail:
-   - screen: exact lock/unlock times (infer wake-up time, phone checking frequency)
-   - app: which specific apps were used, for how long (social media? messaging?)
-   - motion: exact activity transition timestamps (when did she leave home?)
-   - keyboard: what was typed, in which app (communication content)
-   - music: which songs/artists played (mood signal from genre)
-4. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
-5. Use get_receptivity_history to understand this person's typical patterns and past availability
-6. Use find_similar_days to reason analogically from past behavioral-emotional pairings
-7. Synthesize all evidence into a coherent prediction
+1. Analyze the diary entry first — extract emotional signals, themes, and form initial hypotheses
+2. Call get_daily_summary to see overall behavioral patterns for today and recent days
+3. Use query_sensing to zoom into modalities most relevant to the diary content (hourly aggregates)
+4. Use compare_to_baseline to check if today's behavior is unusual for this person (z-scores)
+5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes
+6. Synthesize diary + sensing evidence into a coherent, calibrated prediction
+
+Be efficient: focus your tool calls on the most informative signals given the diary context. You have a limited tool call budget — make each call count.
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -61,7 +64,14 @@ Your final prediction must be in valid JSON format enclosed in ```json ... ``` f
 
 # Simplified system prompt for the final prediction request (no tool descriptions).
 # This prevents the model from attempting more tool calls when we need JSON output.
-PREDICTION_SYSTEM_PROMPT = """You are an expert behavioral data scientist. Your investigation is complete. Based on the sensing data you have already gathered in this conversation, synthesize your findings and provide your final emotional state prediction in valid JSON format enclosed in ```json ... ``` fences. Do not request more data — use what you have."""
+PREDICTION_SYSTEM_PROMPT = """You are an expert behavioral data scientist. Your investigation is complete. Based on the diary entry AND the sensing data you have gathered in this conversation, synthesize your findings into a final emotional state prediction.
+
+Key reminders for your prediction:
+- Weight the diary content heavily — it is the most direct signal of emotional state
+- Use sensing data to calibrate and adjust (e.g., disrupted sleep + stressed diary → higher negative affect)
+- Flag cross-modal consistency or discrepancies in your reasoning
+
+Provide your prediction in valid JSON format enclosed in ```json ... ``` fences. Do not request more data — use what you have."""
 
 # ---------------------------------------------------------------------------
 # Prediction request template
@@ -116,7 +126,8 @@ class AgenticSensingAgent:
         memory_doc: str | None,
         query_engine: SensingQueryEngine,
         model: str = "claude-sonnet-4-6",
-        max_tool_calls: int = 8,
+        soft_limit: int = 8,
+        hard_limit: int = 20,
     ) -> None:
         """Initialize the agentic sensing agent.
 
@@ -126,7 +137,8 @@ class AgenticSensingAgent:
             memory_doc: Pre-generated longitudinal memory document text.
             query_engine: SensingQueryEngine providing tool implementations.
             model: Anthropic model ID to use.
-            max_tool_calls: Maximum number of tool call iterations before forcing prediction.
+            soft_limit: After this many tool calls, inject a "wrap up" nudge.
+            hard_limit: Absolute max tool calls before forcing prediction extraction.
         """
         self.study_id = study_id
         self.profile = profile
@@ -134,7 +146,8 @@ class AgenticSensingAgent:
         self.engine = query_engine
         self.client = anthropic.Anthropic()
         self.model = model
-        self.max_tool_calls = max_tool_calls
+        self.soft_limit = soft_limit
+        self.hard_limit = hard_limit
         self.pid = str(study_id).zfill(3)
 
     def predict(
@@ -176,12 +189,13 @@ class AgenticSensingAgent:
         total_input_tokens = 0
         total_output_tokens = 0
 
-        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop")
+        budget_nudged = False
+        logger.info(f"[V4] User {self.study_id} | {ema_date} {ema_slot} | starting agentic loop (soft={self.soft_limit}, hard={self.hard_limit})")
 
         # ------------------------------------------------------------------
-        # Agentic tool-use loop
+        # Agentic tool-use loop with soft/hard budget
         # ------------------------------------------------------------------
-        while tool_call_count < self.max_tool_calls:
+        while tool_call_count < self.hard_limit:
             try:
                 response = self.client.messages.create(
                     model=self.model,
@@ -204,10 +218,8 @@ class AgenticSensingAgent:
                 break
 
             if response.stop_reason == "tool_use":
-                # Build tool_results list and record reasoning.
-                # Process ALL tool_use blocks in this response (the model may
-                # issue parallel tool calls).  Every tool_use MUST have a
-                # matching tool_result — otherwise the next API call fails.
+                # Process ALL tool_use blocks (parallel tool calls). Every
+                # tool_use MUST have a matching tool_result.
                 tool_results: list[dict] = []
 
                 for block in response.content:
@@ -247,8 +259,22 @@ class AgenticSensingAgent:
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
 
-                if tool_call_count >= self.max_tool_calls:
-                    logger.info(f"[V4] Max tool calls ({self.max_tool_calls}) reached")
+                # -- Soft budget nudge: once we pass soft_limit, tell the
+                #    model to wrap up instead of hard-stopping.
+                if tool_call_count >= self.soft_limit and not budget_nudged:
+                    remaining = self.hard_limit - tool_call_count
+                    nudge = (
+                        f"[Budget notice] You have used {tool_call_count} tool calls. "
+                        f"You have at most {remaining} remaining. Please wrap up your "
+                        f"investigation and provide your final JSON prediction now. "
+                        f"Only make additional tool calls if absolutely critical."
+                    )
+                    messages.append({"role": "user", "content": nudge})
+                    budget_nudged = True
+                    logger.info(f"[V4] Soft limit reached ({tool_call_count}/{self.soft_limit}), nudged to wrap up")
+
+                if tool_call_count >= self.hard_limit:
+                    logger.info(f"[V4] Hard limit ({self.hard_limit}) reached")
 
             else:
                 # Unexpected stop reason (max_tokens, etc.)
@@ -349,11 +375,13 @@ class AgenticSensingAgent:
         ]
         modalities_str = ", ".join(available_modalities) if available_modalities else "none loaded"
 
-        return f"""You are investigating participant {self.pid}'s behavioral data to predict their emotional state.
+        return f"""You are investigating participant {self.pid}'s emotional state at the time of their EMA survey.
 
 ## Current Situation
 Timestamp: {ema_timestamp} ({ema_slot} EMA)
 Date: {ema_date}
+
+## Diary Entry (PRIMARY emotional signal — analyze this FIRST)
 {diary_section}
 
 ## User Profile
@@ -363,11 +391,13 @@ Date: {ema_date}
 {modalities_str}
 
 ## Your Task
-Investigate the sensing data to understand this person's behavioral state leading up to this EMA.
-Use the available tools to build your evidence. Use the session memory above to calibrate against
-this person's known receptivity and behavioral patterns. Then predict their emotional state.
+1. FIRST: Analyze the diary entry above. What emotional themes, stressors, or positive signals does it reveal? Form your initial hypotheses about this person's emotional state.
+2. THEN: Use sensing tools to validate and calibrate your hypotheses. Focus on the most informative signals given the diary content.
+3. FINALLY: Synthesize diary + sensing evidence into a prediction.
 
-Start by calling get_daily_summary for {ema_date} to orient yourself."""
+You have a limited tool call budget — use them strategically, not exhaustively. Focus on the most informative queries.
+
+Start by calling get_daily_summary for {ema_date} to see today's behavioral context."""
 
     def _execute_tool(
         self,

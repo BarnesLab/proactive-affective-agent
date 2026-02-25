@@ -40,7 +40,8 @@ class PersonalAgent:
         retriever: TFIDFRetriever | None = None,
         query_engine=None,
         agentic_model: str = "claude-sonnet-4-6",
-        agentic_max_tool_calls: int = 8,
+        agentic_soft_limit: int = 8,
+        agentic_hard_limit: int = 20,
     ) -> None:
         self.study_id = study_id
         self.version = version  # "callm", "v1", "v2", "v3", "v4"
@@ -66,7 +67,8 @@ class PersonalAgent:
                 memory_doc=memory_doc,
                 query_engine=query_engine,
                 model=agentic_model,
-                max_tool_calls=agentic_max_tool_calls,
+                soft_limit=agentic_soft_limit,
+                hard_limit=agentic_hard_limit,
             )
         elif version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
@@ -87,7 +89,8 @@ class PersonalAgent:
                 memory_doc=memory_doc,
                 query_engine=query_engine,
                 model=agentic_model,
-                max_tool_calls=agentic_max_tool_calls,
+                soft_limit=agentic_soft_limit,
+                hard_limit=agentic_hard_limit,
             )
 
     def predict(

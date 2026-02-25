@@ -400,7 +400,8 @@ def test_v2(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", d
         memory_doc="(Integration test — no memory document.)",
         query_engine=query_engine,
         model=model,
-        max_tool_calls=4,  # Limit tool calls for testing
+        soft_limit=3,  # Limit tool calls for testing
+        hard_limit=5,
     )
 
     t0 = time.time()
@@ -437,7 +438,8 @@ def test_v4(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", d
         memory_doc="(Integration test — no memory document.)",
         query_engine=query_engine,
         model=model,
-        max_tool_calls=4,  # Limit tool calls for testing
+        soft_limit=3,  # Limit tool calls for testing
+        hard_limit=5,
     )
 
     t0 = time.time()
