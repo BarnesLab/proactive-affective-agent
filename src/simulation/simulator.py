@@ -491,6 +491,11 @@ class PilotSimulator:
                     # Performance
                     "elapsed_seconds": round(elapsed, 3),
                     "llm_calls": pred.get("_llm_calls", 1),
+                    # Token usage
+                    "input_tokens": pred.get("_input_tokens", 0),
+                    "output_tokens": pred.get("_output_tokens", 0),
+                    "total_tokens": pred.get("_total_tokens", 0),
+                    "cost_usd": pred.get("_cost_usd", 0),
                 }
                 self.reporter.save_unified_record(unified_record, version, sid)
 

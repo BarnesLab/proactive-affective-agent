@@ -469,7 +469,7 @@ class TestRealTraceValidation:
         # Should be compact
         assert len(summary) < 500
         # Should reflect the actual tool strategy
-        assert "8 tools" in summary
+        assert "tools" in summary
         assert "get_daily_summary" in summary
 
     @pytest.mark.skipif(

@@ -63,6 +63,7 @@ class StructuredWorkflow:
         # Step 3: Single LLM call
         logger.debug("V1: Calling LLM with sensing + memory context")
         raw_response = self.llm.generate(prompt=prompt, system_prompt=system)
+        usage = getattr(self.llm, "last_usage", {})
         from src.think.parser import parse_prediction
         result = parse_prediction(raw_response)
 
@@ -75,5 +76,16 @@ class StructuredWorkflow:
         result["_full_response"] = raw_response
         result["_memory_excerpt"] = memory_doc[:500] if memory_doc else ""
         result["_trait_summary"] = trait_text
+        result["_input_tokens"] = usage.get("input_tokens", 0)
+        result["_output_tokens"] = usage.get("output_tokens", 0)
+        result["_total_tokens"] = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+        result["_cost_usd"] = usage.get("cost_usd", 0)
+        result["_llm_calls"] = 1
+
+        logger.info(
+            f"V1: tokens={usage.get('input_tokens', '?')}in+"
+            f"{usage.get('output_tokens', '?')}out, "
+            f"confidence={result.get('confidence', '?')}"
+        )
 
         return result

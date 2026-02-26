@@ -39,6 +39,7 @@ class ClaudeCodeClient:
         self.delay_between_calls = delay_between_calls
         self.dry_run = dry_run
         self._call_count = 0
+        self.last_usage: dict[str, Any] = {"input_tokens": 0, "output_tokens": 0}
 
     def generate(
         self,
@@ -57,8 +58,12 @@ class ClaudeCodeClient:
 
         Returns:
             Raw text response from Claude.
+
+        Side effect:
+            Sets self.last_usage with token counts from the most recent call.
         """
         if self.dry_run:
+            self.last_usage = {"input_tokens": 0, "output_tokens": 0}
             return self._dry_run_response(prompt)
 
         cmd = self._build_command(prompt, system_prompt, json_schema, schema_path)
@@ -185,15 +190,27 @@ class ClaudeCodeClient:
         """Unwrap Claude CLI JSON output format.
 
         The CLI with --output-format json returns:
-        {"type":"result","result":"<actual LLM output>","cost_usd":...}
-        We extract the "result" field.
+        {"type":"result","result":"<actual LLM output>","usage":{...},...}
+        We extract the "result" field and store token usage in self.last_usage.
         """
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0}
         if not raw:
             return ""
         try:
             wrapper = json.loads(raw)
-            if isinstance(wrapper, dict) and "result" in wrapper:
-                return str(wrapper["result"])
+            if isinstance(wrapper, dict):
+                # Extract token usage from CLI wrapper
+                usage = wrapper.get("usage", {})
+                if isinstance(usage, dict):
+                    self.last_usage = {
+                        "input_tokens": usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+                        "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+                        "cost_usd": wrapper.get("total_cost_usd", 0),
+                    }
+                if "result" in wrapper:
+                    return str(wrapper["result"])
         except json.JSONDecodeError:
             pass
         return raw
