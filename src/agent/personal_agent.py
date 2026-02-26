@@ -9,12 +9,16 @@ workflow based on the version parameter.
   Multimodal        V3                             V4 <- key contribution
 
   CALLM: diary + TF-IDF RAG (diary only) -- CHI 2025 baseline
-  ML baselines: RF, XGBoost, LogReg, Ridge on sensor features
+
+Backend:
+  V1/V3/CALLM: ClaudeCodeClient (claude -p CLI, Max subscription, free)
+  V2/V4: AgenticCCAgent (claude --print + MCP server, Max subscription, free)
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from src.agent.structured import StructuredWorkflow
@@ -38,8 +42,11 @@ class PersonalAgent:
         profile: UserProfile | None = None,
         memory_doc: str = "",
         retriever: TFIDFRetriever | None = None,
+        processed_dir: Path | None = None,
+        agentic_model: str = "sonnet",
+        agentic_max_turns: int = 16,
+        # Legacy params (ignored, kept for backward compat)
         query_engine=None,
-        agentic_model: str = "claude-sonnet-4-6",
         agentic_soft_limit: int = 8,
         agentic_hard_limit: int = 20,
     ) -> None:
@@ -53,44 +60,28 @@ class PersonalAgent:
         # Initialize workflow
         if version == "v1":
             self._v1 = StructuredWorkflow(llm_client)
-        elif version == "v2":
-            # V2: Sensing-only + Agentic (tool-use, no diary)
-            if query_engine is None:
+        elif version in ("v2", "v4"):
+            # V2/V4: Agentic agents via claude --print (free, Max subscription)
+            if processed_dir is None:
                 raise ValueError(
-                    "V2 requires a SensingQueryEngine. "
-                    "Pass query_engine= when constructing PersonalAgent with version='v2'."
+                    f"{version.upper()} requires processed_dir (path to data/processed/). "
+                    f"Pass processed_dir= when constructing PersonalAgent."
                 )
-            from src.agent.agentic_sensing_only import AgenticSensingOnlyAgent
-            self._v2 = AgenticSensingOnlyAgent(
+            from src.agent.cc_agent import AgenticCCAgent
+            mode = "multimodal" if version == "v4" else "sensing_only"
+            self._agentic = AgenticCCAgent(
                 study_id=study_id,
                 profile=self.profile,
                 memory_doc=memory_doc,
-                query_engine=query_engine,
+                processed_dir=processed_dir,
                 model=agentic_model,
-                soft_limit=agentic_soft_limit,
-                hard_limit=agentic_hard_limit,
+                max_turns=agentic_max_turns,
+                mode=mode,
             )
         elif version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
             self._v3 = StructuredFullWorkflow(
                 llm_client, retriever=mm_retriever, study_id=study_id
-            )
-        elif version == "v4":
-            # V4: Multimodal + Agentic (tool-use + diary) -- key contribution
-            if query_engine is None:
-                raise ValueError(
-                    "V4 requires a SensingQueryEngine. "
-                    "Pass query_engine= when constructing PersonalAgent with version='v4'."
-                )
-            from src.agent.agentic_sensing import AgenticSensingAgent
-            self._v4 = AgenticSensingAgent(
-                study_id=study_id,
-                profile=self.profile,
-                memory_doc=memory_doc,
-                query_engine=query_engine,
-                model=agentic_model,
-                soft_limit=agentic_soft_limit,
-                hard_limit=agentic_hard_limit,
             )
 
     def predict(
@@ -198,8 +189,8 @@ class PersonalAgent:
         )
 
     def _run_v2(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
-        """V2 Agentic Sensing-Only: autonomous tool-use loop, NO diary text."""
-        return self._v2.predict(ema_row=ema_row, session_memory=session_memory)
+        """V2 Agentic Sensing-Only: claude --print + MCP tools, NO diary text."""
+        return self._agentic.predict(ema_row=ema_row, diary_text=None, session_memory=session_memory)
 
     def _run_v3(self, ema_row, sensing_day, date_str: str) -> dict[str, Any]:
         """V3 Structured Full: diary + sensing + multimodal RAG -> structured pipeline."""
@@ -212,10 +203,10 @@ class PersonalAgent:
         )
 
     def _run_v4(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
-        """V4 Agentic Multimodal: autonomous tool-use loop + diary text."""
+        """V4 Agentic Multimodal: claude --print + MCP tools + diary text."""
         diary_text = None
         if ema_row is not None:
             diary_text = str(ema_row.get("emotion_driver", ""))
             if diary_text.lower() == "nan" or not diary_text.strip():
                 diary_text = None
-        return self._v4.predict(ema_row=ema_row, diary_text=diary_text, session_memory=session_memory)
+        return self._agentic.predict(ema_row=ema_row, diary_text=diary_text, session_memory=session_memory)

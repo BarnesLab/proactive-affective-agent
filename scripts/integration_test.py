@@ -5,7 +5,7 @@ Tests each version end-to-end with real LLM calls on a small number of EMA entri
 saving detailed logs to test_logs/ for inspection.
 
 Usage:
-    # Test all versions (V1/V3/CALLM via claude CLI, V2/V4 via Anthropic SDK)
+    # Test all versions (all via claude CLI, free via Max subscription)
     python scripts/integration_test.py
 
     # Test specific versions
@@ -18,8 +18,9 @@ Usage:
     python scripts/integration_test.py --user 275
 
 Cost note:
-    V1/V3/CALLM use `claude -p` (Max subscription, no API cost).
-    V2/V4 use the Anthropic Python SDK (requires ANTHROPIC_API_KEY, incurs API cost).
+    ALL versions use `claude -p` / `claude --print` (Max subscription, no API cost).
+    V1/V3/CALLM: single `claude -p` call.
+    V2/V4: `claude --print` with MCP server for agentic tool-use.
 """
 
 from __future__ import annotations
@@ -52,7 +53,6 @@ import numpy as np
 import pandas as pd
 
 from src.data.schema import SensingDay, UserProfile
-from src.sense.query_tools import SensingQueryEngine
 from src.think.llm_client import ClaudeCodeClient
 from src.think.parser import parse_prediction
 from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
@@ -389,19 +389,19 @@ def test_callm(ema_row, llm_client, profile, train_df, logger, dry_run=False):
     return result
 
 
-def test_v2(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", dry_run=False):
-    """Test V2: Agentic sensing-only (no diary, tool-use loop)."""
-    logger.info("--- Testing V2 (Agentic Sensing-Only) ---")
-    from src.agent.agentic_sensing_only import AgenticSensingOnlyAgent
+def test_v2(ema_row, profile, logger, model="sonnet", dry_run=False):
+    """Test V2: Agentic sensing-only via claude --print + MCP server (free)."""
+    logger.info("--- Testing V2 (Agentic Sensing-Only, CC backend) ---")
+    from src.agent.cc_agent import AgenticCCAgent
 
-    agent = AgenticSensingOnlyAgent(
+    agent = AgenticCCAgent(
         study_id=int(ema_row.get("Study_ID", 0)),
         profile=profile,
         memory_doc="(Integration test — no memory document.)",
-        query_engine=query_engine,
+        processed_dir=PROCESSED_DIR.parent,  # data/processed/
         model=model,
-        soft_limit=3,  # Limit tool calls for testing
-        hard_limit=5,
+        max_turns=8,  # Limit turns for testing
+        mode="sensing_only",
     )
 
     t0 = time.time()
@@ -410,36 +410,34 @@ def test_v2(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", d
 
     logger.info(f"  V2 completed in {elapsed:.1f}s")
     logger.info(f"  V2 tool calls: {result.get('_n_tool_calls', '?')}")
-    logger.info(f"  V2 tokens: {result.get('_input_tokens', '?')}in + {result.get('_output_tokens', '?')}out")
     logger.info(f"  V2 model: {result.get('_model', '?')}")
 
-    # Log tool call details
     for tc in result.get("_tool_calls", []):
-        logger.debug(f"  V2 tool #{tc['index']}: {tc['tool_name']}({tc['input']}) -> {tc['result_preview'][:200]}")
+        logger.debug(f"  V2 tool #{tc['index']}: {tc['tool_name']}({tc.get('input', {})}) -> {tc.get('result_preview', '')[:200]}")
 
-    logger.debug(f"  V2 final response: {result.get('_final_response', '')[:500]}")
+    logger.debug(f"  V2 final response: {result.get('_full_response', '')[:500]}")
 
     result["_elapsed_s"] = elapsed
     return result
 
 
-def test_v4(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", dry_run=False):
-    """Test V4: Agentic multimodal (diary + sensing, tool-use loop)."""
-    logger.info("--- Testing V4 (Agentic Multimodal) ---")
-    from src.agent.agentic_sensing import AgenticSensingAgent
+def test_v4(ema_row, profile, logger, model="sonnet", dry_run=False):
+    """Test V4: Agentic multimodal via claude --print + MCP server (free)."""
+    logger.info("--- Testing V4 (Agentic Multimodal, CC backend) ---")
+    from src.agent.cc_agent import AgenticCCAgent
 
     diary_text = str(ema_row.get("emotion_driver", ""))
     if diary_text.lower() == "nan" or not diary_text.strip():
         diary_text = None
 
-    agent = AgenticSensingAgent(
+    agent = AgenticCCAgent(
         study_id=int(ema_row.get("Study_ID", 0)),
         profile=profile,
         memory_doc="(Integration test — no memory document.)",
-        query_engine=query_engine,
+        processed_dir=PROCESSED_DIR.parent,  # data/processed/
         model=model,
-        soft_limit=3,  # Limit tool calls for testing
-        hard_limit=5,
+        max_turns=8,  # Limit turns for testing
+        mode="multimodal",
     )
 
     t0 = time.time()
@@ -448,13 +446,12 @@ def test_v4(ema_row, query_engine, profile, logger, model="claude-sonnet-4-6", d
 
     logger.info(f"  V4 completed in {elapsed:.1f}s")
     logger.info(f"  V4 tool calls: {result.get('_n_tool_calls', '?')}")
-    logger.info(f"  V4 tokens: {result.get('_input_tokens', '?')}in + {result.get('_output_tokens', '?')}out")
     logger.info(f"  V4 diary present: {diary_text is not None}")
 
     for tc in result.get("_tool_calls", []):
-        logger.debug(f"  V4 tool #{tc['index']}: {tc['tool_name']}({tc['input']}) -> {tc['result_preview'][:200]}")
+        logger.debug(f"  V4 tool #{tc['index']}: {tc['tool_name']}({tc.get('input', {})}) -> {tc.get('result_preview', '')[:200]}")
 
-    logger.debug(f"  V4 final response: {result.get('_final_response', '')[:500]}")
+    logger.debug(f"  V4 final response: {result.get('_full_response', '')[:500]}")
 
     result["_elapsed_s"] = elapsed
     return result
@@ -469,7 +466,7 @@ def run_integration_tests(
     user_id: int = DEFAULT_USER,
     n_entries: int = N_TEST_ENTRIES,
     dry_run: bool = False,
-    agentic_model: str = "claude-sonnet-4-6",
+    agentic_model: str = "sonnet",
 ):
     """Run integration tests for specified versions."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -485,16 +482,8 @@ def run_integration_tests(
     logger.info(f"Agentic model: {agentic_model}")
     logger.info("=" * 70)
 
-    # Check prerequisites
-    has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    agentic_versions = {"v2", "v4"}
-    cli_versions = {"v1", "v3", "callm"}
-
-    if not has_api_key and agentic_versions & set(versions):
-        logger.warning(
-            "ANTHROPIC_API_KEY not set. V2/V4 tests will be SKIPPED. "
-            "Set the key to test agentic agents."
-        )
+    # All versions now use claude CLI (free via Max subscription).
+    # No API key needed for any version.
 
     # Load data
     logger.info("Loading test data...")
@@ -535,21 +524,6 @@ def run_integration_tests(
         delay_between_calls=1.0,
         dry_run=dry_run,
     )
-
-    # Query engine for V2/V4
-    query_engine = None
-    if agentic_versions & set(versions) and has_api_key:
-        ema_df = full_df  # Full EMA data for baseline/history lookups
-        query_engine = SensingQueryEngine(
-            processed_dir=str(PROCESSED_DIR),
-            ema_df=ema_df,
-        )
-        pid = f"{user_id:03d}"
-        available_mods = [
-            mod for mod in query_engine.MODALITIES
-            if query_engine._parquet_path(user_id, mod).exists()
-        ]
-        logger.info(f"Query engine initialized. User {user_id} modalities: {available_mods}")
 
     # Run tests
     all_results = {}
@@ -604,17 +578,9 @@ def run_integration_tests(
                 elif version == "callm":
                     result = test_callm(ema_row, llm_client, profile, train_diary_df, logger, dry_run)
                 elif version == "v2":
-                    if not has_api_key:
-                        logger.warning(f"  SKIP V2 (no ANTHROPIC_API_KEY)")
-                        summary["skipped"].append(test_key)
-                        continue
-                    result = test_v2(ema_row, query_engine, profile, logger, agentic_model, dry_run)
+                    result = test_v2(ema_row, profile, logger, agentic_model, dry_run)
                 elif version == "v4":
-                    if not has_api_key:
-                        logger.warning(f"  SKIP V4 (no ANTHROPIC_API_KEY)")
-                        summary["skipped"].append(test_key)
-                        continue
-                    result = test_v4(ema_row, query_engine, profile, logger, agentic_model, dry_run)
+                    result = test_v4(ema_row, profile, logger, agentic_model, dry_run)
                 else:
                     logger.warning(f"  Unknown version: {version}")
                     continue

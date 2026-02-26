@@ -6,9 +6,7 @@ behavioral data before making emotional state predictions. Unlike V1-V3,
 which receive pre-formatted sensing summaries in a single prompt, V4
 actively queries the data like a behavioral data scientist.
 
-Two backends are available:
-  --backend cc   (default) — claude --print subprocess, bills against Claude Max subscription
-  --backend api            — Anthropic SDK, bills against ANTHROPIC_API_KEY
+Backend: claude --print subprocess (Claude Max subscription, FREE).
 
 Session memory: one growing per-user markdown doc accumulates chronological
 receptivity feedback (diary + ER_desire + INT_availability) across EMA entries,
@@ -18,10 +16,9 @@ ER_desire binary threshold: ER_desire >= 5 (scale midpoint, 0-10).
 
 Usage:
     python scripts/run_agentic_pilot.py --users 71,164
-    python scripts/run_agentic_pilot.py --users 71,164 --backend cc
-    python scripts/run_agentic_pilot.py --users all --model sonnet --backend cc
+    python scripts/run_agentic_pilot.py --users all --model sonnet
     python scripts/run_agentic_pilot.py --users 71 --dry-run --max-tool-calls 3
-    python scripts/run_agentic_pilot.py --users 71,164 --model claude-sonnet-4-6 --output-dir outputs/v4_run1
+    python scripts/run_agentic_pilot.py --users 71,164 --model haiku --output-dir outputs/v4_run1
 """
 
 from __future__ import annotations
@@ -43,7 +40,6 @@ import pandas as pd
 from src.data.loader import DataLoader
 from src.data.preprocessing import get_user_trait_profile
 from src.evaluation.metrics import compute_all
-from src.sense.query_tools import SensingQueryEngine
 
 
 # ---------------------------------------------------------------------------
@@ -51,10 +47,8 @@ from src.sense.query_tools import SensingQueryEngine
 # ---------------------------------------------------------------------------
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "agentic_pilot"
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "sonnet"  # Model alias for claude --print (free via Max subscription)
 DEFAULT_MAX_TOOL_CALLS = 8
-DEFAULT_BACKEND = "cc"  # "cc" = Claude Max subscription via subprocess, "api" = Anthropic SDK
-CC_PYTHON_BIN = "/opt/homebrew/bin/python3.13"  # Python with mcp + pandas installed
 
 DELAY_BETWEEN_USERS = 3.0   # seconds
 DELAY_BETWEEN_EMAS = 1.0    # seconds
@@ -70,7 +64,7 @@ def main() -> None:
 
     logger = logging.getLogger(__name__)
     logger.info("V4 Agentic Sensing Agent — Pilot Evaluation")
-    logger.info(f"  Backend:        {args.backend} ({'Claude Code Max subscription' if args.backend == 'cc' else 'Anthropic API key'})")
+    logger.info(f"  Backend:        claude --print (Max subscription, FREE)")
     logger.info(f"  Model:          {args.model}")
     logger.info(f"  Max tool calls: {args.max_tool_calls}")
     logger.info(f"  Dry run:        {args.dry_run}")
@@ -110,19 +104,14 @@ def main() -> None:
         logger.warning("Baseline trait data not found — using empty profiles")
 
     # ------------------------------------------------------------------
-    # Build query engine (Parquet-backed, shared across users)
+    # Validate processed data directory (used by MCP server in CC agent)
     # ------------------------------------------------------------------
-    processed_dir = (Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data") / "processed" / "hourly"
+    processed_dir = (Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data") / "processed"
     if not processed_dir.exists():
-        logger.error(f"Processed hourly data directory not found: {processed_dir}")
+        logger.error(f"Processed data directory not found: {processed_dir}")
         logger.error("Run scripts/offline/run_phase1.sh first to generate Parquet files.")
         sys.exit(1)
-
-    query_engine = SensingQueryEngine(
-        processed_dir=processed_dir,
-        ema_df=ema_df,
-    )
-    logger.info(f"Parquet query engine loaded from: {processed_dir}")
+    logger.info(f"Processed data dir for CC agent MCP server: {processed_dir}")
 
     # ------------------------------------------------------------------
     # Select users
@@ -167,7 +156,7 @@ def main() -> None:
             ema_df=ema_df,
             baseline_df=baseline_df,
             loader=loader,
-            query_engine=query_engine,
+            processed_dir=processed_dir,
             model=args.model,
             max_tool_calls=args.max_tool_calls,
             dry_run=args.dry_run,
@@ -175,8 +164,6 @@ def main() -> None:
             checkpoints_dir=checkpoints_dir,
             memory_dir=memory_dir,
             logger=logger,
-            backend=args.backend,
-            processed_dir=processed_dir.parent,
         )
 
         all_predictions.extend(user_predictions)
@@ -205,7 +192,7 @@ def main() -> None:
     total_tool_calls = sum(m.get("n_tool_calls", 0) for m in all_metadata)
     results = {
         "run_config": {
-            "backend": args.backend,
+            "backend": "cc",  # claude --print (Max subscription, free)
             "model": args.model,
             "max_tool_calls": args.max_tool_calls,
             "dry_run": args.dry_run,
@@ -249,7 +236,7 @@ def _run_user(
     ema_df: pd.DataFrame,
     baseline_df: pd.DataFrame,
     loader: DataLoader,
-    query_engine: SensingQueryEngine,
+    processed_dir: Path,
     model: str,
     max_tool_calls: int,
     dry_run: bool,
@@ -257,16 +244,15 @@ def _run_user(
     checkpoints_dir: Path,
     logger: logging.Logger,
     memory_dir: Path | None = None,
-    backend: str = "cc",
-    processed_dir: Path | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Process all EMA entries for one user in chronological order.
 
+    Uses AgenticCCAgent (claude --print + MCP server, free via Max subscription).
+
     The agent accumulates a per-user session memory across EMA entries.
-    After each prediction, a record is appended to the user's memory file
-    (outputs/agentic_pilot/memory/user_{pid}.md). The next EMA prediction
-    includes the growing memory, so the agent genuinely learns this person
-    over the study period — not just cold-start each time.
+    After each prediction, a record is appended to the user's memory file.
+    The next EMA prediction includes the growing memory, so the agent
+    genuinely learns this person over the study period.
 
     Session memory contains: diary + ER_desire raw score + INT_availability,
     simulating real-world deployment where only receptivity feedback is observable.
@@ -276,16 +262,14 @@ def _run_user(
         ema_df: Full EMA DataFrame (with midpoint-threshold ER_desire_State).
         baseline_df: Baseline trait DataFrame.
         loader: DataLoader instance.
-        query_engine: SensingQueryEngine instance (used only by api backend).
-        model: Model ID / alias.
+        processed_dir: Path to data/processed/ directory (for MCP server).
+        model: Claude model alias (e.g. "sonnet", "haiku").
         max_tool_calls: Max tool calls per prediction.
         dry_run: If True, only process dry_run_limit EMA entries.
         dry_run_limit: Number of entries to process in dry run.
         checkpoints_dir: Directory for per-EMA checkpoints.
         logger: Logger instance.
         memory_dir: Directory to write per-user growing memory docs.
-        backend: "cc" (Claude Code subprocess) or "api" (Anthropic SDK).
-        processed_dir: Path to data/processed/ (required for cc backend).
 
     Returns:
         Tuple of (predictions, ground_truths, metadata) lists.
@@ -385,28 +369,18 @@ def _run_user(
         session_memory = _load_session_memory(session_memory_path)
 
     # Create agent (one per user; stateless across EMA calls — statefulness
-    # is managed externally via session_memory passed at each predict() call)
-    if backend == "cc":
-        from src.agent.cc_agent import ClaudeCodeAgent
-        agent = ClaudeCodeAgent(
-            study_id=study_id,
-            profile=profile,
-            memory_doc=memory_doc,
-            processed_dir=processed_dir or PROJECT_ROOT / "data" / "processed",
-            model=model,
-            max_turns=max_tool_calls + 4,  # extra turns for reasoning + final prediction
-            python_bin=CC_PYTHON_BIN,
-        )
-    else:
-        from src.agent.agentic_sensing import AgenticSensingAgent
-        agent = AgenticSensingAgent(
-            study_id=study_id,
-            profile=profile,
-            memory_doc=memory_doc,
-            query_engine=query_engine,
-            model=model,
-            max_tool_calls=max_tool_calls,
-        )
+    # is managed externally via session_memory passed at each predict() call).
+    # Uses claude --print + MCP server (free via Max subscription).
+    from src.agent.cc_agent import AgenticCCAgent
+    agent = AgenticCCAgent(
+        study_id=study_id,
+        profile=profile,
+        memory_doc=memory_doc,
+        processed_dir=processed_dir,
+        model=model,
+        max_turns=max_tool_calls + 4,  # extra turns for reasoning + final prediction
+        mode="multimodal",  # V4 = diary + sensing
+    )
 
     for idx, (_, ema_row) in enumerate(entries):
         ts = str(ema_row.get("timestamp_local", ""))
@@ -709,16 +683,6 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Comma-separated Study_IDs (e.g. '71,164') or 'all' for all users. "
             "Default: '71,164'"
-        ),
-    )
-    parser.add_argument(
-        "--backend",
-        type=str,
-        choices=["cc", "api"],
-        default=DEFAULT_BACKEND,
-        help=(
-            "Inference backend: 'cc' = claude --print subprocess (Claude Max subscription, recommended), "
-            "'api' = Anthropic SDK (bills against ANTHROPIC_API_KEY). Default: cc"
         ),
     )
     parser.add_argument(

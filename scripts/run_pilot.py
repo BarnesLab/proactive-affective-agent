@@ -104,12 +104,8 @@ def main():
 
     # Initialize
     loader = DataLoader(data_dir=data_dir)
-    # Map short aliases to full model IDs for agentic agents (SDK)
-    agentic_model_map = {
-        "sonnet": "claude-sonnet-4-6",
-        "haiku": "claude-haiku-4-5-20251001",
-    }
-    agentic_model = agentic_model_map.get(args.model, args.model)
+    # V2/V4 agentic agents now use claude --print (Max subscription, free).
+    # Model aliases ("sonnet", "haiku") are passed directly — no SDK model ID mapping needed.
 
     simulator = PilotSimulator(
         loader=loader,
@@ -118,7 +114,7 @@ def main():
         dry_run=args.dry_run,
         model=args.model,
         delay=args.delay,
-        agentic_model=agentic_model,
+        agentic_model=args.model,  # CC agent uses aliases directly
     )
 
     # Setup (load data)

@@ -1,8 +1,10 @@
 """PilotSimulator: runs the pilot study for CALLM, V1, V2, V3, V4.
 
 2x2 design:
-  V1/V3 (structured) use pre-formatted sensing summaries + single LLM call.
-  V2/V4 (agentic) use tool-use loops over raw sensing data via SensingQueryEngine.
+  V1/V3 (structured) use pre-formatted sensing summaries + single LLM call via claude -p.
+  V2/V4 (agentic) use claude --print + MCP server for tool-use loops over raw sensing data.
+
+All inference routes through Claude Max subscription (free, no API cost).
 
 Iterates users -> EMA entries chronologically -> calls agent.predict() ->
 collects results. Supports checkpointing, dry-run mode, and per-user output.
@@ -25,7 +27,6 @@ from src.data.preprocessing import align_sensing_to_ema, get_user_trait_profile,
 from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
-from src.sense.query_tools import SensingQueryEngine
 from src.think.llm_client import ClaudeCodeClient
 from src.utils.mappings import SENSING_COLUMNS
 
@@ -133,25 +134,23 @@ _REFLECTION_CLIENT = None
 
 
 def _get_reflection_client():
-    """Lazy singleton for Haiku reflection calls — avoids creating a new client per entry."""
+    """Lazy singleton for reflection calls — uses claude -p (free via Max subscription)."""
     global _REFLECTION_CLIENT
     if _REFLECTION_CLIENT is None:
-        import anthropic
-        # FIREWALL: Block paid API usage unless explicitly authorized
-        if not os.environ.get("ALLOW_PAID_API", ""):
-            raise RuntimeError(
-                "BLOCKED: Reflection client uses the Anthropic SDK which bills against your API key. "
-                "Set ALLOW_PAID_API=1 to explicitly authorize paid API usage."
-            )
-        _REFLECTION_CLIENT = anthropic.Anthropic()
+        _REFLECTION_CLIENT = ClaudeCodeClient(
+            model="haiku",
+            timeout=60,
+            max_retries=1,
+            delay_between_calls=0.5,
+        )
     return _REFLECTION_CLIENT
 
 
-def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-20251001") -> str:
+def _generate_reflection(pred: dict, ema_row, model: str = "haiku") -> str:
     """Use a lightweight LLM call to generate a 1-2 sentence reflection.
 
-    Uses Haiku for cost efficiency — reflection is a simple synthesis task.
-    Falls back to a structured text summary if the API call fails.
+    Uses Haiku via claude -p (free via Max subscription).
+    Falls back to a structured text summary if the CLI call fails.
     """
     investigation = _build_investigation_summary(pred)
     prediction = _build_prediction_summary(pred)
@@ -165,15 +164,7 @@ def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-202
 
     try:
         client = _get_reflection_client()
-        response = client.messages.create(
-            model=model,
-            max_tokens=150,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                text += block.text
+        text = client.generate(prompt=prompt)
         return text.strip()
     except Exception as exc:
         logger.warning(f"Reflection LLM call failed: {exc}; using structured fallback")
@@ -257,7 +248,9 @@ class PilotSimulator:
         dry_run: bool = False,
         model: str = "sonnet",
         delay: float = 2.0,
-        agentic_model: str = "claude-sonnet-4-6",
+        agentic_model: str = "sonnet",
+        agentic_max_turns: int = 16,
+        # Legacy params (ignored, kept for backward compat)
         agentic_soft_limit: int = 8,
         agentic_hard_limit: int = 20,
     ) -> None:
@@ -268,8 +261,7 @@ class PilotSimulator:
         self.model = model
         self.delay = delay
         self.agentic_model = agentic_model
-        self.agentic_soft_limit = agentic_soft_limit
-        self.agentic_hard_limit = agentic_hard_limit
+        self.agentic_max_turns = agentic_max_turns
 
         self.reporter = Reporter(output_dir)
 
@@ -280,7 +272,7 @@ class PilotSimulator:
         self._train_df: pd.DataFrame | None = None
         self._retriever: TFIDFRetriever | None = None
         self._mm_retriever: MultiModalRetriever | None = None
-        self._query_engine: SensingQueryEngine | None = None
+        self._processed_dir: Path | None = None  # data/processed/ for V2/V4 CC agents
 
     def setup(self) -> None:
         """Load and prepare all data for the pilot."""
@@ -308,16 +300,13 @@ class PilotSimulator:
         self._mm_retriever.fit(self._train_df, sensing_dfs=self._sensing_dfs)
         logger.info("MultiModal retriever fitted")
 
-        # Build SensingQueryEngine (for V2/V4 agentic tool-use)
-        processed_hourly_dir = self.loader.data_dir / "processed" / "hourly"
-        if processed_hourly_dir.exists():
-            self._query_engine = SensingQueryEngine(
-                processed_dir=processed_hourly_dir,
-                ema_df=self._all_ema,
-            )
-            logger.info("SensingQueryEngine initialized for V2/V4 agentic agents")
+        # Store processed directory path for V2/V4 CC agents (MCP server)
+        processed_dir = self.loader.data_dir / "processed"
+        if processed_dir.exists():
+            self._processed_dir = processed_dir
+            logger.info(f"Processed data dir for V2/V4 CC agents: {processed_dir}")
         else:
-            logger.warning(f"Hourly processed dir not found: {processed_hourly_dir}. V2/V4 will not be available.")
+            logger.warning(f"Processed data dir not found: {processed_dir}. V2/V4 will not be available.")
 
         # Determine pilot users
         if self.pilot_user_ids is None:
@@ -389,10 +378,9 @@ class PilotSimulator:
                 profile=user_data["profile"],
                 memory_doc=user_data["memory"],
                 retriever=retriever,
-                query_engine=self._query_engine if version in ("v2", "v4") else None,
+                processed_dir=self._processed_dir if version in ("v2", "v4") else None,
                 agentic_model=self.agentic_model,
-                agentic_soft_limit=self.agentic_soft_limit,
-                agentic_hard_limit=self.agentic_hard_limit,
+                agentic_max_turns=self.agentic_max_turns,
             )
 
             # Initialize per-user session memory for agentic agents (V2/V4)
