@@ -39,6 +39,47 @@ logger = logging.getLogger(__name__)
 ALL_MODALITY_NAMES = sorted(SENSING_COLUMNS.keys())
 
 
+def _update_session_memory(path: Path, ts: str, ema_row, pred: dict) -> str:
+    """Append receptivity outcome to the per-user session memory file.
+
+    Records only what a deployed JITAI system would observe:
+    diary text + ER_desire raw score + INT_availability.
+    Never writes prediction targets (Individual_level_* states).
+    """
+    er = ema_row.get("ER_desire")
+    avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
+    try:
+        er_val = float(er) if er is not None and str(er) != "nan" else None
+    except (ValueError, TypeError):
+        er_val = None
+
+    er_high = (er_val is not None) and (er_val >= 5)
+    is_avail = avail in ("yes", "1", "true")
+    receptive = er_high and is_avail
+
+    er_str = f"{er_val:.0f}" if er_val is not None else "?"
+    rec_str = "receptive=YES" if receptive else "receptive=no"
+
+    diary = str(ema_row.get("emotion_driver", "") or "").strip()
+    diary_str = f'  Diary: "{diary[:120]}"\n' if diary and diary.lower() != "nan" else ""
+
+    pred_avail = pred.get("INT_availability", "?")
+    pred_confidence = pred.get("confidence", "?")
+
+    entry = (
+        f"### {ts}\n"
+        f"  ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
+        f"{diary_str}"
+        f"  Agent predicted: INT_availability={pred_avail}, confidence={pred_confidence}\n"
+        "\n"
+    )
+
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(entry)
+
+    return path.read_text(encoding="utf-8")
+
+
 def _ema_slot(timestamp_str: str) -> str:
     """Classify an EMA timestamp into morning/afternoon/evening."""
     try:
@@ -165,6 +206,10 @@ class PilotSimulator:
             delay_between_calls=self.delay,
         )
 
+        # Session memory directory (for V2/V4 agentic agents)
+        memory_dir = self.output_dir / "memory"
+        memory_dir.mkdir(exist_ok=True)
+
         for user_data in self._users_data:
             sid = user_data["study_id"]
             n_entries = len(user_data["ema_entries"])
@@ -197,6 +242,23 @@ class PilotSimulator:
                 agentic_hard_limit=self.agentic_hard_limit,
             )
 
+            # Initialize per-user session memory for agentic agents (V2/V4)
+            session_memory: str | None = None
+            if version in ("v2", "v4"):
+                pid_str = str(sid).zfill(3)
+                session_memory_path = memory_dir / f"{version}_user_{pid_str}_session.md"
+                if session_memory_path.exists():
+                    session_memory = session_memory_path.read_text(encoding="utf-8")
+                    logger.info(f"  Session memory: loaded {len(session_memory.splitlines())} lines")
+                else:
+                    session_memory_path.write_text(
+                        f"# Session Memory — Participant {pid_str}\n\n"
+                        "Feedback: diary text + receptivity (ER_desire raw + INT_availability).\n\n"
+                        "## EMA History (accumulated chronologically)\n\n",
+                        encoding="utf-8",
+                    )
+                    session_memory = session_memory_path.read_text(encoding="utf-8")
+
             user_preds = []
             user_gts = []
             user_meta = []
@@ -219,6 +281,7 @@ class PilotSimulator:
                         ema_row=ema_row,
                         sensing_day=sensing_day,
                         date_str=date_str,
+                        session_memory=session_memory,
                     )
                 except Exception as e:
                     logger.error(f"  Error predicting: {e}")
@@ -294,6 +357,15 @@ class PilotSimulator:
                 # Checkpoint after EVERY entry
                 self._checkpoint(version, all_predictions, all_ground_truths, all_metadata,
                                  current_user=sid, current_entry=i)
+
+                # Update session memory for agentic agents (V2/V4)
+                if version in ("v2", "v4") and session_memory is not None:
+                    session_memory = _update_session_memory(
+                        path=session_memory_path,
+                        ts=timestamp_str,
+                        ema_row=ema_row,
+                        pred=clean_pred,
+                    )
 
             # Clear resume state after first resumed user is done
             resume_user = None

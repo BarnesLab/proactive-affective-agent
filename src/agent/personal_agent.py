@@ -99,6 +99,7 @@ class PersonalAgent:
         sensing_day=None,
         date_str: str = "",
         sensing_dfs: dict | None = None,
+        session_memory: str | None = None,
     ) -> dict[str, Any]:
         """Make predictions for a single EMA entry.
 
@@ -107,6 +108,7 @@ class PersonalAgent:
             sensing_day: SensingDay dataclass (needed for V1/V3 structured pipelines).
             date_str: Date string for context.
             sensing_dfs: Not used (kept for backward compatibility).
+            session_memory: Accumulated per-user session memory for V2/V4 agentic agents.
 
         Returns:
             Dict with predictions, metadata, and trace info.
@@ -116,11 +118,11 @@ class PersonalAgent:
         elif self.version == "v1":
             return self._run_v1(sensing_day, date_str)
         elif self.version == "v2":
-            return self._run_v2(ema_row)
+            return self._run_v2(ema_row, session_memory=session_memory)
         elif self.version == "v3":
             return self._run_v3(ema_row, sensing_day, date_str)
         elif self.version == "v4":
-            return self._run_v4(ema_row)
+            return self._run_v4(ema_row, session_memory=session_memory)
         else:
             raise ValueError(f"Unknown version: {self.version}")
 
@@ -181,9 +183,9 @@ class PersonalAgent:
             date_str=date_str,
         )
 
-    def _run_v2(self, ema_row) -> dict[str, Any]:
+    def _run_v2(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
         """V2 Agentic Sensing-Only: autonomous tool-use loop, NO diary text."""
-        return self._v2.predict(ema_row=ema_row)
+        return self._v2.predict(ema_row=ema_row, session_memory=session_memory)
 
     def _run_v3(self, ema_row, sensing_day, date_str: str) -> dict[str, Any]:
         """V3 Structured Full: diary + sensing + multimodal RAG -> structured pipeline."""
@@ -195,11 +197,11 @@ class PersonalAgent:
             date_str=date_str,
         )
 
-    def _run_v4(self, ema_row) -> dict[str, Any]:
+    def _run_v4(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
         """V4 Agentic Multimodal: autonomous tool-use loop + diary text."""
         diary_text = None
         if ema_row is not None:
             diary_text = str(ema_row.get("emotion_driver", ""))
             if diary_text.lower() == "nan" or not diary_text.strip():
                 diary_text = None
-        return self._v4.predict(ema_row=ema_row, diary_text=diary_text)
+        return self._v4.predict(ema_row=ema_row, diary_text=diary_text, session_memory=session_memory)
