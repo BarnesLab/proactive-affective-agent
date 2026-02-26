@@ -294,10 +294,14 @@ class AgenticSensingOnlyAgent:
         prediction["_conversation_length"] = len(messages)
         prediction["_version"] = "v2"
         prediction["_model"] = self.model
-        prediction["_final_response"] = last_text
+        prediction["_system_prompt"] = SYSTEM_PROMPT + PREDICTION_SYSTEM_PROMPT
+        prediction["_full_response"] = last_text  # unified naming
+        prediction["_final_response"] = last_text  # backward compat
         prediction["_input_tokens"] = total_input_tokens
         prediction["_output_tokens"] = total_output_tokens
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
+        prediction["_cost_usd"] = 0  # SDK doesn't return cost; computed post-hoc
+        prediction["_llm_calls"] = round_count  # each round = 1 API call
 
         logger.info(
             f"[V2] User {self.study_id} done: {round_count} rounds ({tool_call_count} tools), "

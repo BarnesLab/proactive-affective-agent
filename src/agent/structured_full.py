@@ -97,6 +97,7 @@ class StructuredFullWorkflow:
 
         # Comprehensive trace
         result["_version"] = "v3"
+        result["_model"] = self.llm.model
         result["_prompt_length"] = len(prompt) + len(system)
         result["_emotion_driver"] = emotion_driver
         result["_has_diary"] = bool(emotion_driver.strip())

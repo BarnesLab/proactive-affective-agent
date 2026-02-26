@@ -69,6 +69,7 @@ class StructuredWorkflow:
 
         # Comprehensive trace
         result["_version"] = "v1"
+        result["_model"] = self.llm.model
         result["_prompt_length"] = len(prompt) + len(system)
         result["_sensing_summary"] = sensing_summary
         result["_full_prompt"] = prompt

@@ -82,6 +82,8 @@ class TestV1StructuredWorkflow:
         bad_llm = MagicMock(spec=ClaudeCodeClient)
         bad_llm.generate.return_value = "Sorry, I cannot predict this."
         bad_llm.dry_run = False
+        bad_llm.model = "sonnet"
+        bad_llm.last_usage = {"input_tokens": 0, "output_tokens": 0}
         wf = StructuredWorkflow(bad_llm)
         result = wf.run(sensing_day=full_sensing_day, memory_doc="", profile=sample_profile)
         assert isinstance(result, dict)

@@ -335,10 +335,17 @@ class AgenticSensingAgent:
         prediction["_conversation_length"] = len(messages)
         prediction["_version"] = "v4"
         prediction["_model"] = self.model
-        prediction["_final_response"] = last_text
+        prediction["_system_prompt"] = SYSTEM_PROMPT + PREDICTION_SYSTEM_PROMPT
+        prediction["_full_response"] = last_text  # unified naming
+        prediction["_final_response"] = last_text  # backward compat
         prediction["_input_tokens"] = total_input_tokens
         prediction["_output_tokens"] = total_output_tokens
         prediction["_total_tokens"] = total_input_tokens + total_output_tokens
+        prediction["_cost_usd"] = 0  # SDK doesn't return cost; computed post-hoc
+        prediction["_llm_calls"] = round_count  # each round = 1 API call
+        prediction["_has_diary"] = bool(diary_text and diary_text.strip() and diary_text.lower() != "nan")
+        prediction["_diary_length"] = len(diary_text) if prediction["_has_diary"] else 0
+        prediction["_emotion_driver"] = diary_text or ""
 
         logger.info(
             f"[V4] User {self.study_id} done: {round_count} rounds ({tool_call_count} tools), "

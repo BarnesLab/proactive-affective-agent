@@ -470,24 +470,33 @@ class PilotSimulator:
                     "timestamp_local": timestamp_str,
                     "ema_slot": _ema_slot(timestamp_str),
                     "version": version,
+                    "model": pred.get("_model", ""),
                     # Data availability
                     "modalities_available": modalities_available,
                     "modalities_missing": modalities_missing,
                     "has_diary": has_diary,
                     "diary_length": diary_length if has_diary else None,
+                    "emotion_driver": pred.get("_emotion_driver", ""),
                     # Prediction & ground truth
                     "prediction": clean_pred,
                     "ground_truth": gt,
                     "reasoning": pred.get("reasoning", pred.get("_reasoning", "")),
                     "confidence": pred.get("confidence", 0.0),
-                    # Context given to LLM
+                    # Context given to LLM (structured versions)
                     "prompt_length": pred.get("_prompt_length"),
+                    "full_prompt": pred.get("_full_prompt", ""),
+                    "system_prompt": pred.get("_system_prompt", ""),
                     "sensing_summary": pred.get("_sensing_summary", ""),
                     "rag_cases": pred.get("_rag_top5", []),
                     "memory_excerpt": pred.get("_memory_excerpt", ""),
+                    "trait_summary": pred.get("_trait_summary", ""),
                     # LLM response
                     "full_response": pred.get("_full_response", pred.get("_final_response", "")),
-                    "system_prompt": pred.get("_system_prompt", ""),
+                    # Agentic-specific (V2/V4)
+                    "n_tool_calls": pred.get("_n_tool_calls"),
+                    "n_rounds": pred.get("_n_rounds"),
+                    "tool_calls": pred.get("_tool_calls"),
+                    "conversation_length": pred.get("_conversation_length"),
                     # Performance
                     "elapsed_seconds": round(elapsed, 3),
                     "llm_calls": pred.get("_llm_calls", 1),
