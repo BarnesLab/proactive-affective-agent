@@ -39,13 +39,63 @@ logger = logging.getLogger(__name__)
 ALL_MODALITY_NAMES = sorted(SENSING_COLUMNS.keys())
 
 
-def _update_session_memory(path: Path, ts: str, ema_row, pred: dict) -> str:
-    """Append receptivity outcome to the per-user session memory file.
+REFLECTION_PROMPT = """You are reflecting on a just-completed emotional state prediction for a cancer survivor.
 
-    Records only what a deployed JITAI system would observe:
-    diary text + ER_desire raw score + INT_availability.
-    Never writes prediction targets (Individual_level_* states).
-    """
+Below is the context of what you investigated, what you predicted, and what the user actually reported. Write a concise reflection (3-5 sentences) that will help you make better predictions next time for THIS specific person.
+
+Your reflection should cover:
+1. What data you looked at and what it suggested
+2. Where your prediction was right or wrong relative to the actual outcome
+3. What you would do differently next time (e.g., which signals to weight more/less, which tools were most/least informative)
+
+## What I Investigated
+{investigation_summary}
+
+## What I Predicted
+{prediction_summary}
+
+## What Actually Happened
+{actual_outcome}
+
+Write ONLY the reflection paragraph — no headers, no JSON, no preamble."""
+
+
+def _build_investigation_summary(pred: dict) -> str:
+    """Summarize the agent's tool calls into a readable investigation log."""
+    tool_calls = pred.get("_tool_calls", [])
+    if not tool_calls:
+        n_tools = pred.get("_n_tool_calls", pred.get("n_tool_calls", "?"))
+        reasoning = pred.get("reasoning", "")
+        return f"Used {n_tools} tool calls. Reasoning: {reasoning[:300] if reasoning else '(none)'}"
+
+    lines = []
+    for tc in tool_calls:
+        name = tc.get("tool_name", "?")
+        inp = tc.get("input", {})
+        preview = tc.get("result_preview", "")[:200]
+        lines.append(f"- {name}({json.dumps(inp)}) → {preview}")
+
+    n_rounds = pred.get("_n_rounds", "?")
+    header = f"Investigation: {len(tool_calls)} tool calls across {n_rounds} rounds"
+    return header + "\n" + "\n".join(lines)
+
+
+def _build_prediction_summary(pred: dict) -> str:
+    """Summarize the agent's prediction for reflection."""
+    parts = []
+    for key in ("PANAS_Pos", "PANAS_Neg", "ER_desire"):
+        val = pred.get(key, "?")
+        parts.append(f"{key}={val}")
+    parts.append(f"INT_availability={pred.get('INT_availability', '?')}")
+    parts.append(f"confidence={pred.get('confidence', '?')}")
+    reasoning = pred.get("reasoning", "")
+    if reasoning:
+        parts.append(f"Reasoning: {str(reasoning)[:300]}")
+    return ", ".join(parts[:5]) + ("\n" + parts[5] if len(parts) > 5 else "")
+
+
+def _build_actual_outcome(ema_row) -> str:
+    """Summarize the actual EMA outcome for reflection."""
     er = ema_row.get("ER_desire")
     avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
     try:
@@ -56,22 +106,91 @@ def _update_session_memory(path: Path, ts: str, ema_row, pred: dict) -> str:
     er_high = (er_val is not None) and (er_val >= 5)
     is_avail = avail in ("yes", "1", "true")
     receptive = er_high and is_avail
+    rec_str = "RECEPTIVE" if receptive else "NOT receptive"
 
     er_str = f"{er_val:.0f}" if er_val is not None else "?"
-    rec_str = "receptive=YES" if receptive else "receptive=no"
 
     diary = str(ema_row.get("emotion_driver", "") or "").strip()
-    diary_str = f'  Diary: "{diary[:120]}"\n' if diary and diary.lower() != "nan" else ""
+    diary_str = f'Diary: "{diary[:150]}"' if diary and diary.lower() != "nan" else "No diary"
 
-    pred_avail = pred.get("INT_availability", "?")
-    pred_confidence = pred.get("confidence", "?")
+    panas_pos = ema_row.get("PANAS_Pos", "?")
+    panas_neg = ema_row.get("PANAS_Neg", "?")
+
+    return (
+        f"ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
+        f"PANAS_Pos={panas_pos}, PANAS_Neg={panas_neg}\n"
+        f"{diary_str}"
+    )
+
+
+def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-20251001") -> str:
+    """Use a lightweight LLM call to generate a concise reflection.
+
+    Uses Haiku for cost efficiency — reflection is a simple synthesis task.
+    Falls back to a structured text summary if the API call fails.
+    """
+    investigation = _build_investigation_summary(pred)
+    prediction = _build_prediction_summary(pred)
+    actual = _build_actual_outcome(ema_row)
+
+    prompt = REFLECTION_PROMPT.format(
+        investigation_summary=investigation,
+        prediction_summary=prediction,
+        actual_outcome=actual,
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model=model,
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text += block.text
+        return text.strip()
+    except Exception as exc:
+        logger.warning(f"Reflection LLM call failed: {exc}; using structured fallback")
+        # Fallback: just record the facts without LLM reflection
+        reasoning = pred.get("reasoning", "")
+        r = str(reasoning).strip()[:200] if reasoning else "(no reasoning)"
+        return f"Investigation used {pred.get('_n_tool_calls', '?')} tool calls. Predicted based on: {r}"
+
+
+def _update_session_memory(
+    path: Path, ts: str, ema_row, pred: dict, model: str = "claude-haiku-4-5-20251001"
+) -> str:
+    """Append structured reflection entry to session memory.
+
+    For each completed prediction, records:
+    1. What the agent investigated (tool calls + data queried)
+    2. What the agent predicted
+    3. What actually happened (receptivity ground truth + diary)
+    4. LLM-generated reflection on calibration and strategy
+
+    This enables the agent to self-calibrate and improve its investigation
+    strategy over time through accumulated in-context reflections.
+
+    Never writes Individual_level_* prediction targets.
+    """
+    # Build the factual summary components
+    investigation = _build_investigation_summary(pred)
+    prediction = _build_prediction_summary(pred)
+    actual = _build_actual_outcome(ema_row)
+
+    # Generate reflection via LLM
+    reflection = _generate_reflection(pred, ema_row, model=model)
 
     entry = (
         f"### {ts}\n"
-        f"  ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
-        f"{diary_str}"
-        f"  Agent predicted: INT_availability={pred_avail}, confidence={pred_confidence}\n"
-        "\n"
+        f"**Investigated:** {investigation}\n\n"
+        f"**Predicted:** {prediction}\n\n"
+        f"**Actual:** {actual}\n\n"
+        f"**Reflection:** {reflection}\n\n"
+        "---\n\n"
     )
 
     with open(path, "a", encoding="utf-8") as f:
@@ -253,7 +372,8 @@ class PilotSimulator:
                 else:
                     session_memory_path.write_text(
                         f"# Session Memory — Participant {pid_str}\n\n"
-                        "Feedback: diary text + receptivity (ER_desire raw + INT_availability).\n\n"
+                        "Each entry records: what I investigated, what I predicted, what actually happened, and my reflection.\n"
+                        "Use these reflections to calibrate predictions and improve investigation strategy.\n\n"
                         "## EMA History (accumulated chronologically)\n\n",
                         encoding="utf-8",
                     )
@@ -359,13 +479,18 @@ class PilotSimulator:
                                  current_user=sid, current_entry=i)
 
                 # Update session memory for agentic agents (V2/V4)
+                # Generates an LLM reflection on what the agent investigated,
+                # predicted vs actual outcome, and strategy improvements.
                 if version in ("v2", "v4") and session_memory is not None:
-                    session_memory = _update_session_memory(
-                        path=session_memory_path,
-                        ts=timestamp_str,
-                        ema_row=ema_row,
-                        pred=clean_pred,
-                    )
+                    try:
+                        session_memory = _update_session_memory(
+                            path=session_memory_path,
+                            ts=timestamp_str,
+                            ema_row=ema_row,
+                            pred=pred,
+                        )
+                    except Exception as e:
+                        logger.warning(f"  Session memory update failed: {e}")
 
             # Clear resume state after first resumed user is done
             resume_user = None
