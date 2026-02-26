@@ -41,61 +41,71 @@ ALL_MODALITY_NAMES = sorted(SENSING_COLUMNS.keys())
 
 REFLECTION_PROMPT = """You are reflecting on a just-completed emotional state prediction for a cancer survivor.
 
-Below is the context of what you investigated, what you predicted, and what the user actually reported. Write a concise reflection (3-5 sentences) that will help you make better predictions next time for THIS specific person.
+Write a 1-2 sentence reflection that captures the single most important calibration lesson for next time. Be specific about THIS person's patterns. No headers, no JSON.
 
-Your reflection should cover:
-1. What data you looked at and what it suggested
-2. Where your prediction was right or wrong relative to the actual outcome
-3. What you would do differently next time (e.g., which signals to weight more/less, which tools were most/least informative)
-
-## What I Investigated
+## Investigated
 {investigation_summary}
 
-## What I Predicted
+## Predicted
 {prediction_summary}
 
-## What Actually Happened
-{actual_outcome}
-
-Write ONLY the reflection paragraph — no headers, no JSON, no preamble."""
+## Actual
+{actual_outcome}"""
 
 
 def _build_investigation_summary(pred: dict) -> str:
-    """Summarize the agent's tool calls into a readable investigation log."""
+    """Summarize the agent's tool calls into a compact investigation log.
+
+    Kept brief to fit within session memory trim window. Full tool call
+    details are preserved in trace files for post-hoc analysis.
+    """
     tool_calls = pred.get("_tool_calls", [])
     if not tool_calls:
         n_tools = pred.get("_n_tool_calls", pred.get("n_tool_calls", "?"))
-        reasoning = pred.get("reasoning", "")
-        return f"Used {n_tools} tool calls. Reasoning: {reasoning[:300] if reasoning else '(none)'}"
+        return f"Used {n_tools} tool calls."
 
-    lines = []
+    # Compact: just tool names and key parameters (no result previews)
+    tool_names = []
     for tc in tool_calls:
         name = tc.get("tool_name", "?")
         inp = tc.get("input", {})
-        preview = tc.get("result_preview", "")[:200]
-        lines.append(f"- {name}({json.dumps(inp)}) → {preview}")
+        # Extract the most informative parameter for each tool
+        if name == "query_sensing":
+            tool_names.append(f"{name}({inp.get('modality', '?')}, {inp.get('hours_before_ema', '?')}h)")
+        elif name == "query_raw_events":
+            tool_names.append(f"{name}({inp.get('modality', '?')}, {inp.get('hours_before_ema', '?')}h)")
+        elif name == "get_daily_summary":
+            tool_names.append(f"{name}({inp.get('date', '?')}, +{inp.get('lookback_days', 0)}d)")
+        elif name == "compare_to_baseline":
+            tool_names.append(f"{name}({inp.get('feature', '?')})")
+        else:
+            tool_names.append(name)
 
     n_rounds = pred.get("_n_rounds", "?")
-    header = f"Investigation: {len(tool_calls)} tool calls across {n_rounds} rounds"
-    return header + "\n" + "\n".join(lines)
+    return f"{len(tool_calls)} tools, {n_rounds} rounds: {', '.join(tool_names)}"
 
 
 def _build_prediction_summary(pred: dict) -> str:
-    """Summarize the agent's prediction for reflection."""
-    parts = []
-    for key in ("PANAS_Pos", "PANAS_Neg", "ER_desire"):
-        val = pred.get(key, "?")
-        parts.append(f"{key}={val}")
-    parts.append(f"INT_availability={pred.get('INT_availability', '?')}")
-    parts.append(f"confidence={pred.get('confidence', '?')}")
+    """Summarize the agent's prediction for the Haiku reflection call."""
+    parts = [
+        f"ER_desire={pred.get('ER_desire', '?')}",
+        f"avail={pred.get('INT_availability', '?')}",
+        f"conf={pred.get('confidence', '?')}",
+    ]
     reasoning = pred.get("reasoning", "")
     if reasoning:
-        parts.append(f"Reasoning: {str(reasoning)[:300]}")
-    return ", ".join(parts[:5]) + ("\n" + parts[5] if len(parts) > 5 else "")
+        parts.append(f"Reasoning: {str(reasoning)[:200]}")
+    return ", ".join(parts)
 
 
 def _build_actual_outcome(ema_row) -> str:
-    """Summarize the actual EMA outcome for reflection."""
+    """Summarize the actual EMA outcome for reflection.
+
+    Only includes information a deployed JITAI system would observe:
+    ER_desire, INT_availability, and diary text. NEVER includes PANAS scores
+    or Individual_level_* labels — those are prediction targets and including
+    them would constitute data leakage into future predictions.
+    """
     er = ema_row.get("ER_desire")
     avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
     try:
@@ -113,18 +123,26 @@ def _build_actual_outcome(ema_row) -> str:
     diary = str(ema_row.get("emotion_driver", "") or "").strip()
     diary_str = f'Diary: "{diary[:150]}"' if diary and diary.lower() != "nan" else "No diary"
 
-    panas_pos = ema_row.get("PANAS_Pos", "?")
-    panas_neg = ema_row.get("PANAS_Neg", "?")
-
     return (
         f"ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
-        f"PANAS_Pos={panas_pos}, PANAS_Neg={panas_neg}\n"
         f"{diary_str}"
     )
 
 
+_REFLECTION_CLIENT = None
+
+
+def _get_reflection_client():
+    """Lazy singleton for Haiku reflection calls — avoids creating a new client per entry."""
+    global _REFLECTION_CLIENT
+    if _REFLECTION_CLIENT is None:
+        import anthropic
+        _REFLECTION_CLIENT = anthropic.Anthropic()
+    return _REFLECTION_CLIENT
+
+
 def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-20251001") -> str:
-    """Use a lightweight LLM call to generate a concise reflection.
+    """Use a lightweight LLM call to generate a 1-2 sentence reflection.
 
     Uses Haiku for cost efficiency — reflection is a simple synthesis task.
     Falls back to a structured text summary if the API call fails.
@@ -140,11 +158,10 @@ def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-202
     )
 
     try:
-        import anthropic
-        client = anthropic.Anthropic()
+        client = _get_reflection_client()
         response = client.messages.create(
             model=model,
-            max_tokens=300,
+            max_tokens=150,
             messages=[{"role": "user", "content": prompt}],
         )
         text = ""
@@ -154,10 +171,9 @@ def _generate_reflection(pred: dict, ema_row, model: str = "claude-haiku-4-5-202
         return text.strip()
     except Exception as exc:
         logger.warning(f"Reflection LLM call failed: {exc}; using structured fallback")
-        # Fallback: just record the facts without LLM reflection
         reasoning = pred.get("reasoning", "")
-        r = str(reasoning).strip()[:200] if reasoning else "(no reasoning)"
-        return f"Investigation used {pred.get('_n_tool_calls', '?')} tool calls. Predicted based on: {r}"
+        r = str(reasoning).strip()[:100] if reasoning else "(no reasoning)"
+        return f"Predicted based on: {r}"
 
 
 def _update_session_memory(
@@ -184,13 +200,25 @@ def _update_session_memory(
     # Generate reflection via LLM
     reflection = _generate_reflection(pred, ema_row, model=model)
 
+    # Compact format: ~300-500 chars per entry, so 4-6 fit in 2000 chars
+    er = ema_row.get("ER_desire")
+    avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
+    try:
+        er_val = float(er) if er is not None and str(er) != "nan" else None
+    except (ValueError, TypeError):
+        er_val = None
+    er_str = f"{er_val:.0f}" if er_val is not None else "?"
+    pred_er = pred.get("ER_desire", "?")
+    pred_avail = pred.get("INT_availability", "?")
+
+    diary = str(ema_row.get("emotion_driver", "") or "").strip()
+    diary_bit = f' | "{diary[:80]}"' if diary and diary.lower() != "nan" else ""
+
     entry = (
-        f"### {ts}\n"
-        f"**Investigated:** {investigation}\n\n"
-        f"**Predicted:** {prediction}\n\n"
-        f"**Actual:** {actual}\n\n"
-        f"**Reflection:** {reflection}\n\n"
-        "---\n\n"
+        f"- **{ts}**: {investigation}\n"
+        f"  Pred: ER={pred_er}, avail={pred_avail}, conf={pred.get('confidence', '?')}\n"
+        f"  Actual: ER={er_str}, avail={avail}{diary_bit}\n"
+        f"  Lesson: {reflection}\n\n"
     )
 
     with open(path, "a", encoding="utf-8") as f:

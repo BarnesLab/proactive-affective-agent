@@ -326,7 +326,7 @@ class AgenticSensingOnlyAgent:
 
         session_section = ""
         if session_memory and session_memory.strip():
-            trimmed = session_memory[-2000:] if len(session_memory) > 2000 else session_memory
+            trimmed = session_memory[-6000:] if len(session_memory) > 6000 else session_memory
             session_section = f"""## Accumulated Session Memory (your prior observations of this person)
 {trimmed}
 """

@@ -271,7 +271,7 @@ class ClaudeCodeAgent:
 
         session_section = ""
         if session_memory and session_memory.strip():
-            trimmed = session_memory[-2000:] if len(session_memory) > 2000 else session_memory
+            trimmed = session_memory[-6000:] if len(session_memory) > 6000 else session_memory
             session_section = f"\n## Accumulated Session Memory (your prior observations of this person)\n{trimmed}\n"
 
         return f"""You are investigating participant {self.pid}'s behavioral data to predict their emotional state.
