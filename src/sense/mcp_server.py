@@ -45,7 +45,7 @@ _args = _parse_args()
 _study_id: int = _args.study_id
 _ema_timestamp: str = _args.ema_timestamp
 _ema_date: str = _args.ema_date or _ema_timestamp[:10]
-_data_dir: Path = Path(_args.data_dir) if _args.data_dir else PROJECT_ROOT / "data" / "processed"
+_data_dir: Path = Path(_args.data_dir) if _args.data_dir else PROJECT_ROOT / "data" / "processed" / "hourly"
 
 # ---------------------------------------------------------------------------
 # Lazy-init SensingQueryEngine (imports pandas/numpy — avoid at module level)

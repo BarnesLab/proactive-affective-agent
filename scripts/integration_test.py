@@ -398,7 +398,7 @@ def test_v2(ema_row, profile, logger, model="sonnet", dry_run=False):
         study_id=int(ema_row.get("Study_ID", 0)),
         profile=profile,
         memory_doc="(Integration test — no memory document.)",
-        processed_dir=PROCESSED_DIR.parent,  # data/processed/
+        processed_dir=PROCESSED_DIR,  # data/processed/hourly/
         model=model,
         max_turns=8,  # Limit turns for testing
         mode="sensing_only",
@@ -434,7 +434,7 @@ def test_v4(ema_row, profile, logger, model="sonnet", dry_run=False):
         study_id=int(ema_row.get("Study_ID", 0)),
         profile=profile,
         memory_doc="(Integration test — no memory document.)",
-        processed_dir=PROCESSED_DIR.parent,  # data/processed/
+        processed_dir=PROCESSED_DIR,  # data/processed/hourly/
         model=model,
         max_turns=8,  # Limit turns for testing
         mode="multimodal",

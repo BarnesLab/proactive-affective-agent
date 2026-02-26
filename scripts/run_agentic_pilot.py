@@ -106,9 +106,9 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Validate processed data directory (used by MCP server in CC agent)
     # ------------------------------------------------------------------
-    processed_dir = (Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data") / "processed"
+    processed_dir = (Path(args.data_dir) if args.data_dir else PROJECT_ROOT / "data") / "processed" / "hourly"
     if not processed_dir.exists():
-        logger.error(f"Processed data directory not found: {processed_dir}")
+        logger.error(f"Processed hourly data directory not found: {processed_dir}")
         logger.error("Run scripts/offline/run_phase1.sh first to generate Parquet files.")
         sys.exit(1)
     logger.info(f"Processed data dir for CC agent MCP server: {processed_dir}")

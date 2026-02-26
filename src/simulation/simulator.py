@@ -300,13 +300,14 @@ class PilotSimulator:
         self._mm_retriever.fit(self._train_df, sensing_dfs=self._sensing_dfs)
         logger.info("MultiModal retriever fitted")
 
-        # Store processed directory path for V2/V4 CC agents (MCP server)
-        processed_dir = self.loader.data_dir / "processed"
-        if processed_dir.exists():
-            self._processed_dir = processed_dir
-            logger.info(f"Processed data dir for V2/V4 CC agents: {processed_dir}")
+        # Store processed hourly directory path for V2/V4 CC agents (MCP server).
+        # SensingQueryEngine expects the hourly/ subdirectory as its root.
+        processed_hourly_dir = self.loader.data_dir / "processed" / "hourly"
+        if processed_hourly_dir.exists():
+            self._processed_dir = processed_hourly_dir
+            logger.info(f"Processed data dir for V2/V4 CC agents: {processed_hourly_dir}")
         else:
-            logger.warning(f"Processed data dir not found: {processed_dir}. V2/V4 will not be available.")
+            logger.warning(f"Processed hourly dir not found: {processed_hourly_dir}. V2/V4 will not be available.")
 
         # Determine pilot users
         if self.pilot_user_ids is None:
