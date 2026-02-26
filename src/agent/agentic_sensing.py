@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -144,6 +145,12 @@ class AgenticSensingAgent:
         self.profile = profile
         self.memory_doc = memory_doc
         self.engine = query_engine
+        # FIREWALL: Block paid API usage unless explicitly authorized
+        if not os.environ.get("ALLOW_PAID_API", ""):
+            raise RuntimeError(
+                "BLOCKED: V4 uses the Anthropic SDK which bills against your API key. "
+                "Set ALLOW_PAID_API=1 to explicitly authorize paid API usage."
+            )
         self.client = anthropic.Anthropic()
         self.model = model
         self.soft_limit = soft_limit

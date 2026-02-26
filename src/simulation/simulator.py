@@ -137,6 +137,12 @@ def _get_reflection_client():
     global _REFLECTION_CLIENT
     if _REFLECTION_CLIENT is None:
         import anthropic
+        # FIREWALL: Block paid API usage unless explicitly authorized
+        if not os.environ.get("ALLOW_PAID_API", ""):
+            raise RuntimeError(
+                "BLOCKED: Reflection client uses the Anthropic SDK which bills against your API key. "
+                "Set ALLOW_PAID_API=1 to explicitly authorize paid API usage."
+            )
         _REFLECTION_CLIENT = anthropic.Anthropic()
     return _REFLECTION_CLIENT
 

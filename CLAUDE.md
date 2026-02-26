@@ -17,9 +17,18 @@ Plus **CALLM** baseline (diary + TF-IDF RAG, structured output).
 - **V1/V3/CALLM**: `claude -p` CLI via `ClaudeCodeClient` (Max subscription, no API cost)
 - **V2/V4**: Anthropic Python SDK with tool-use loop (requires `ANTHROPIC_API_KEY`, incurs cost)
 
+### API Cost Firewall (CRITICAL)
+- **NEVER use paid API keys (Anthropic/OpenAI) without explicit user authorization**
+- V2/V4 and reflection client have a runtime guard: they CRASH unless `ALLOW_PAID_API=1` is set
+- To run V2/V4: `ALLOW_PAID_API=1 python scripts/run_pilot.py --version v4 ...`
+- The `.env` file with API keys has been deleted. Do NOT recreate it.
+- Do NOT set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in any file or environment
+- Prefer `claude -p` CLI path (Max subscription, free) for ALL experiments
+
 ### Model
-- **All versions must use Sonnet** (`claude-sonnet-4-6` for SDK, `"sonnet"` for CLI)
-- Never use Opus for experiments (cost). Never use Haiku (quality).
+- During testing phase: use **Haiku** for speed and cost
+- For final experiments: use **Sonnet** (`claude-sonnet-4-6` for SDK, `"sonnet"` for CLI)
+- Never use Opus for experiments (cost).
 
 ## Critical Files
 
