@@ -1,10 +1,7 @@
 """Tests for V1/V3/CALLM structured workflows and PersonalAgent dispatch.
 
-V2/V4 (agentic tool-use) require Anthropic API and SensingQueryEngine,
+V2/V4 (agentic tool-use) use claude --print + MCP server (cc_agent.py),
 so they are tested via integration tests, not unit tests here.
-The old autonomous.py and autonomous_full.py (single-call "autonomous" agents)
-have been superseded by the agentic tool-use agents in agentic_sensing_only.py
-and agentic_sensing.py respectively.
 
 2x2 design:
                     Structured (fixed pipeline)    Agentic (autonomous tool-use)
@@ -186,9 +183,9 @@ class TestPersonalAgentDispatch:
         result = agent.predict(sensing_day=full_sensing_day, date_str="2023-11-20")
         assert isinstance(result, dict)
 
-    def test_v2_requires_query_engine(self):
-        """V2 (agentic) raises ValueError if no query_engine provided."""
-        with pytest.raises(ValueError, match="SensingQueryEngine"):
+    def test_v2_requires_processed_dir(self):
+        """V2 (agentic) raises ValueError if no processed_dir provided."""
+        with pytest.raises(ValueError, match="processed_dir"):
             self._make_agent("v2")
 
     def test_v3_dispatches_correctly(self, sample_ema_row, full_sensing_day):
@@ -196,9 +193,9 @@ class TestPersonalAgentDispatch:
         result = agent.predict(ema_row=sample_ema_row, sensing_day=full_sensing_day, date_str="2023-11-20")
         assert isinstance(result, dict)
 
-    def test_v4_requires_query_engine(self):
-        """V4 (agentic) raises ValueError if no query_engine provided."""
-        with pytest.raises(ValueError, match="SensingQueryEngine"):
+    def test_v4_requires_processed_dir(self):
+        """V4 (agentic) raises ValueError if no processed_dir provided."""
+        with pytest.raises(ValueError, match="processed_dir"):
             self._make_agent("v4")
 
     def test_invalid_version_raises(self):

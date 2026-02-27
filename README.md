@@ -211,11 +211,7 @@ src/
 │   ├── personal_agent.py         # PersonalAgent dispatcher (CALLM/V1-V4)
 │   ├── structured.py             # V1: sensing-only, fixed pipeline
 │   ├── structured_full.py        # V3: multimodal (diary+sensing), fixed pipeline
-│   ├── agentic_sensing_only.py   # V2: sensing-only, autonomous tool-use
-│   ├── agentic_sensing.py        # V4: multimodal, autonomous tool-use (key contribution)
-│   ├── cc_agent.py               # V4-CC: Claude Code subprocess variant of V4
-│   ├── autonomous.py             # (deprecated) old single-call "autonomous" agent
-│   └── autonomous_full.py        # (deprecated) old single-call "autonomous full" agent
+│   └── cc_agent.py               # V2/V4: agentic agent via claude --print + MCP server
 ├── sense/
 │   ├── query_tools.py         # SensingQueryEngine + SENSING_TOOLS (SDK format)
 │   └── features.py            # HourlyFeatureLoader and feature extractors

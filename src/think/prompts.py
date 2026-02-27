@@ -1,13 +1,12 @@
 """Prompt templates for CALLM + V1/V3 structured agent versions.
 
-V2/V4 (agentic) use their own system prompts in agentic_sensing_only.py and
-agentic_sensing.py respectively — they don't use templates from here because
-their prompts are constructed dynamically within the tool-use loop.
+V2/V4 (agentic) build their prompts dynamically in cc_agent.py via
+claude --print + MCP server — they don't use templates from here.
 
 2x2 design:
                     Structured (fixed pipeline)    Agentic (autonomous tool-use)
-  Sensing-only      V1 (prompts here)              V2 (own prompts)
-  Multimodal        V3 (prompts here)              V4 (own prompts)
+  Sensing-only      V1 (prompts here)              V2 (cc_agent.py)
+  Multimodal        V3 (prompts here)              V4 (cc_agent.py)
 
   CALLM: diary + TF-IDF RAG — CHI 2025 baseline (prompts here)
 """
@@ -235,48 +234,6 @@ def format_sensing_summary(sensing_day) -> str:
     return "\n\n".join(sections) if sections else "Minimal sensing data available."
 
 
-# --- DEPRECATED: Old V2 single-call prompts (kept for backward compat with autonomous.py) ---
-# The real V2 is now an agentic tool-use agent in agentic_sensing_only.py with its own prompts.
-
-def v2_system_prompt(trait_profile: str) -> str:
-    """System prompt for V2 autonomous workflow."""
-    return f"""{CONTEXT_NOTE}
-
-You are an autonomous AI agent that predicts cancer survivors' emotional states.
-You receive all available sensing data and user context, then freely reason about
-the most informative signals before making your prediction.
-
-## User Profile
-{trait_profile}
-
-{OUTPUT_FORMAT}"""
-
-
-def v2_prompt(
-    sensing_summary: str,
-    memory_doc: str,
-    date_str: str = "",
-) -> str:
-    """Single-call prompt for V2 autonomous agent with full context."""
-    return f"""## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
-{sensing_summary}
-
-## User Memory (longitudinal emotional trajectory)
-{memory_doc[:3000] if memory_doc else "No memory document available."}
-
-## Instructions
-You have full access to this user's sensing data and history above.
-Reason autonomously — decide which signals matter most for THIS specific user
-and situation. Consider:
-
-- Which sensing signals are most informative given this user's profile and history?
-- Are there unusual patterns compared to what you know about this user?
-- How do different signals corroborate or contradict each other?
-- What is the most likely emotional state given ALL available evidence?
-
-Think through the evidence, then provide your prediction as JSON."""
-
-
 # --- V3 Structured Full (diary + sensing + multimodal RAG) ---
 
 def v3_system_prompt() -> str:
@@ -347,57 +304,6 @@ Analyze all available data following these 5 steps:
    cross-modal patterns, similar cases, and user history — into a final prediction.
 
 Based on your analysis, provide your predictions as JSON."""
-
-
-# --- DEPRECATED: Old V4 single-call prompts (kept for backward compat with autonomous_full.py) ---
-# The real V4 is now an agentic tool-use agent in agentic_sensing.py with its own prompts.
-
-def v4_system_prompt(trait_profile: str) -> str:
-    """System prompt for V4 autonomous full workflow."""
-    return f"""{CONTEXT_NOTE}
-
-You are an autonomous AI agent that predicts cancer survivors' emotional states.
-You receive diary text, passive sensing data, similar cases from other participants,
-and user history. You freely decide how to weigh and reason about all evidence.
-
-## User Profile
-{trait_profile}
-
-{OUTPUT_FORMAT}"""
-
-
-def v4_prompt(
-    emotion_driver: str,
-    sensing_summary: str,
-    rag_examples: str,
-    memory_doc: str,
-    date_str: str = "",
-) -> str:
-    """Single-call prompt for V4 autonomous agent with all data modalities."""
-    return f"""## Current Diary Entry{f' ({date_str})' if date_str else ''}
-"{emotion_driver}"
-
-## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
-{sensing_summary}
-
-## Similar Cases from Other Participants (diary + sensing + outcomes)
-{rag_examples}
-
-## User Memory (longitudinal emotional trajectory)
-{memory_doc[:3000] if memory_doc else "No memory document available."}
-
-## Instructions
-You have this user's diary entry, sensing data, similar cases, and history above.
-Reason autonomously — decide which signals and data modalities matter most for
-THIS specific user and situation. Consider:
-
-- Which combination of diary + sensing signals is most informative?
-- Are there unusual patterns compared to this user's history?
-- Do diary text and sensing data corroborate or contradict each other?
-- How do similar cases' outcomes inform your prediction?
-- What is the most likely emotional state given ALL available evidence?
-
-Think through the evidence, then provide your prediction as JSON."""
 
 
 # --- Shared helpers ---

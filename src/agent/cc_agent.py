@@ -1,8 +1,6 @@
 """Unified agentic agent using claude --print subprocess (Max subscription, FREE).
 
-Replaces the SDK-based V2 (agentic_sensing_only.py) and V4 (agentic_sensing.py) agents
-which required ANTHROPIC_API_KEY and billed against the paid API.
-
+Implements V2 (sensing-only) and V4 (multimodal) agentic agents.
 Uses claude --print + MCP server to run the agentic tool-use loop. All inference
 is routed through the user's Claude Max subscription (no API cost).
 

@@ -259,7 +259,7 @@ class TestCompactFormat:
             )
 
         content = path.read_text()
-        # Simulate the trim that happens in agentic_sensing.py
+        # Simulate the trim that happens in cc_agent.py
         trimmed = content[-6000:] if len(content) > 6000 else content
         # Should contain at least some complete entries (starting with "- **")
         complete_entries = [l for l in trimmed.split("\n") if l.startswith("- **")]

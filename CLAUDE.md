@@ -13,30 +13,23 @@ LLM-based emotional state prediction for cancer survivors using passive smartpho
 
 Plus **CALLM** baseline (diary + TF-IDF RAG, structured output).
 
-### Backend Split
-- **V1/V3/CALLM**: `claude -p` CLI via `ClaudeCodeClient` (Max subscription, no API cost)
-- **V2/V4**: Anthropic Python SDK with tool-use loop (requires `ANTHROPIC_API_KEY`, incurs cost)
-
-### API Cost Firewall (CRITICAL)
-- **NEVER use paid API keys (Anthropic/OpenAI) without explicit user authorization**
-- V2/V4 and reflection client have a runtime guard: they CRASH unless `ALLOW_PAID_API=1` is set
-- To run V2/V4: `ALLOW_PAID_API=1 python scripts/run_pilot.py --version v4 ...`
-- The `.env` file with API keys has been deleted. Do NOT recreate it.
-- Do NOT set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in any file or environment
-- Prefer `claude -p` CLI path (Max subscription, free) for ALL experiments
+### Backend (All Free — Claude Max Subscription)
+- **V1/V3/CALLM**: `claude -p` CLI via `ClaudeCodeClient`
+- **V2/V4**: `claude --print` + MCP server via `AgenticCCAgent` (cc_agent.py)
+- All inference is free through Max subscription — no paid API keys used anywhere
+- Limit concurrent `claude --print` processes to ~5 to avoid Max rate limits
 
 ### Model
-- During testing phase: use **Haiku** for speed and cost
-- For final experiments: use **Sonnet** (`claude-sonnet-4-6` for SDK, `"sonnet"` for CLI)
-- Never use Opus for experiments (cost).
+- During testing phase: use **Haiku** for speed
+- For final experiments: use **Sonnet** (`"sonnet"` for CLI)
+- Never use Opus for experiments.
 
 ## Critical Files
 
 | Path | Purpose |
 |------|---------|
 | `src/agent/personal_agent.py` | Unified agent entry point (routes to V1-V4/CALLM) |
-| `src/agent/agentic_sensing.py` | V4 agentic agent (SDK tool-use loop) |
-| `src/agent/agentic_sensing_only.py` | V2 agentic agent (no diary) |
+| `src/agent/cc_agent.py` | V2/V4 agentic agent (claude --print + MCP) |
 | `src/agent/structured.py` | V1 structured sensing-only |
 | `src/agent/structured_full.py` | V3 structured multimodal |
 | `src/sense/query_tools.py` | SensingQueryEngine — Parquet-backed tool definitions |
@@ -64,10 +57,9 @@ python3 scripts/integration_test.py --versions v2,v4 --n-entries 5  # agentic on
 ```
 
 ## Known Issues / Gotchas
-1. **Parallel tool calls**: Anthropic models may issue multiple `tool_use` blocks in one response. ALL must have matching `tool_result` blocks — cannot break mid-batch. Fixed in session 4.
-2. **V4 pilot checkpoints are empty**: Ran before the parallel tool-use bug fix. Must delete and re-run.
-3. **Ridge regression diverges**: 3/5 folds produce MAE ~1e12. Exclude from paper.
-4. **DL MLP fold 5 diverges**: Extreme outlier targets. Report 4-fold mean.
+1. **Max rate limits**: Running too many concurrent `claude --print` processes exhausts the Max subscription rate limit. Limit to ~5 concurrent processes.
+2. **Ridge regression diverges**: 3/5 folds produce MAE ~1e12. Exclude from paper.
+3. **DL MLP fold 5 diverges**: Extreme outlier targets. Report 4-fold mean.
 
 ## Titan Server
 - `zhiyuan@172.29.39.82`, SSH key auth
