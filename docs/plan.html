@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proactive Affective Agent — Pilot Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0f0f1a;
+  color: #e0e0e8;
+  line-height: 1.6;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+/* Header */
+header {
+  text-align: center;
+  padding: 40px 20px 30px;
+  border-bottom: 1px solid #2a2a40;
+  margin-bottom: 30px;
+}
+header h1 {
+  font-size: 2.2em;
+  background: linear-gradient(135deg, #7c6cf0, #5ec4d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+header .subtitle {
+  color: #888;
+  font-size: 1.1em;
+}
+header .updated {
+  color: #555;
+  font-size: 0.85em;
+  margin-top: 6px;
+}
+
+/* Nav */
+nav {
+  position: sticky;
+  top: 0;
+  background: #0f0f1aee;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a2a40;
+  margin-bottom: 30px;
+}
+nav .container {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 0 20px;
+}
+nav a {
+  color: #aaa;
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.85em;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+nav a:hover { color: #fff; border-color: #5ec4d4; }
+nav a.highlight { background: #7c6cf033; border-color: #7c6cf0; color: #c0b8ff; }
+
+/* Section */
+section { margin-bottom: 50px; }
+section h2 {
+  font-size: 1.6em;
+  color: #c0b8ff;
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #2a2a40;
+}
+section h3 {
+  font-size: 1.2em;
+  color: #5ec4d4;
+  margin: 24px 0 10px;
+}
+
+/* Core question */
+.core-question {
+  background: linear-gradient(135deg, #1a1a35, #1e2040);
+  border: 1px solid #3a3a60;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 30px;
+  font-size: 1.05em;
+}
+.core-question strong { color: #ffd700; }
+.core-question em { color: #5ec4d4; font-style: normal; }
+
+/* 2x2 Design Grid */
+.design-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 2px;
+  margin: 20px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.design-grid .corner {
+  background: #16162a;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.design-grid .col-header {
+  background: #1a1a35;
+  padding: 12px 16px;
+  text-align: center;
+  font-weight: 600;
+  color: #5ec4d4;
+  font-size: 0.9em;
+}
+.design-grid .row-header {
+  background: #1a1a35;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #c0b8ff;
+  font-size: 0.9em;
+  text-align: center;
+}
+.design-grid .cell {
+  background: #16162a;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.2s;
+  border: 1px solid transparent;
+}
+.design-grid .cell:hover { border-color: #5ec4d4; }
+.design-grid .cell .version {
+  font-size: 1.3em;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.design-grid .cell .status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.75em;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Scorecard */
+.scorecard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.score-item {
+  background: #16162a;
+  border: 1px solid #2a2a45;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.score-item .score {
+  font-size: 1.8em;
+  font-weight: 700;
+  margin: 4px 0;
+}
+.score-item .score.good { color: #5ecc8a; }
+.score-item .score.warn { color: #ffd700; }
+.score-item .score.bad { color: #ff6b6b; }
+.score-item .score.none { color: #555; }
+.score-item .title { font-size: 0.8em; color: #888; text-transform: uppercase; }
+.score-item .detail { font-size: 0.85em; color: #aaa; margin-top: 4px; }
+
+/* Version cards */
+.version-card {
+  background: #16162a;
+  border: 1px solid #2a2a45;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.version-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+.version-card.complete::before { background: linear-gradient(90deg, #5ecc8a, #4aa88a); }
+.version-card.partial::before { background: linear-gradient(90deg, #ffd700, #ff8c00); }
+.version-card.missing::before { background: linear-gradient(90deg, #ff6b6b, #cc4444); }
+
+.version-card h3 {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.7em;
+  font-weight: 600;
+}
+.badge.done { background: #1e4030; color: #5ecc8a; }
+.badge.partial { background: #40350e; color: #ffd700; }
+.badge.missing { background: #402020; color: #ff6b6b; }
+.badge.stale { background: #352e1e; color: #cc9933; }
+.badge.active { background: #1e2040; color: #7c9fff; }
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+th {
+  background: #1e1e35;
+  color: #aaa;
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #1e1e30;
+  color: #ccc;
+}
+tr:hover td { background: #1a1a30; }
+
+/* User matrix */
+.user-matrix td { text-align: center; font-size: 0.95em; }
+.user-matrix .check { color: #5ecc8a; }
+.user-matrix .partial-mark { color: #ffd700; }
+.user-matrix .empty { color: #444; }
+
+/* Findings */
+.finding {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+.finding.good { background: #1e403020; border-left: 3px solid #5ecc8a; }
+.finding.warn { background: #40300020; border-left: 3px solid #ffd700; }
+.finding.bad { background: #40202020; border-left: 3px solid #ff6b6b; }
+.finding.info { background: #1e204020; border-left: 3px solid #7c9fff; }
+.finding .icon { font-size: 1.2em; }
+.finding .text { flex: 1; }
+.finding .text strong { color: #eee; }
+
+/* Timeline */
+.timeline {
+  border-left: 2px solid #2a2a45;
+  margin: 20px 0 20px 20px;
+  padding-left: 24px;
+}
+.timeline-item {
+  position: relative;
+  margin-bottom: 20px;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -30px;
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #5ec4d4;
+  background: #0f0f1a;
+}
+.timeline-item.done::before { background: #5ecc8a; border-color: #5ecc8a; }
+.timeline-item.active::before { background: #ffd700; border-color: #ffd700; }
+.timeline-item.blocked::before { background: #ff6b6b; border-color: #ff6b6b; }
+.timeline-item .phase { color: #5ec4d4; font-weight: 600; font-size: 0.9em; }
+.timeline-item .desc { color: #bbb; font-size: 0.9em; }
+
+/* Action items */
+.action-list {
+  list-style: none;
+  margin: 12px 0;
+}
+.action-list li {
+  padding: 10px 14px;
+  margin: 6px 0;
+  background: #16162a;
+  border: 1px solid #2a2a45;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95em;
+}
+.action-list li .priority {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  font-weight: 700;
+}
+.action-list li .priority.p1 { background: #ff6b6b30; color: #ff6b6b; }
+.action-list li .priority.p2 { background: #ffd70030; color: #ffd700; }
+.action-list li .priority.p3 { background: #5ec4d430; color: #5ec4d4; }
+
+/* Metric comparison table */
+.metric-table td.best { color: #5ecc8a; font-weight: 600; }
+.metric-table td.worst { color: #ff6b6b; }
+.metric-table td.stale { color: #888; font-style: italic; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  header h1 { font-size: 1.6em; }
+  .scorecard { grid-template-columns: repeat(2, 1fr); }
+  .design-grid { grid-template-columns: 80px 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Proactive Affective Agent</h1>
+  <p class="subtitle">BUCS Pilot Study — LLM-Based Emotional State Prediction for Cancer Survivors</p>
+  <p class="updated">Last updated: 2026-03-02 — Sonnet model — 5 eval users (71, 119, 164, 310, 458)</p>
+</header>
+
+<nav>
+  <div class="container">
+    <a href="#question">Core Question</a>
+    <a href="#design">2&times;2 Design</a>
+    <a href="#status">Version Status</a>
+    <a href="#results" class="highlight">Results</a>
+    <a href="#details">Per-Version Details</a>
+    <a href="#users">User Matrix</a>
+    <a href="#actions">Action Items</a>
+    <a href="#timeline">Timeline</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- Core Question -->
+<section id="question">
+  <div class="core-question">
+    <p>Cancer survivors complete <em>ecological momentary assessments (EMA)</em> several times per day,
+    reporting their emotional state (positive affect, negative affect, discrete emotions). Meanwhile,
+    their smartphones passively collect <em>sensing data</em> (screen usage, motion, keyboard, ambient light, music).</p>
+    <br>
+    <p><strong>Can an LLM predict emotional states from passive sensing data alone?</strong>
+    And does giving it access to <em>diary narratives</em> and <em>autonomous tool-use</em> improve predictions?</p>
+  </div>
+</section>
+
+<!-- 2x2 Design -->
+<section id="design">
+  <h2>2&times;2 Agent Design</h2>
+
+  <div class="design-grid">
+    <div class="corner"></div>
+    <div class="col-header">Sensing-Only</div>
+    <div class="col-header">Multimodal<br><span style="font-size:0.8em;color:#888">(sensing + diary)</span></div>
+
+    <div class="row-header">Structured<br><span style="font-size:0.8em;color:#888">(fixed pipeline)</span></div>
+    <div class="cell">
+      <div class="version" style="color:#5ec4d4">V1</div>
+      <div style="color:#aaa;font-size:0.85em">Pre-formatted features &rarr; LLM</div>
+      <div class="status-badge" style="background:#1e4030;color:#5ecc8a">COMPLETE</div>
+    </div>
+    <div class="cell">
+      <div class="version" style="color:#5ec4d4">V3</div>
+      <div style="color:#aaa;font-size:0.85em">Features + diary &rarr; LLM</div>
+      <div class="status-badge" style="background:#1e4030;color:#5ecc8a">COMPLETE</div>
+    </div>
+
+    <div class="row-header">Agentic<br><span style="font-size:0.8em;color:#888">(autonomous tool-use)</span></div>
+    <div class="cell">
+      <div class="version" style="color:#ffd700">V2</div>
+      <div style="color:#aaa;font-size:0.85em">LLM queries Parquet via MCP</div>
+      <div class="status-badge" style="background:#40350e;color:#ffd700">1/5 EVAL USERS</div>
+    </div>
+    <div class="cell">
+      <div class="version" style="color:#ff6b6b">V4</div>
+      <div style="color:#aaa;font-size:0.85em">LLM queries data + diary via MCP</div>
+      <div class="status-badge" style="background:#402020;color:#ff6b6b">0/5 EVAL USERS</div>
+    </div>
+  </div>
+
+  <p style="color:#888;font-size:0.9em;text-align:center;margin-top:8px">
+    Plus <strong style="color:#c0b8ff">CALLM</strong> baseline (diary + TF-IDF RAG, structured output — CHI 2025)
+    &nbsp;&bull;&nbsp;
+    All inference via Claude Max subscription (free)
+  </p>
+</section>
+
+<!-- Version Status Overview -->
+<section id="status">
+  <h2>Version Status</h2>
+
+  <div class="scorecard">
+    <div class="score-item">
+      <div class="title">CALLM</div>
+      <div class="score good">5/5</div>
+      <div class="detail">427 entries &bull; Clean Sonnet</div>
+    </div>
+    <div class="score-item">
+      <div class="title">V1 Structured</div>
+      <div class="score good">5/5</div>
+      <div class="detail">427 entries &bull; Clean Sonnet</div>
+    </div>
+    <div class="score-item">
+      <div class="title">V3 Multimodal</div>
+      <div class="score good">5/5</div>
+      <div class="detail">427 entries &bull; Clean Sonnet</div>
+    </div>
+    <div class="score-item">
+      <div class="title">V2 Agentic</div>
+      <div class="score warn">1/5</div>
+      <div class="detail">93 entries &bull; 4 users missing</div>
+    </div>
+    <div class="score-item">
+      <div class="title">V4 Agentic+</div>
+      <div class="score bad">0/5</div>
+      <div class="detail">1 entry &bull; All users need re-run</div>
+    </div>
+  </div>
+
+  <h3>Key Issues</h3>
+
+  <div class="finding bad">
+    <div class="icon">&#x2717;</div>
+    <div class="text">
+      <strong>V2/V4 re-run interrupted (Feb 27)</strong><br>
+      V2 Batch 1 completed (5 non-eval users), but Batch 2 was SIGTERM'd. V4 all processes killed at entry 1.
+      Only <code>user71</code> has clean V2 data. V4 has zero usable data.
+    </div>
+  </div>
+
+  <div class="finding warn">
+    <div class="icon">&#x26A0;</div>
+    <div class="text">
+      <strong>evaluation.json is stale (Feb 25)</strong><br>
+      V2 metrics are from pre-leakage-fix data. V3 shows n=1306 (should be 427 after fix).
+      V4 aggregate is all <code>null</code>. Need full re-evaluation after V2/V4 complete.
+    </div>
+  </div>
+
+  <div class="finding warn">
+    <div class="icon">&#x26A0;</div>
+    <div class="text">
+      <strong>V1 checkpoint anomaly</strong><br>
+      Eval users 119, 164, 458 have 1230–1733 predictions (should be ~84–93).
+      Likely stale data from a pre-leakage-fix run. May need targeted re-run.
+    </div>
+  </div>
+
+  <div class="finding good">
+    <div class="icon">&#x2713;</div>
+    <div class="text">
+      <strong>CALLM + V3 are clean and complete</strong><br>
+      Both have exactly 427 entries across 5 eval users (71, 119, 164, 310, 458), all from the Feb 26 Sonnet re-run.
+    </div>
+  </div>
+</section>
+
+<!-- Results -->
+<section id="results">
+  <h2>Evaluation Results</h2>
+  <p style="color:#888;margin-bottom:16px">
+    Metrics: MAE (continuous, lower is better), Balanced Accuracy (binary, higher is better), F1 (binary, higher is better).
+    Evaluated on 5 eval users &times; ~85 entries each = 427 EMA responses.
+  </p>
+
+  <table class="metric-table">
+    <tr>
+      <th>Version</th>
+      <th>Type</th>
+      <th>N Entries</th>
+      <th>Mean MAE &darr;</th>
+      <th>Mean BA &uarr;</th>
+      <th>Mean F1 &uarr;</th>
+      <th>Data Quality</th>
+    </tr>
+    <tr>
+      <td><strong style="color:#c0b8ff">CALLM</strong></td>
+      <td>Diary + RAG</td>
+      <td>427</td>
+      <td class="best">1.167</td>
+      <td>0.645</td>
+      <td>0.478</td>
+      <td><span class="badge done">CLEAN</span></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#5ec4d4">V3</strong></td>
+      <td>Structured multimodal</td>
+      <td>427</td>
+      <td class="best">0.866</td>
+      <td class="best">0.674</td>
+      <td class="best">0.514</td>
+      <td><span class="badge stale">NEEDS RE-EVAL</span></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#5ec4d4">V1</strong></td>
+      <td>Structured sensing</td>
+      <td>427</td>
+      <td class="worst">6.977</td>
+      <td>0.539</td>
+      <td>0.316</td>
+      <td><span class="badge done">CLEAN</span></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#ffd700">V2</strong></td>
+      <td>Agentic sensing</td>
+      <td>427</td>
+      <td class="worst">7.062</td>
+      <td>0.531</td>
+      <td>0.284</td>
+      <td><span class="badge stale">STALE (pre-fix)</span></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#ff6b6b">V4</strong></td>
+      <td>Agentic multimodal</td>
+      <td>&mdash;</td>
+      <td class="stale">&mdash;</td>
+      <td class="stale">&mdash;</td>
+      <td class="stale">&mdash;</td>
+      <td><span class="badge missing">NO DATA</span></td>
+    </tr>
+  </table>
+
+  <h3>Key Observations</h3>
+
+  <div class="finding good">
+    <div class="icon">&#x2713;</div>
+    <div class="text">
+      <strong>Multimodal &gt; Sensing-only (V3 vs V1)</strong><br>
+      Adding diary data dramatically improves prediction: MAE drops from 6.98 to 0.87, BA improves 0.539 &rarr; 0.674, F1 improves 0.316 &rarr; 0.514.
+      Diary narratives are the strongest signal for emotional state prediction.
+    </div>
+  </div>
+
+  <div class="finding good">
+    <div class="icon">&#x2713;</div>
+    <div class="text">
+      <strong>CALLM baseline is competitive</strong><br>
+      MAE=1.17 is close to V3's 0.87. CALLM uses only diary (no sensing) with TF-IDF RAG retrieval.
+      This suggests diary content alone captures most predictive signal.
+    </div>
+  </div>
+
+  <div class="finding info">
+    <div class="icon">&#x2139;</div>
+    <div class="text">
+      <strong>V2 vs V4 comparison pending</strong><br>
+      The key research question — does <em>agentic</em> tool-use outperform <em>structured</em> pipelines? —
+      cannot be answered until V2 and V4 have clean complete data.
+    </div>
+  </div>
+
+  <div class="finding warn">
+    <div class="icon">&#x26A0;</div>
+    <div class="text">
+      <strong>Sensing-only approaches predict negative affect too high</strong><br>
+      V1: NA_MAE=9.79 (predicts mean ~11.2 vs GT ~1.7). V2 similar (NA_MAE=9.13).
+      Without diary context, the LLM dramatically overestimates negative affect from passive sensing.
+    </div>
+  </div>
+</section>
+
+<!-- Per-Version Details -->
+<section id="details">
+  <h2>Per-Version Details</h2>
+
+  <!-- CALLM -->
+  <div class="version-card complete">
+    <h3><span class="badge done">COMPLETE</span> CALLM — Diary + TF-IDF RAG Baseline</h3>
+    <p style="color:#aaa">CHI 2025 baseline. Uses diary text + TF-IDF retrieval of similar past entries. No sensing data.</p>
+    <table>
+      <tr><th>Metric</th><th>PA (Positive Affect)</th><th>NA (Negative Affect)</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td>1.85</td><td style="color:#5ecc8a">1.29</td><td style="color:#5ecc8a">0.36</td></tr>
+      <tr><td>Pred Mean</td><td>18.52</td><td>2.83</td><td>1.59</td></tr>
+      <tr><td>GT Mean</td><td>18.84</td><td>1.66</td><td>1.50</td></tr>
+    </table>
+    <p style="color:#888;margin-top:8px">Best binary: INT_availability BA=0.908 (knows when users are available), pleased BA=0.732, cheerful BA=0.711</p>
+  </div>
+
+  <!-- V1 -->
+  <div class="version-card complete">
+    <h3><span class="badge done">COMPLETE</span> V1 — Structured Sensing-Only</h3>
+    <p style="color:#aaa">Pre-formatted hourly features (screen, motion, keyboard, light, music) → LLM prompt → predictions.</p>
+    <table>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td style="color:#ff6b6b">8.02</td><td style="color:#ff6b6b">9.79</td><td style="color:#ff6b6b">3.12</td></tr>
+      <tr><td>Pred Mean</td><td>16.16</td><td style="color:#ff6b6b">11.22</td><td>4.01</td></tr>
+      <tr><td>GT Mean</td><td>18.84</td><td>1.66</td><td>1.50</td></tr>
+    </table>
+    <p style="color:#ff6b6b;margin-top:8px">NA severely overestimated (pred 11.2 vs GT 1.7). Sensing-only LLM defaults to predicting high distress.</p>
+  </div>
+
+  <!-- V3 -->
+  <div class="version-card complete">
+    <h3><span class="badge done">COMPLETE</span> <span class="badge stale">NEEDS RE-EVAL</span> V3 — Structured Multimodal</h3>
+    <p style="color:#aaa">Pre-formatted features + diary text → LLM prompt → predictions. Best performer so far.</p>
+    <table>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td style="color:#5ecc8a">1.31</td><td style="color:#5ecc8a">1.04</td><td style="color:#5ecc8a">0.24</td></tr>
+      <tr><td>Pred Mean</td><td>15.76</td><td>2.40</td><td>2.10</td></tr>
+      <tr><td>GT Mean</td><td>14.78</td><td>1.36</td><td>1.87</td></tr>
+    </table>
+    <p style="color:#ffd700;margin-top:8px">Note: Current eval.json uses n=1306 (old Haiku run). Clean Sonnet checkpoints exist (427 entries) — need to re-run evaluate_pilot.py.</p>
+  </div>
+
+  <!-- V2 -->
+  <div class="version-card partial">
+    <h3><span class="badge partial">1/5 EVAL USERS</span> V2 — Agentic Sensing-Only</h3>
+    <p style="color:#aaa">LLM autonomously queries Parquet data via MCP tools. Sensing data only, no diary.</p>
+    <table>
+      <tr><th>Checkpoint Status</th><th>Details</th></tr>
+      <tr><td>user71</td><td style="color:#5ecc8a">93 predictions (clean Sonnet)</td></tr>
+      <tr><td>user119, 164, 310, 458</td><td style="color:#ff6b6b">MISSING — checkpoints were cleared before re-run, never regenerated</td></tr>
+      <tr><td>Non-eval users</td><td>9 checkpoint files (43, 211, 258, 275, 362, 363, 399, 505, 513)</td></tr>
+    </table>
+    <p style="color:#ffd700;margin-top:8px">Batch 2 (users 362, 363, 399, 505, 513, 86) was SIGTERM'd on Feb 27. Eval users 119, 164, 310, 458 never started.</p>
+  </div>
+
+  <!-- V4 -->
+  <div class="version-card missing">
+    <h3><span class="badge missing">NO DATA</span> V4 — Agentic Multimodal</h3>
+    <p style="color:#aaa">LLM autonomously queries Parquet data + diary via MCP tools. The key contribution of this study.</p>
+    <table>
+      <tr><th>Checkpoint Status</th><th>Details</th></tr>
+      <tr><td>user71</td><td style="color:#ff6b6b">1 prediction only (killed at entry 1)</td></tr>
+      <tr><td>user119, 164, 310, 458</td><td style="color:#ff6b6b">MISSING — no checkpoints exist</td></tr>
+    </table>
+    <p style="color:#ff6b6b;margin-top:8px">All V4 processes were SIGTERM'd on Feb 27 during the batch re-run. Zero usable data. Complete re-run required.</p>
+  </div>
+</section>
+
+<!-- User Matrix -->
+<section id="users">
+  <h2>Eval User Coverage Matrix</h2>
+  <p style="color:#aaa;margin-bottom:12px">Checkpoint completion status for 5 evaluation users (from group 1 test set):</p>
+
+  <table class="user-matrix">
+    <tr>
+      <th>User</th>
+      <th>Expected</th>
+      <th>CALLM</th>
+      <th>V1</th>
+      <th>V2</th>
+      <th>V3</th>
+      <th>V4</th>
+    </tr>
+    <tr>
+      <td>user71</td><td>93</td>
+      <td class="check">93 &#x2713;</td>
+      <td class="check">93 &#x2713;</td>
+      <td class="check">93 &#x2713;</td>
+      <td class="check">93 &#x2713;</td>
+      <td class="empty">1 &#x2717;</td>
+    </tr>
+    <tr>
+      <td>user119</td><td>84</td>
+      <td class="check">84 &#x2713;</td>
+      <td class="partial-mark">1486 ?</td>
+      <td class="empty">&mdash;</td>
+      <td class="check">84 &#x2713;</td>
+      <td class="empty">&mdash;</td>
+    </tr>
+    <tr>
+      <td>user164</td><td>87</td>
+      <td class="check">87 &#x2713;</td>
+      <td class="partial-mark">1230 ?</td>
+      <td class="empty">&mdash;</td>
+      <td class="check">87 &#x2713;</td>
+      <td class="empty">&mdash;</td>
+    </tr>
+    <tr>
+      <td>user310</td><td>81</td>
+      <td class="check">81 &#x2713;</td>
+      <td class="check">81 &#x2713;</td>
+      <td class="empty">&mdash;</td>
+      <td class="check">81 &#x2713;</td>
+      <td class="empty">&mdash;</td>
+    </tr>
+    <tr>
+      <td>user458</td><td>82</td>
+      <td class="check">82 &#x2713;</td>
+      <td class="partial-mark">1733 ?</td>
+      <td class="empty">&mdash;</td>
+      <td class="check">82 &#x2713;</td>
+      <td class="empty">&mdash;</td>
+    </tr>
+  </table>
+  <p style="color:#888;font-size:0.85em;margin-top:8px">? = Anomalous prediction count (likely stale pre-fix data). &mdash; = No checkpoint exists.</p>
+</section>
+
+<!-- Action Items -->
+<section id="actions">
+  <h2>Action Items</h2>
+
+  <h3>Blocking — Must Complete for Paper</h3>
+  <ul class="action-list">
+    <li>
+      <span class="priority p1">1</span>
+      <div><strong>Re-run V2 for 4 eval users</strong> (119, 164, 310, 458) — user71 already done.<br>
+      <code>python scripts/run_agentic_pilot.py --version v2 --users 119,164,310,458</code></div>
+    </li>
+    <li>
+      <span class="priority p1">2</span>
+      <div><strong>Run V4 for all 5 eval users</strong> (71, 119, 164, 310, 458) — zero usable data exists.<br>
+      <code>python scripts/run_agentic_pilot.py --version v4 --users 71,119,164,310,458</code></div>
+    </li>
+    <li>
+      <span class="priority p1">3</span>
+      <div><strong>Re-evaluate all versions</strong> after V2/V4 complete — current evaluation.json is stale.<br>
+      <code>python scripts/evaluate_pilot.py</code></div>
+    </li>
+  </ul>
+
+  <h3>Should Do — Data Quality</h3>
+  <ul class="action-list">
+    <li>
+      <span class="priority p2">4</span>
+      <div><strong>Investigate V1 anomalous checkpoints</strong> — users 119, 164, 458 have 1230–1733 entries (expected ~84–93). May need targeted V1 re-run.</div>
+    </li>
+    <li>
+      <span class="priority p2">5</span>
+      <div><strong>Re-evaluate V3 with clean data</strong> — Sonnet checkpoints exist but evaluation.json still references old Haiku n=1306 run.</div>
+    </li>
+    <li>
+      <span class="priority p2">6</span>
+      <div><strong>Kill stale monitor_rerun.sh</strong> — PID 69418, monitoring a dead master process. Wasting resources.</div>
+    </li>
+  </ul>
+
+  <h3>Nice to Have</h3>
+  <ul class="action-list">
+    <li>
+      <span class="priority p3">7</span>
+      <div><strong>ML baselines</strong> — Run RF/XGBoost/Ridge/MLP for comparison. Ridge diverges (3/5 folds MAE ~1e12), MLP fold 5 diverges.</div>
+    </li>
+    <li>
+      <span class="priority p3">8</span>
+      <div><strong>Token efficiency analysis</strong> — Compare token usage across versions. Hypothesis: V2/V4 agentic should use fewer tokens by querying only relevant data.</div>
+    </li>
+  </ul>
+</section>
+
+<!-- Timeline -->
+<section id="timeline">
+  <h2>Implementation Timeline</h2>
+
+  <div class="timeline">
+    <div class="timeline-item done">
+      <div class="phase">Phase 0 — Data Pipeline (DONE)</div>
+      <div class="desc">Processed 418 participants: motion, screen, keyboard, light, music → hourly Parquet. Home locations via DBSCAN. EMA split into 5 CV groups.</div>
+    </div>
+    <div class="timeline-item done">
+      <div class="phase">Phase 1 — Agent Implementation (DONE)</div>
+      <div class="desc">All 5 versions implemented: V1 (structured.py), V2 (cc_agent.py + MCP), V3 (structured_full.py), V4 (cc_agent.py + MCP + diary), CALLM (TF-IDF RAG). Migrated from paid API to Claude Max CLI.</div>
+    </div>
+    <div class="timeline-item done">
+      <div class="phase">Phase 2 — Initial Pilot (DONE)</div>
+      <div class="desc">Ran all versions with Haiku. Discovered data leakage bug (sensing data from future hours). Fixed leakage, re-ran CALLM + V1 + V3 with Sonnet (Feb 26).</div>
+    </div>
+    <div class="timeline-item blocked">
+      <div class="phase">Phase 3 — V2/V4 Re-run (BLOCKED)</div>
+      <div class="desc">Started Feb 27 re-run with Sonnet. V2 Batch 1 completed (5 users), but all remaining work was interrupted by SIGTERM. V2 needs 4 more eval users, V4 needs all 5. <strong>Must resume.</strong></div>
+    </div>
+    <div class="timeline-item">
+      <div class="phase">Phase 4 — Final Evaluation</div>
+      <div class="desc">Run evaluate_pilot.py on all clean checkpoints. Generate comparison tables, per-user breakdowns, and confidence intervals.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="phase">Phase 5 — ML Baselines</div>
+      <div class="desc">Run RF, XGBoost, Ridge, MLP. Compare against LLM approaches. Ridge diverges (exclude). MLP fold 5 diverges (report 4-fold).</div>
+    </div>
+    <div class="timeline-item">
+      <div class="phase">Phase 6 — Paper Writing</div>
+      <div class="desc">CHI 2026 or IMWUT submission. Key story: structured vs agentic × sensing vs multimodal. CALLM as strong diary-only baseline.</div>
+    </div>
+  </div>
+</section>
+
+<footer style="text-align:center;padding:40px 20px;color:#555;font-size:0.85em;border-top:1px solid #1e1e30;margin-top:40px">
+  Proactive Affective Agent — BUCS Pilot Dashboard &mdash; Last updated 2026-03-02 &mdash; 3/5 versions complete &mdash; V2/V4 re-run pending
+</footer>
+
+</div>
+</body>
+</html>
