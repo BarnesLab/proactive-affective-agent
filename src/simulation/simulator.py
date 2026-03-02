@@ -511,8 +511,8 @@ class PilotSimulator:
                 all_ground_truths.append(gt)
                 all_metadata.append({"study_id": sid, "entry_idx": i, "date": date_str})
 
-                # Checkpoint after EVERY entry
-                self._checkpoint(version, all_predictions, all_ground_truths, all_metadata,
+                # Checkpoint after EVERY entry (per-user data only to avoid duplication)
+                self._checkpoint(version, user_preds, user_gts, user_meta,
                                  current_user=sid, current_entry=i)
 
                 # Update session memory for agentic agents (V2/V4)
