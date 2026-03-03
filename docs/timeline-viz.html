@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filtered Data QA — User 403</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0c10;
+  --surface: #12131a;
+  --surface2: #191b25;
+  --border: #252838;
+  --border-hi: #3a3f58;
+  --text: #c8cad8;
+  --text-dim: #6b7094;
+  --text-bright: #ecedf5;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --green-dim: #1a3a2a;
+  --blue-dim: #1a2340;
+  --orange: #d29922;
+  --red: #f85149;
+  --pink: #db61a2;
+  --purple: #a371f7;
+  --cyan: #39d2c0;
+  --walk-color: #3fb950;
+  --drive-color: #d29922;
+  --stat-color: #484d6a;
+  --screen-color: #58a6ff;
+  --social-color: #db61a2;
+  --comm-color: #a371f7;
+  --ent-color: #39d2c0;
+  --mono: 'DM Mono', 'SF Mono', 'Fira Code', monospace;
+  --sans: 'Instrument Sans', -apple-system, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); line-height: 1.55; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+/* Header */
+.header {
+  padding: 48px 0 32px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+.header-top {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.header h1 {
+  font-size: 1.6em;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: -0.02em;
+}
+.header .tag {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-weight: 400;
+}
+.header .meta {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.header .meta span { color: var(--text); }
+
+/* Alerts */
+.alerts {
+  margin-bottom: 32px;
+}
+.alerts h2 {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--orange);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alerts h2::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--orange);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px;
+}
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: 4px;
+  font-size: 0.82em;
+}
+.alert-item.severe { border-left-color: var(--red); }
+.alert-item .a-icon {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--orange);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.alert-item.severe .a-icon { color: var(--red); }
+.alert-item .a-text { color: var(--text); }
+.alert-item .a-text strong { color: var(--text-bright); }
+.alert-item .a-val {
+  font-family: var(--mono);
+  color: var(--orange);
+  font-size: 0.95em;
+}
+.alert-item.severe .a-val { color: var(--red); }
+
+/* Overview Charts */
+.overview {
+  margin-bottom: 40px;
+}
+.overview h2 {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 800px) { .chart-row { grid-template-columns: 1fr; } }
+.chart-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+}
+.chart-box .chart-title {
+  font-size: 0.72em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+.spark-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 64px;
+}
+.spark-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  min-width: 4px;
+  position: relative;
+  transition: opacity 0.15s;
+  cursor: crosshair;
+}
+.spark-bar:hover { opacity: 0.7; }
+.spark-bar .tip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e2030;
+  border: 1px solid var(--border-hi);
+  color: var(--text-bright);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  z-index: 10;
+}
+.spark-bar:hover .tip { display: block; }
+.chart-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.7em;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+.chart-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* Timeline */
+.timeline-section h2 {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+}
+.tl {
+  position: relative;
+  padding-left: 32px;
+}
+.tl::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.day-card {
+  position: relative;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.day-card:hover { border-color: var(--border-hi); }
+.day-card.outdoor { background: linear-gradient(135deg, var(--surface) 0%, #0f1a16 100%); border-color: #1d3a2a; }
+.day-card.indoor { background: linear-gradient(135deg, var(--surface) 0%, #0f1320 100%); border-color: #1d2a4a; }
+.day-card.flagged { border-color: var(--orange); }
+.day-card::before {
+  content: '';
+  position: absolute;
+  left: -28px;
+  top: 18px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 2px solid var(--border-hi);
+  z-index: 2;
+}
+.day-card.outdoor::before { border-color: var(--green); background: var(--green-dim); }
+.day-card.indoor::before { border-color: var(--accent); background: var(--blue-dim); }
+
+.day-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 8px;
+}
+.day-date {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text-bright);
+}
+.day-weekday {
+  font-size: 0.72em;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.env-badge {
+  font-family: var(--mono);
+  font-size: 0.62em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.env-badge.outdoor { background: #0d2818; color: var(--green); border: 1px solid #1d4a2a; }
+.env-badge.indoor { background: #0d1828; color: var(--accent); border: 1px solid #1d3a5a; }
+.flag-badges { margin-left: auto; display: flex; gap: 6px; }
+.flag-badge {
+  font-family: var(--mono);
+  font-size: 0.58em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #2a1a0a;
+  color: var(--orange);
+  border: 1px solid #4a3010;
+}
+.flag-badge.severe { background: #2a0a0a; color: var(--red); border-color: #5a1515; }
+
+.day-body {
+  padding: 0 16px 12px;
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 700px) { .day-body { grid-template-columns: 1fr; } }
+
+.narrative {
+  font-family: var(--mono);
+  font-size: 0.75em;
+  line-height: 1.7;
+  white-space: pre-line;
+  color: var(--text);
+}
+.narrative .tag-motion { color: var(--walk-color); }
+.narrative .tag-screen { color: var(--screen-color); }
+.narrative .tag-apps { color: var(--pink); }
+.narrative .tag-keyboard { color: var(--purple); }
+.narrative .tag-env { color: var(--cyan); }
+.narrative .tag-music { color: var(--orange); }
+
+/* Mini vizzes */
+.mini-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.motion-bar-wrap {
+  height: 14px;
+  display: flex;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.motion-bar-wrap .seg {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.mini-label {
+  font-family: var(--mono);
+  font-size: 0.6em;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+  margin-top: -4px;
+}
+.screen-bar-wrap {
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.screen-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--screen-color);
+  transition: width 0.4s ease;
+}
+.app-bars {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 28px;
+}
+.app-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+
+/* Legend */
+.legend-strip {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.68em;
+  color: var(--text-dim);
+}
+.legend-strip .litem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-strip .ldot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* Stats strip */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px;
+  text-align: center;
+}
+.stat-card .sv {
+  font-family: var(--mono);
+  font-size: 1.6em;
+  font-weight: 500;
+  color: var(--text-bright);
+}
+.stat-card .sl {
+  font-size: 0.68em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="header">
+  <div class="header-top">
+    <h1>Filtered Data QA</h1>
+    <span class="tag">User 403</span>
+    <span class="tag" style="color:var(--green)">Android</span>
+  </div>
+  <div class="meta">
+    <span>38 days</span> &middot; Apr 8 &ndash; May 15, 2024 &middot;
+    modalities: <span>motion, screen, app, light</span> &middot;
+    pipeline: <span>build_filtered_data.py</span>
+  </div>
+</div>
+
+<div id="alerts" class="alerts"></div>
+<div id="stats" class="stats-strip"></div>
+
+<div class="overview">
+  <h2>38-Day Overview</h2>
+  <div class="chart-row">
+    <div class="chart-box">
+      <div class="chart-title">Screen Time (hours/day)</div>
+      <div id="chart-screen" class="spark-row"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">Walking (minutes/day)</div>
+      <div id="chart-walk" class="spark-row"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">Driving (minutes/day)</div>
+      <div id="chart-drive" class="spark-row"></div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-title">App Usage — reported (hours/day)</div>
+      <div id="chart-app" class="spark-row"></div>
+      <div class="chart-legend">
+        <span><span class="dot" style="background:var(--social-color)"></span>social</span>
+        <span><span class="dot" style="background:var(--comm-color)"></span>comm</span>
+        <span><span class="dot" style="background:var(--ent-color)"></span>entertainment</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section class="timeline-section">
+  <h2>Daily Timeline</h2>
+  <div class="legend-strip">
+    <div class="litem"><div class="ldot" style="background:var(--stat-color)"></div>stationary</div>
+    <div class="litem"><div class="ldot" style="background:var(--walk-color)"></div>walking</div>
+    <div class="litem"><div class="ldot" style="background:var(--drive-color)"></div>driving</div>
+    <div class="litem"><div class="ldot" style="background:var(--screen-color)"></div>screen</div>
+    <div class="litem"><div class="ldot" style="background:var(--social-color)"></div>social</div>
+    <div class="litem"><div class="ldot" style="background:var(--comm-color)"></div>comm</div>
+    <div class="litem"><div class="ldot" style="background:var(--ent-color)"></div>ent</div>
+  </div>
+  <div id="timeline" class="tl"></div>
+</section>
+
+</div>
+
+<script>
+const DATA = [{"date": "2024-04-08", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 3h 2m, walked 2m in 1 episode, drove 26m (4h tracked)\n[Environment] outdoor", "motion_stationary": 182.9, "motion_walking": 3.0, "motion_driving": 26.6, "motion_tracked_h": 4, "motion_walk_episodes": 1, "screen_min": 0, "screen_sessions": 0, "app_total_min": 0, "app_social_min": 0, "app_comm_min": 0, "app_ent_min": 0, "light_category": "outdoor", "light_lux": 2678.0}, {"date": "2024-04-09", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 54m, walked 2h 7m in 13 episodes, drove 1h 58m (24h tracked)\n[Screen] 5934 opens, 8h total\n[Apps] 104h 59m total (social 28h 40m, comm 0m) avg 33 apps/hr\n[Environment] outdoor", "motion_stationary": 1194.0, "motion_walking": 127.0, "motion_driving": 119.0, "motion_tracked_h": 24, "motion_walk_episodes": 13, "screen_min": 480.0, "screen_sessions": 5934, "app_total_min": 6299.0, "app_social_min": 1720.1, "app_comm_min": 0.4, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 754.8}, {"date": "2024-04-10", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 6m, walked 52m in 7 episodes, drove 2h 58m (24h tracked)\n[Screen] 4311 opens, 14h 30m total\n[Apps] 84h 43m total (social 29h 7m, comm 4h 10m, entertainment 7m) avg 17 apps/hr\n[Environment] outdoor", "motion_stationary": 1206.4, "motion_walking": 52.3, "motion_driving": 178.2, "motion_tracked_h": 24, "motion_walk_episodes": 7, "screen_min": 870.3, "screen_sessions": 4311, "app_total_min": 5083.1, "app_social_min": 1747.2, "app_comm_min": 250.4, "app_ent_min": 7.6, "light_category": "outdoor", "light_lux": 537.6}, {"date": "2024-04-11", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 18h 32m, walked 2h 14m in 11 episodes, drove 2h 10m (23h tracked)\n[Screen] 3812 opens, 14h 6m total\n[Apps] 64h 46m total (social 20h 1m, comm 13m, entertainment 0m) avg 15 apps/hr\n[Environment] indoor", "motion_stationary": 1112.3, "motion_walking": 134.8, "motion_driving": 131.0, "motion_tracked_h": 23, "motion_walk_episodes": 11, "screen_min": 846.5, "screen_sessions": 3812, "app_total_min": 3886.0, "app_social_min": 1201.5, "app_comm_min": 13.6, "app_ent_min": 0.6, "light_category": "indoor", "light_lux": 440.2}, {"date": "2024-04-12", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 2h 46m, walked 20h 40m in 25 episodes, drove 2h 32m (26h tracked)\n[Screen] 3534 opens, 14h 25m total\n[Apps] 42h 55m total (social 6h 58m, comm 0m) avg 13 apps/hr\n[Environment] outdoor", "motion_stationary": 166.6, "motion_walking": 1240.1, "motion_driving": 152.9, "motion_tracked_h": 26, "motion_walk_episodes": 25, "screen_min": 866.0, "screen_sessions": 3534, "app_total_min": 2575.8, "app_social_min": 418.6, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 2091.1}, {"date": "2024-04-13", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 18h 57m, walked 46m in 11 episodes, drove 5h 14m (25h tracked)\n[Screen] 4851 opens, 12h 1m total\n[Apps] 60h 33m total (social 6h 11m, comm 1h 16m, entertainment 23m) avg 13 apps/hr\n[Environment] outdoor", "motion_stationary": 1137.8, "motion_walking": 46.3, "motion_driving": 314.1, "motion_tracked_h": 25, "motion_walk_episodes": 11, "screen_min": 721.9, "screen_sessions": 4851, "app_total_min": 3633.9, "app_social_min": 371.9, "app_comm_min": 77.0, "app_ent_min": 23.0, "light_category": "outdoor", "light_lux": 2435.8}, {"date": "2024-04-14", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 18h 39m, walked 35m in 5 episodes, drove 1h 44m (21h tracked)\n[Screen] 3920 opens, 10h 44m total\n[Apps] 76h 34m total (social 21h 14m, comm 5m, entertainment 2m) avg 12 apps/hr\n[Environment] outdoor", "motion_stationary": 1119.4, "motion_walking": 35.5, "motion_driving": 104.7, "motion_tracked_h": 21, "motion_walk_episodes": 5, "screen_min": 644.4, "screen_sessions": 3920, "app_total_min": 4595.0, "app_social_min": 1274.8, "app_comm_min": 5.3, "app_ent_min": 2.7, "light_category": "outdoor", "light_lux": 1857.5}, {"date": "2024-04-15", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 21m, walked 46m in 7 episodes, drove 3h 52m (25h tracked)\n[Screen] 4750 opens, 14h 59m total\n[Apps] 79h 37m total (social 16h 1m, comm 0m) avg 15 apps/hr\n[Environment] outdoor", "motion_stationary": 1221.0, "motion_walking": 46.2, "motion_driving": 232.8, "motion_tracked_h": 25, "motion_walk_episodes": 7, "screen_min": 899.4, "screen_sessions": 4750, "app_total_min": 4777.9, "app_social_min": 961.6, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 3362.1}, {"date": "2024-04-16", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 24h 21m, walked 7m in 2 episodes, drove 1h 30m (26h tracked)\n[Screen] 5348 opens, 16h 32m total\n[Apps] 135h 11m total (social 58h 26m) avg 15 apps/hr\n[Environment] outdoor", "motion_stationary": 1461.5, "motion_walking": 7.8, "motion_driving": 90.7, "motion_tracked_h": 26, "motion_walk_episodes": 2, "screen_min": 992.3, "screen_sessions": 5348, "app_total_min": 8111.9, "app_social_min": 3506.2, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 2663.1}, {"date": "2024-04-17", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 55m, walked 49m in 4 episodes, drove 2h 15m (23h tracked)\n[Screen] 2495 opens, 15h 51m total\n[Apps] 46h total (social 28h 13m) avg 11 apps/hr\n[Environment] outdoor", "motion_stationary": 1195.2, "motion_walking": 49.5, "motion_driving": 135.0, "motion_tracked_h": 23, "motion_walk_episodes": 4, "screen_min": 951.1, "screen_sessions": 2495, "app_total_min": 2760.0, "app_social_min": 1693.8, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 981.3}, {"date": "2024-04-18", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 21h 3m, walked 32m in 3 episodes, drove 1h 22m (23h tracked)\n[Screen] 3229 opens, 13h 19m total\n[Apps] 100h 27m total (social 62h 9m) avg 9 apps/hr\n[Environment] indoor", "motion_stationary": 1263.1, "motion_walking": 32.1, "motion_driving": 82.3, "motion_tracked_h": 23, "motion_walk_episodes": 3, "screen_min": 799.8, "screen_sessions": 3229, "app_total_min": 6028.0, "app_social_min": 3729.0, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 141.1}, {"date": "2024-04-19", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 22h 18m, walked 29m in 3 episodes, drove 1h 11m (24h tracked)\n[Screen] 4705 opens, 16h 51m total\n[Apps] 105h 39m total (social 32h 46m, entertainment 0m) avg 13 apps/hr\n[Environment] indoor", "motion_stationary": 1339.0, "motion_walking": 29.2, "motion_driving": 71.9, "motion_tracked_h": 24, "motion_walk_episodes": 3, "screen_min": 1011.2, "screen_sessions": 4705, "app_total_min": 6340.0, "app_social_min": 1966.5, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 368.3}, {"date": "2024-04-20", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 22h 22m, walked 30m in 7 episodes, drove 2h 6m (25h tracked)\n[Screen] 3782 opens, 15h 36m total\n[Apps] 40h total (social 17h) avg 14 apps/hr\n[Environment] indoor", "motion_stationary": 1342.9, "motion_walking": 30.9, "motion_driving": 126.1, "motion_tracked_h": 25, "motion_walk_episodes": 7, "screen_min": 936.4, "screen_sessions": 3782, "app_total_min": 2400.0, "app_social_min": 1020.7, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 320.9}, {"date": "2024-04-21", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h, walked 42m in 6 episodes, drove 2h 16m (23h tracked)\n[Screen] 3379 opens, 11h 3m total\n[Apps] 59h 37m total (social 30h 41m, comm 3m) avg 11 apps/hr\n[Environment] outdoor", "motion_stationary": 1200.7, "motion_walking": 42.7, "motion_driving": 136.6, "motion_tracked_h": 23, "motion_walk_episodes": 6, "screen_min": 663.1, "screen_sessions": 3379, "app_total_min": 3577.6, "app_social_min": 1841.8, "app_comm_min": 3.1, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1214.8}, {"date": "2024-04-22", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 16h 47m, walked 1h 12m in 7 episodes, drove 4h 56m (23h tracked)\n[Screen] 4097 opens, 13h 31m total\n[Apps] 97h 56m total (social 50h 1m, comm 0m) avg 14 apps/hr\n[Environment] indoor", "motion_stationary": 1007.3, "motion_walking": 72.4, "motion_driving": 296.3, "motion_tracked_h": 23, "motion_walk_episodes": 7, "screen_min": 811.1, "screen_sessions": 4097, "app_total_min": 5876.5, "app_social_min": 3001.3, "app_comm_min": 0.4, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 328.1}, {"date": "2024-04-23", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 5h, walked 26m in 3 episodes, drove 21h 31m (27h tracked)\n[Screen] 3668 opens, 13h 34m total\n[Apps] 82h 5m total (social 58h 32m, comm 1m, entertainment 9m) avg 13 apps/hr\n[Environment] indoor", "motion_stationary": 300.1, "motion_walking": 27.0, "motion_driving": 1291.2, "motion_tracked_h": 27, "motion_walk_episodes": 3, "screen_min": 814.5, "screen_sessions": 3668, "app_total_min": 4925.6, "app_social_min": 3512.5, "app_comm_min": 1.1, "app_ent_min": 9.1, "light_category": "indoor", "light_lux": 84.4}, {"date": "2024-04-24", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 18h 27m, walked 2h 10m in 14 episodes, drove 2h 22m (23h tracked)\n[Screen] 3930 opens, 11h 56m total\n[Apps] 58h 2m total (social 29h 10m, comm 29m, entertainment 0m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1107.3, "motion_walking": 130.2, "motion_driving": 142.5, "motion_tracked_h": 23, "motion_walk_episodes": 14, "screen_min": 716.3, "screen_sessions": 3930, "app_total_min": 3482.3, "app_social_min": 1750.2, "app_comm_min": 30.0, "app_ent_min": 0.7, "light_category": "outdoor", "light_lux": 707.6}, {"date": "2024-04-25", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 15m, walked 2h 5m in 12 episodes, drove 1h 37m (23h tracked)\n[Screen] 2810 opens, 14h 19m total\n[Apps] 70h 21m total (social 48h 35m, comm 2m) avg 11 apps/hr\n[Environment] indoor", "motion_stationary": 1155.6, "motion_walking": 125.4, "motion_driving": 97.9, "motion_tracked_h": 23, "motion_walk_episodes": 12, "screen_min": 859.4, "screen_sessions": 2810, "app_total_min": 4221.6, "app_social_min": 2915.6, "app_comm_min": 2.8, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 452.9}, {"date": "2024-04-26", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h, walked 1h 36m in 12 episodes, drove 4h 21m (25h tracked)\n[Screen] 4432 opens, 13h 44m total\n[Apps] 82h 24m total (social 38h 50m) avg 13 apps/hr\n[Environment] indoor", "motion_stationary": 1141.0, "motion_walking": 96.6, "motion_driving": 261.6, "motion_tracked_h": 25, "motion_walk_episodes": 12, "screen_min": 824.5, "screen_sessions": 4432, "app_total_min": 4944.6, "app_social_min": 2330.5, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 361.7}, {"date": "2024-04-27", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 56m, walked 49m in 6 episodes, drove 1h 12m (23h tracked)\n[Screen] 3277 opens, 13h 38m total\n[Apps] 83h 32m total (social 3h 45m) avg 12 apps/hr\n[Environment] indoor", "motion_stationary": 1256.7, "motion_walking": 49.7, "motion_driving": 72.5, "motion_tracked_h": 23, "motion_walk_episodes": 6, "screen_min": 818.7, "screen_sessions": 3277, "app_total_min": 5012.1, "app_social_min": 225.1, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 336.5}, {"date": "2024-04-28", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 57m, walked 42m in 8 episodes, drove 3h 20m (25h tracked)\n[Screen] 4685 opens, 14h 42m total\n[Apps] 84h 13m total (social 10h 24m) avg 13 apps/hr\n[Environment] outdoor", "motion_stationary": 1257.6, "motion_walking": 42.3, "motion_driving": 200.1, "motion_tracked_h": 25, "motion_walk_episodes": 8, "screen_min": 882.5, "screen_sessions": 4685, "app_total_min": 5053.7, "app_social_min": 624.6, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1394.4}, {"date": "2024-04-29", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 18h 47m, walked 1h 54m in 10 episodes, drove 3h 17m (24h tracked)\n[Screen] 4618 opens, 14h 36m total\n[Apps] 142h 34m total (social 12h 56m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1127.9, "motion_walking": 114.5, "motion_driving": 197.3, "motion_tracked_h": 24, "motion_walk_episodes": 10, "screen_min": 876.3, "screen_sessions": 4618, "app_total_min": 8554.8, "app_social_min": 776.6, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1165.9}, {"date": "2024-04-30", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 27m, walked 1h 38m in 12 episodes, drove 1h 49m (23h tracked)\n[Screen] 2634 opens, 11h 7m total\n[Apps] 19h 45m total (social 58m) avg 10 apps/hr\n[Environment] outdoor", "motion_stationary": 1167.1, "motion_walking": 98.2, "motion_driving": 109.4, "motion_tracked_h": 23, "motion_walk_episodes": 12, "screen_min": 667.8, "screen_sessions": 2634, "app_total_min": 1185.4, "app_social_min": 58.3, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1465.2}, {"date": "2024-05-01", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 54m, walked 1h 29m in 8 episodes, drove 3h 35m (26h tracked)\n[Screen] 3616 opens, 12h 49m total\n[Apps] 37h 5m total (social 25m, entertainment 12m) avg 10 apps/hr\n[Environment] outdoor", "motion_stationary": 1254.6, "motion_walking": 89.4, "motion_driving": 216.0, "motion_tracked_h": 26, "motion_walk_episodes": 8, "screen_min": 769.9, "screen_sessions": 3616, "app_total_min": 2225.7, "app_social_min": 25.8, "app_comm_min": 0.0, "app_ent_min": 12.7, "light_category": "outdoor", "light_lux": 510.0}, {"date": "2024-05-02", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 47m, walked 45m in 7 episodes, drove 1h 27m (22h tracked)\n[Screen] 4871 opens, 16h 10m total\n[Apps] 72h 47m total (social 36m, entertainment 0m) avg 15 apps/hr\n[Environment] outdoor", "motion_stationary": 1187.6, "motion_walking": 45.0, "motion_driving": 87.4, "motion_tracked_h": 22, "motion_walk_episodes": 7, "screen_min": 970.7, "screen_sessions": 4871, "app_total_min": 4367.8, "app_social_min": 36.6, "app_comm_min": 0.0, "app_ent_min": 0.7, "light_category": "outdoor", "light_lux": 705.6}, {"date": "2024-05-03", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 17h 55m, walked 2h 15m in 12 episodes, drove 2h 46m (23h tracked)\n[Screen] 3717 opens, 12h 42m total\n[Apps] 46h 50m total (social 7h 1m, comm 0m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1075.6, "motion_walking": 135.3, "motion_driving": 166.8, "motion_tracked_h": 23, "motion_walk_episodes": 12, "screen_min": 762.1, "screen_sessions": 3717, "app_total_min": 2810.4, "app_social_min": 421.7, "app_comm_min": 0.4, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1279.1}, {"date": "2024-05-04", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 21h 15m, walked 38m in 7 episodes, drove 3h 42m (26h tracked)\n[Screen] 4585 opens, 11h 10m total\n[Apps] 74h 7m total (social 21h 42m, comm 0m) avg 15 apps/hr\n[Environment] outdoor", "motion_stationary": 1275.7, "motion_walking": 38.7, "motion_driving": 222.4, "motion_tracked_h": 26, "motion_walk_episodes": 7, "screen_min": 670.1, "screen_sessions": 4585, "app_total_min": 4447.4, "app_social_min": 1302.6, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1911.2}, {"date": "2024-05-05", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 15m, walked 1h 12m in 8 episodes, drove 2h 32m (24h tracked)\n[Screen] 3158 opens, 12h 23m total\n[Apps] 45h 7m total (social 12h 43m, comm 10m) avg 11 apps/hr\n[Environment] outdoor", "motion_stationary": 1215.1, "motion_walking": 72.0, "motion_driving": 152.9, "motion_tracked_h": 24, "motion_walk_episodes": 8, "screen_min": 744.0, "screen_sessions": 3158, "app_total_min": 2707.3, "app_social_min": 763.1, "app_comm_min": 10.8, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1293.6}, {"date": "2024-05-06", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 29m, walked 1h 22m in 11 episodes, drove 1h 49m (24h tracked)\n[Screen] 4773 opens, 16h 27m total\n[Apps] 76h 29m total (social 19h 47m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1229.7, "motion_walking": 82.9, "motion_driving": 109.2, "motion_tracked_h": 24, "motion_walk_episodes": 11, "screen_min": 988.0, "screen_sessions": 4773, "app_total_min": 4589.6, "app_social_min": 1187.1, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 1987.6}, {"date": "2024-05-07", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 21h 27m, walked 1h 24m in 9 episodes, drove 1h 8m (24h tracked)\n[Screen] 3532 opens, 13h 42m total\n[Apps] 113h 10m total (social 6h 55m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1287.1, "motion_walking": 84.5, "motion_driving": 68.4, "motion_tracked_h": 24, "motion_walk_episodes": 9, "screen_min": 822.1, "screen_sessions": 3532, "app_total_min": 6790.1, "app_social_min": 415.4, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 992.2}, {"date": "2024-05-08", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 50m, walked 1h 17m in 11 episodes, drove 1h 48m (23h tracked)\n[Screen] 4336 opens, 13h 56m total\n[Apps] 77h 24m total (social 2h 11m) avg 15 apps/hr\n[Environment] indoor", "motion_stationary": 1190.5, "motion_walking": 77.1, "motion_driving": 108.1, "motion_tracked_h": 23, "motion_walk_episodes": 11, "screen_min": 836.2, "screen_sessions": 4336, "app_total_min": 4644.1, "app_social_min": 131.1, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 262.9}, {"date": "2024-05-09", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 20h 7m, walked 2h 31m in 11 episodes, drove 1h 20m (24h tracked)\n[Screen] 3719 opens, 13h 25m total\n[Apps] 102h 36m total (social 6h 31m) avg 13 apps/hr\n[Environment] indoor", "motion_stationary": 1207.2, "motion_walking": 151.5, "motion_driving": 80.3, "motion_tracked_h": 24, "motion_walk_episodes": 11, "screen_min": 805.0, "screen_sessions": 3719, "app_total_min": 6156.6, "app_social_min": 391.4, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 356.1}, {"date": "2024-05-10", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 22h 24m, walked 2h 10m in 13 episodes, drove 2h 25m (27h tracked)\n[Screen] 4942 opens, 15h 12m total\n[Apps] 55h 39m total (social 1h 43m) avg 14 apps/hr\n[Environment] outdoor", "motion_stationary": 1344.2, "motion_walking": 130.3, "motion_driving": 145.5, "motion_tracked_h": 27, "motion_walk_episodes": 13, "screen_min": 912.5, "screen_sessions": 4942, "app_total_min": 3339.3, "app_social_min": 104.0, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "outdoor", "light_lux": 808.8}, {"date": "2024-05-11", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 15h 45m, walked 0m, drove 4h 13m (20h tracked)\n[Screen] 3632 opens, 14h 33m total\n[Apps] 51h 38m total (social 4h 55m) avg 14 apps/hr\n[Environment] indoor", "motion_stationary": 945.5, "motion_walking": 0.6, "motion_driving": 253.9, "motion_tracked_h": 20, "motion_walk_episodes": 0, "screen_min": 873.2, "screen_sessions": 3632, "app_total_min": 3098.5, "app_social_min": 295.5, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 326.4}, {"date": "2024-05-12", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] drove 24h (24h tracked)\n[Screen] 2259 opens, 11h 58m total\n[Apps] 64h 46m total (social 42h 19m) avg 10 apps/hr", "motion_stationary": 0.0, "motion_walking": 0.0, "motion_driving": 1440.0, "motion_tracked_h": 24, "motion_walk_episodes": 0, "screen_min": 718.4, "screen_sessions": 2259, "app_total_min": 3886.3, "app_social_min": 2539.2, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "", "light_lux": 0}, {"date": "2024-05-13", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 36m, walked 43m in 2 episodes, drove 24h 39m (26h tracked)\n[Screen] 4069 opens, 12h 51m total\n[Apps] 44h total (social 8h 26m, entertainment 4m) avg 14 apps/hr\n[Environment] indoor", "motion_stationary": 36.8, "motion_walking": 43.6, "motion_driving": 1479.4, "motion_tracked_h": 26, "motion_walk_episodes": 2, "screen_min": 771.6, "screen_sessions": 4069, "app_total_min": 2640.1, "app_social_min": 506.5, "app_comm_min": 0.0, "app_ent_min": 4.4, "light_category": "indoor", "light_lux": 74.2}, {"date": "2024-05-14", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 19h 33m, walked 1h 4m in 8 episodes, drove 2h 1m (23h tracked)\n[Screen] 3230 opens, 13h 48m total\n[Apps] 102h 22m total (social 29h 56m) avg 12 apps/hr\n[Environment] indoor", "motion_stationary": 1173.8, "motion_walking": 64.0, "motion_driving": 121.4, "motion_tracked_h": 23, "motion_walk_episodes": 8, "screen_min": 828.4, "screen_sessions": 3230, "app_total_min": 6142.8, "app_social_min": 1796.9, "app_comm_min": 0.0, "app_ent_min": 0.0, "light_category": "indoor", "light_lux": 430.8}, {"date": "2024-05-15", "platform": "android", "modalities": "motion,screen,app,light", "narrative": "[Motion] stationary 1h (1h tracked)\n[Screen] 3545 opens, 14h 38m total\n[Apps] 50h 50m total (social 3h 39m, entertainment 1h 6m) avg 10 apps/hr\n[Environment] indoor", "motion_stationary": 60.0, "motion_walking": 0.0, "motion_driving": 0.0, "motion_tracked_h": 1, "motion_walk_episodes": 0, "screen_min": 878.7, "screen_sessions": 3545, "app_total_min": 3050.7, "app_social_min": 219.7, "app_comm_min": 0.0, "app_ent_min": 66.9, "light_category": "indoor", "light_lux": 338.2}];
+
+const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const fmt = (m) => m >= 60 ? `${(m/60).toFixed(1)}h` : `${Math.round(m)}m`;
+const fmtH = (m) => (m/60).toFixed(1);
+
+// --- ALERTS ---
+(function renderAlerts() {
+  const el = document.getElementById('alerts');
+  const alerts = [];
+  DATA.forEach(d => {
+    if (d.app_total_min > 1440)
+      alerts.push({ severe: d.app_total_min > 4320, text: `<strong>${d.date}</strong> app_total = <span class="a-val">${fmtH(d.app_total_min)}h</span> (>${Math.round(d.app_total_min/1440)}x 24h) — aggregation artifact`, icon: 'APP' });
+    if (d.motion_tracked_h > 24)
+      alerts.push({ severe: false, text: `<strong>${d.date}</strong> motion_tracked = <span class="a-val">${d.motion_tracked_h}h</span> (>24h) — overlapping hour bins`, icon: 'MOT' });
+    if (d.screen_sessions > 5000)
+      alerts.push({ severe: false, text: `<strong>${d.date}</strong> screen_sessions = <span class="a-val">${d.screen_sessions.toLocaleString()}</span> — implausibly high`, icon: 'SCR' });
+    if (d.motion_driving > 1400)
+      alerts.push({ severe: true, text: `<strong>${d.date}</strong> driving = <span class="a-val">${fmtH(d.motion_driving)}h</span> — likely misclassified motion`, icon: 'MOT' });
+  });
+  if (!alerts.length) { el.style.display = 'none'; return; }
+  let html = `<h2>Data Quality Flags (${alerts.length})</h2><div class="alert-grid">`;
+  alerts.forEach(a => {
+    html += `<div class="alert-item ${a.severe ? 'severe' : ''}"><span class="a-icon">${a.icon}</span><div class="a-text">${a.text}</div></div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+})();
+
+// --- STATS ---
+(function renderStats() {
+  const el = document.getElementById('stats');
+  const active = DATA.filter(d => d.screen_min > 0);
+  const avgScreen = active.length ? active.reduce((s,d) => s + d.screen_min, 0) / active.length : 0;
+  const avgWalk = DATA.reduce((s,d) => s + d.motion_walking, 0) / DATA.length;
+  const avgDrive = DATA.reduce((s,d) => s + d.motion_driving, 0) / DATA.length;
+  const avgApp = active.length ? active.reduce((s,d) => s + d.app_total_min, 0) / active.length : 0;
+  const outdoorDays = DATA.filter(d => d.light_category === 'outdoor').length;
+  const flagged = DATA.filter(d => d.app_total_min > 1440 || d.motion_tracked_h > 24 || d.screen_sessions > 5000).length;
+
+  const stats = [
+    { v: fmtH(avgScreen) + 'h', l: 'Avg Screen/Day' },
+    { v: Math.round(avgWalk) + 'm', l: 'Avg Walking/Day' },
+    { v: fmtH(avgDrive) + 'h', l: 'Avg Driving/Day' },
+    { v: fmtH(avgApp) + 'h', l: 'Avg App (raw)/Day' },
+    { v: outdoorDays + '/' + DATA.length, l: 'Outdoor Days' },
+    { v: flagged, l: 'Flagged Days' },
+  ];
+  el.innerHTML = stats.map(s => `<div class="stat-card"><div class="sv">${s.v}</div><div class="sl">${s.l}</div></div>`).join('');
+})();
+
+// --- SPARK CHARTS ---
+function renderSpark(containerId, values, color, maxOverride) {
+  const el = document.getElementById(containerId);
+  const max = maxOverride || Math.max(...values.map(v => v.val));
+  el.innerHTML = values.map((v, i) => {
+    const h = max > 0 ? Math.max(2, (v.val / max) * 64) : 2;
+    const c = v.flagged ? 'var(--orange)' : color;
+    return `<div class="spark-bar" style="height:${h}px;background:${c}"><div class="tip">${v.label}: ${v.display}</div></div>`;
+  }).join('');
+}
+
+renderSpark('chart-screen',
+  DATA.map(d => ({ val: d.screen_min / 60, label: d.date.slice(5), display: fmtH(d.screen_min) + 'h', flagged: d.screen_sessions > 5000 })),
+  'var(--screen-color)');
+
+renderSpark('chart-walk',
+  DATA.map(d => ({ val: d.motion_walking, label: d.date.slice(5), display: Math.round(d.motion_walking) + 'm', flagged: d.motion_walking > 600 })),
+  'var(--walk-color)');
+
+renderSpark('chart-drive',
+  DATA.map(d => ({ val: Math.min(d.motion_driving, 480), label: d.date.slice(5), display: fmt(d.motion_driving), flagged: d.motion_driving > 1400 })),
+  'var(--drive-color)', 8);
+
+// stacked app chart
+(function() {
+  const el = document.getElementById('chart-app');
+  const maxApp = Math.max(...DATA.map(d => d.app_total_min));
+  el.innerHTML = DATA.map(d => {
+    const total = Math.max(d.app_total_min, 0);
+    const h = maxApp > 0 ? Math.max(2, (total / maxApp) * 64) : 2;
+    const soc = total > 0 ? (d.app_social_min / total) * h : 0;
+    const comm = total > 0 ? (d.app_comm_min / total) * h : 0;
+    const ent = total > 0 ? (d.app_ent_min / total) * h : 0;
+    const other = h - soc - comm - ent;
+    const flagged = d.app_total_min > 1440;
+    return `<div class="spark-bar" style="height:${h}px;background:transparent;display:flex;flex-direction:column-reverse">
+      <div style="height:${other}px;background:${flagged ? '#6a4a0a' : '#2a2d44'};width:100%;border-radius:0 0 0 0"></div>
+      <div style="height:${soc}px;background:var(--social-color);width:100%"></div>
+      <div style="height:${comm}px;background:var(--comm-color);width:100%"></div>
+      <div style="height:${ent}px;background:var(--ent-color);width:100%;border-radius:2px 2px 0 0"></div>
+      <div class="tip">${d.date.slice(5)}: ${fmtH(d.app_total_min)}h total${flagged ? ' ⚠' : ''}</div>
+    </div>`;
+  }).join('');
+})();
+
+// --- TIMELINE ---
+(function renderTimeline() {
+  const el = document.getElementById('timeline');
+  const maxScreen = Math.max(...DATA.filter(d=>d.screen_min>0).map(d => d.screen_min));
+  const maxApp = Math.max(...DATA.map(d => d.app_social_min + d.app_comm_min + d.app_ent_min));
+
+  el.innerHTML = DATA.map(d => {
+    const dt = new Date(d.date + 'T12:00:00');
+    const wd = WEEKDAYS[dt.getDay()];
+    const env = d.light_category || '';
+    const envClass = env === 'outdoor' ? 'outdoor' : env === 'indoor' ? 'indoor' : '';
+
+    // Flags
+    const flags = [];
+    if (d.app_total_min > 1440) flags.push({ text: `app ${fmtH(d.app_total_min)}h`, severe: d.app_total_min > 4320 });
+    if (d.motion_tracked_h > 24) flags.push({ text: `${d.motion_tracked_h}h tracked`, severe: false });
+    if (d.screen_sessions > 5000) flags.push({ text: `${d.screen_sessions} opens`, severe: false });
+    if (d.motion_driving > 1400) flags.push({ text: `drive ${fmtH(d.motion_driving)}h`, severe: true });
+    const flagged = flags.length > 0;
+
+    // Motion bar
+    const motionTotal = d.motion_stationary + d.motion_walking + d.motion_driving;
+    const statPct = motionTotal > 0 ? (d.motion_stationary / motionTotal * 100) : 100;
+    const walkPct = motionTotal > 0 ? (d.motion_walking / motionTotal * 100) : 0;
+    const drivePct = motionTotal > 0 ? (d.motion_driving / motionTotal * 100) : 0;
+
+    // Screen bar
+    const screenPct = maxScreen > 0 ? Math.min(d.screen_min / maxScreen * 100, 100) : 0;
+
+    // App bars
+    const appMax = maxApp > 0 ? maxApp : 1;
+    const socH = (d.app_social_min / appMax) * 28;
+    const comH = (d.app_comm_min / appMax) * 28;
+    const entH = (d.app_ent_min / appMax) * 28;
+
+    // Colorize narrative
+    let narr = d.narrative
+      .replace(/\[Motion\]/g, '<span class="tag-motion">[Motion]</span>')
+      .replace(/\[Screen\]/g, '<span class="tag-screen">[Screen]</span>')
+      .replace(/\[Apps\]/g, '<span class="tag-apps">[Apps]</span>')
+      .replace(/\[Keyboard\]/g, '<span class="tag-keyboard">[Keyboard]</span>')
+      .replace(/\[Environment\]/g, '<span class="tag-env">[Environment]</span>')
+      .replace(/\[Music\]/g, '<span class="tag-music">[Music]</span>');
+
+    return `
+    <div class="day-card ${envClass} ${flagged ? 'flagged' : ''}">
+      <div class="day-head">
+        <span class="day-date">${d.date}</span>
+        <span class="day-weekday">${wd}</span>
+        ${env ? `<span class="env-badge ${env}">${env}</span>` : ''}
+        <div class="flag-badges">
+          ${flags.map(f => `<span class="flag-badge ${f.severe ? 'severe' : ''}">${f.text}</span>`).join('')}
+        </div>
+      </div>
+      <div class="day-body">
+        <div class="narrative">${narr}</div>
+        <div class="mini-viz">
+          <div>
+            <div class="mini-label"><span>motion</span><span>${d.motion_tracked_h}h</span></div>
+            <div class="motion-bar-wrap">
+              <div class="seg" style="width:${statPct}%;background:var(--stat-color)" title="stationary ${fmt(d.motion_stationary)}"></div>
+              <div class="seg" style="width:${walkPct}%;background:var(--walk-color)" title="walking ${fmt(d.motion_walking)}"></div>
+              <div class="seg" style="width:${drivePct}%;background:var(--drive-color)" title="driving ${fmt(d.motion_driving)}"></div>
+            </div>
+          </div>
+          <div>
+            <div class="mini-label"><span>screen</span><span>${fmtH(d.screen_min)}h</span></div>
+            <div class="screen-bar-wrap">
+              <div class="screen-bar-fill" style="width:${screenPct}%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="mini-label"><span>apps</span><span>${fmtH(d.app_total_min)}h</span></div>
+            <div class="app-bars">
+              <div class="app-bar" style="height:${Math.max(socH,1)}px;background:var(--social-color)" title="social ${fmt(d.app_social_min)}"></div>
+              <div class="app-bar" style="height:${Math.max(comH,1)}px;background:var(--comm-color)" title="comm ${fmt(d.app_comm_min)}"></div>
+              <div class="app-bar" style="height:${Math.max(entH,1)}px;background:var(--ent-color)" title="ent ${fmt(d.app_ent_min)}"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>
