@@ -87,13 +87,26 @@ def agg_motion_daily(df: pd.DataFrame) -> pd.DataFrame:
         agg = agg.merge(episodes, on="date_local", how="left")
         agg["motion_n_walking_episodes"] = agg["motion_n_walking_episodes"].fillna(0).astype(int)
 
+    # Cap motion total to 1440 min/day (24h), scale proportionally
+    MAX_MOTION_MIN = 1440
+    motion_sum_cols = [c for c in ["motion_stationary_min", "motion_walking_min", "motion_automotive_min"] if c in agg.columns]
+    if motion_sum_cols:
+        agg["_motion_total"] = agg[motion_sum_cols].sum(axis=1)
+        over = agg["_motion_total"] > MAX_MOTION_MIN
+        if over.any():
+            scale = MAX_MOTION_MIN / agg.loc[over, "_motion_total"]
+            for col in motion_sum_cols:
+                agg.loc[over, col] = (agg.loc[over, col] * scale).round(1)
+        agg.drop(columns=["_motion_total"], inplace=True)
+
     # Primary activity
     activity_cols = [c for c in ["motion_stationary_min", "motion_walking_min", "motion_automotive_min"] if c in agg.columns]
     if activity_cols:
         agg["motion_primary_activity"] = agg[activity_cols].idxmax(axis=1).str.replace("motion_", "").str.replace("_min", "")
 
-    # Tracked hours
+    # Tracked hours (cap at 24)
     tracked = df.groupby("date_local").size().reset_index(name="motion_tracked_hours")
+    tracked["motion_tracked_hours"] = tracked["motion_tracked_hours"].clip(upper=24)
     agg = agg.merge(tracked, on="date_local", how="left")
 
     return agg
@@ -114,11 +127,21 @@ def agg_screen_daily(df: pd.DataFrame) -> pd.DataFrame:
 
     agg = df.groupby("date_local").agg(agg_dict).reset_index()
     agg.rename(columns={"screen_on_min": "screen_total_min", "screen_n_sessions": "screen_n_sessions"}, inplace=True)
+
+    # Cap screen time to 1440 min/day (24h)
+    if "screen_total_min" in agg.columns:
+        agg["screen_total_min"] = agg["screen_total_min"].clip(upper=1440)
+
     return agg
 
 
 def agg_app_daily(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate app usage hourly → daily (Android only)."""
+    """Aggregate app usage hourly → daily (Android only).
+
+    App times are capped at 1440 min/day (24h) since parallel foreground
+    counting causes raw sums to exceed physical time.  Sub-categories are
+    scaled proportionally when the total is capped.
+    """
     if df is None or df.empty:
         return pd.DataFrame()
 
@@ -128,6 +151,17 @@ def agg_app_daily(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     agg = df.groupby("date_local")[available_sum].sum().reset_index()
+
+    # Cap app_total_min to 1440 and scale sub-categories proportionally
+    MAX_APP_MIN = 1440
+    if "app_total_min" in agg.columns:
+        over = agg["app_total_min"] > MAX_APP_MIN
+        if over.any():
+            scale = MAX_APP_MIN / agg.loc[over, "app_total_min"]
+            agg.loc[over, "app_total_min"] = MAX_APP_MIN
+            for sub in ["app_social_min", "app_comm_min", "app_entertainment_min"]:
+                if sub in agg.columns:
+                    agg.loc[over, sub] = (agg.loc[over, sub] * scale).round(1)
 
     # Mean apps per active hour
     if "app_n_apps" in df.columns:
@@ -314,7 +348,11 @@ def generate_narrative(row: pd.Series, platform: str) -> str:
         n_tracks = _safe_int(row.get("music_n_tracks"))
         parts.append(f"[Music] listening, {n_tracks} tracks")
 
-    return "\n".join(parts) if parts else "[No behavioral data available]"
+    if not parts:
+        # Fallback for days where device was present but no activity detected
+        return "[Minimal activity day] Device was active but no significant behavioral signals were recorded. This may indicate the phone was idle, sensors were off, or the participant was not carrying the device."
+
+    return "\n".join(parts)
 
 
 # ── Main pipeline ───────────────────────────────────────────────────
@@ -372,6 +410,20 @@ def build_filtered_for_user(pid: str) -> pd.DataFrame | None:
         if df is not None and not df.empty and "date_local" in df.columns:
             daily = daily.merge(df, on="date_local", how="left")
 
+    # Data quality flags (computed BEFORE capping for transparency)
+    daily["data_quality_flags"] = ""
+
+    def _flag_row(row):
+        flags = []
+        # These checks use the already-capped values, so flag based on
+        # tracked hours exceeding normal expectations
+        scr = _safe_float(row.get("screen_n_sessions"))
+        if scr > 5000:
+            flags.append("high_screen_sessions")
+        return ",".join(flags) if flags else ""
+
+    daily["data_quality_flags"] = daily.apply(_flag_row, axis=1)
+
     # Generate narratives
     daily["narrative"] = daily.apply(lambda row: generate_narrative(row, platform), axis=1)
 
@@ -387,12 +439,21 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Discover all users from screen data (universal modality)
+    # Discover all users from ALL modality directories (not just screen)
     if args.users:
         user_ids = [int(u.strip()) for u in args.users.split(",")]
     else:
-        screen_dir = HOURLY_DIR / "screen"
-        user_ids = sorted(int(f.stem.split("_")[0]) for f in screen_dir.glob("*_screen_hourly.parquet"))
+        all_pids = set()
+        for modality in ["screen", "motion", "keyinput", "light", "mus"]:
+            mod_dir = HOURLY_DIR / modality
+            if mod_dir.exists():
+                for f in mod_dir.glob("*_hourly.parquet"):
+                    try:
+                        pid = int(f.stem.split("_")[0])
+                        all_pids.add(pid)
+                    except ValueError:
+                        pass
+        user_ids = sorted(all_pids)
 
     logger.info(f"Processing {len(user_ids)} users → {output_dir}")
 
