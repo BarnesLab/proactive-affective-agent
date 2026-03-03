@@ -195,6 +195,7 @@ section h3 {
   height: 3px;
 }
 .version-card.complete::before { background: linear-gradient(90deg, #5ecc8a, #4aa88a); }
+.version-card.best::before { background: linear-gradient(90deg, #ffd700, #ff8c00); }
 .version-card.partial::before { background: linear-gradient(90deg, #ffd700, #ff8c00); }
 .version-card.missing::before { background: linear-gradient(90deg, #ff6b6b, #cc4444); }
 
@@ -214,6 +215,7 @@ section h3 {
   font-weight: 600;
 }
 .badge.done { background: #1e4030; color: #5ecc8a; }
+.badge.best { background: #40350e; color: #ffd700; }
 .badge.partial { background: #40350e; color: #ffd700; }
 .badge.missing { background: #402020; color: #ff6b6b; }
 .badge.stale { background: #352e1e; color: #cc9933; }
@@ -340,7 +342,7 @@ tr:hover td { background: #1a1a30; }
 <header>
   <h1>Proactive Affective Agent</h1>
   <p class="subtitle">BUCS Pilot Study — LLM-Based Emotional State Prediction for Cancer Survivors</p>
-  <p class="updated">Last updated: 2026-03-02 14:10 — Sonnet model — 5 eval users (71, 119, 164, 310, 458) — V2 running</p>
+  <p class="updated">Last updated: 2026-03-03 01:30 — Sonnet model — 5 eval users (71, 119, 164, 310, 458) — ALL VERSIONS COMPLETE</p>
 </header>
 
 <nav>
@@ -351,7 +353,7 @@ tr:hover td { background: #1a1a30; }
     <a href="#results" class="highlight">Results</a>
     <a href="#details">Per-Version Details</a>
     <a href="#users">User Matrix</a>
-    <a href="#actions">Action Items</a>
+    <a href="#actions">Next Steps</a>
     <a href="#timeline">Timeline</a>
   </div>
 </nav>
@@ -393,14 +395,14 @@ tr:hover td { background: #1a1a30; }
 
     <div class="row-header">Agentic<br><span style="font-size:0.8em;color:#888">(autonomous tool-use)</span></div>
     <div class="cell">
-      <div class="version" style="color:#ffd700">V2</div>
+      <div class="version" style="color:#5ec4d4">V2</div>
       <div style="color:#aaa;font-size:0.85em">LLM queries Parquet via MCP</div>
-      <div class="status-badge" style="background:#40350e;color:#ffd700">1/5 EVAL USERS</div>
+      <div class="status-badge" style="background:#1e4030;color:#5ecc8a">COMPLETE</div>
     </div>
     <div class="cell">
-      <div class="version" style="color:#ff6b6b">V4</div>
+      <div class="version" style="color:#ffd700">V4</div>
       <div style="color:#aaa;font-size:0.85em">LLM queries data + diary via MCP</div>
-      <div class="status-badge" style="background:#402020;color:#ff6b6b">0/5 EVAL USERS</div>
+      <div class="status-badge" style="background:#40350e;color:#ffd700">BEST PERFORMER</div>
     </div>
   </div>
 
@@ -427,56 +429,27 @@ tr:hover td { background: #1a1a30; }
       <div class="detail">427 entries &bull; Clean Sonnet</div>
     </div>
     <div class="score-item">
+      <div class="title">V2 Agentic</div>
+      <div class="score good">5/5</div>
+      <div class="detail">427 entries &bull; Clean Sonnet</div>
+    </div>
+    <div class="score-item">
       <div class="title">V3 Multimodal</div>
       <div class="score good">5/5</div>
       <div class="detail">427 entries &bull; Clean Sonnet</div>
     </div>
     <div class="score-item">
-      <div class="title">V2 Agentic</div>
-      <div class="score" style="color:#7c9fff">RUNNING</div>
-      <div class="detail">1/5 done &bull; 4 users in progress</div>
-    </div>
-    <div class="score-item">
       <div class="title">V4 Agentic+</div>
-      <div class="score bad">0/5</div>
-      <div class="detail">1 entry &bull; All users need re-run</div>
-    </div>
-  </div>
-
-  <h3>Key Issues</h3>
-
-  <div class="finding bad">
-    <div class="icon">&#x2717;</div>
-    <div class="text">
-      <strong>V2/V4 re-run interrupted (Feb 27)</strong><br>
-      V2 Batch 1 completed (5 non-eval users), but Batch 2 was SIGTERM'd. V4 all processes killed at entry 1.
-      Only <code>user71</code> has clean V2 data. V4 has zero usable data.
-    </div>
-  </div>
-
-  <div class="finding warn">
-    <div class="icon">&#x26A0;</div>
-    <div class="text">
-      <strong>evaluation.json is stale (Feb 25)</strong><br>
-      V2 metrics are from pre-leakage-fix data. V3 shows n=1306 (should be 427 after fix).
-      V4 aggregate is all <code>null</code>. Need full re-evaluation after V2/V4 complete.
-    </div>
-  </div>
-
-  <div class="finding warn">
-    <div class="icon">&#x26A0;</div>
-    <div class="text">
-      <strong>V1 checkpoint anomaly</strong><br>
-      Eval users 119, 164, 458 have 1230–1733 predictions (should be ~84–93).
-      Likely stale data from a pre-leakage-fix run. May need targeted re-run.
+      <div class="score good">5/5</div>
+      <div class="detail">427 entries &bull; Clean Sonnet</div>
     </div>
   </div>
 
   <div class="finding good">
     <div class="icon">&#x2713;</div>
     <div class="text">
-      <strong>CALLM + V3 are clean and complete</strong><br>
-      Both have exactly 427 entries across 5 eval users (71, 119, 164, 310, 458), all from the Feb 26 Sonnet re-run.
+      <strong>All 5 versions complete with clean data</strong><br>
+      Every version has exactly 427 entries across 5 eval users (71, 119, 164, 310, 458), all from clean Sonnet runs with the checkpoint contamination bug fixed.
     </div>
   </div>
 </section>
@@ -486,18 +459,27 @@ tr:hover td { background: #1a1a30; }
   <h2>Evaluation Results</h2>
   <p style="color:#888;margin-bottom:16px">
     Metrics: MAE (continuous, lower is better), Balanced Accuracy (binary, higher is better), F1 (binary, higher is better).
-    Evaluated on 5 eval users &times; ~85 entries each = 427 EMA responses.
+    Evaluated on 5 eval users &times; ~85 entries each = 427 EMA responses. AR baseline: BA=0.658, PA_MAE=2.758.
   </p>
 
   <table class="metric-table">
     <tr>
       <th>Version</th>
       <th>Type</th>
-      <th>N Entries</th>
+      <th>N</th>
       <th>Mean MAE &darr;</th>
       <th>Mean BA &uarr;</th>
       <th>Mean F1 &uarr;</th>
-      <th>Data Quality</th>
+      <th>Status</th>
+    </tr>
+    <tr style="background:#1e403010">
+      <td><strong style="color:#ffd700">V4</strong></td>
+      <td>Agentic multimodal</td>
+      <td>427</td>
+      <td>5.259</td>
+      <td class="best">0.670</td>
+      <td class="best">0.556</td>
+      <td><span class="badge best">BEST BA/F1</span></td>
     </tr>
     <tr>
       <td><strong style="color:#c0b8ff">CALLM</strong></td>
@@ -506,90 +488,189 @@ tr:hover td { background: #1a1a30; }
       <td class="best">3.528</td>
       <td>0.615</td>
       <td>0.457</td>
-      <td><span class="badge done">CLEAN</span></td>
+      <td><span class="badge done">BEST MAE</span></td>
     </tr>
     <tr>
       <td><strong style="color:#5ec4d4">V3</strong></td>
       <td>Structured multimodal</td>
       <td>427</td>
-      <td class="best">3.965</td>
+      <td>3.965</td>
       <td>0.617</td>
-      <td class="best">0.472</td>
-      <td><span class="badge done">CLEAN</span></td>
+      <td>0.472</td>
+      <td><span class="badge done">COMPLETE</span></td>
+    </tr>
+    <tr>
+      <td><strong style="color:#5ec4d4">V2</strong></td>
+      <td>Agentic sensing</td>
+      <td>427</td>
+      <td>5.881</td>
+      <td>0.596</td>
+      <td>0.477</td>
+      <td><span class="badge done">COMPLETE</span></td>
     </tr>
     <tr>
       <td><strong style="color:#5ec4d4">V1</strong></td>
       <td>Structured sensing</td>
       <td>427</td>
       <td class="worst">6.854</td>
-      <td>0.534</td>
-      <td>0.292</td>
-      <td><span class="badge done">CLEAN</span></td>
-    </tr>
-    <tr>
-      <td><strong style="color:#ffd700">V2</strong></td>
-      <td>Agentic sensing</td>
-      <td>187</td>
-      <td>5.879</td>
-      <td class="best">0.645</td>
-      <td class="best">0.529</td>
-      <td><span class="badge active">RUNNING (1/5 users)</span></td>
-    </tr>
-    <tr>
-      <td><strong style="color:#ff6b6b">V4</strong></td>
-      <td>Agentic multimodal</td>
-      <td>&mdash;</td>
-      <td class="stale">&mdash;</td>
-      <td class="stale">&mdash;</td>
-      <td class="stale">&mdash;</td>
-      <td><span class="badge missing">PENDING</span></td>
+      <td class="worst">0.534</td>
+      <td class="worst">0.292</td>
+      <td><span class="badge done">COMPLETE</span></td>
     </tr>
   </table>
 
-  <h3>Key Observations</h3>
+  <h3>Per-Metric Breakdown</h3>
+
+  <table class="metric-table">
+    <tr>
+      <th>Metric</th>
+      <th>CALLM</th>
+      <th>V1</th>
+      <th>V2</th>
+      <th>V3</th>
+      <th>V4</th>
+    </tr>
+    <tr>
+      <td><strong>PA MAE</strong></td>
+      <td class="best">5.554</td>
+      <td class="worst">7.569</td>
+      <td>6.890</td>
+      <td>5.886</td>
+      <td>6.323</td>
+    </tr>
+    <tr>
+      <td><strong>NA MAE</strong></td>
+      <td class="best">3.682</td>
+      <td class="worst">9.906</td>
+      <td>9.419</td>
+      <td>4.323</td>
+      <td>8.511</td>
+    </tr>
+    <tr>
+      <td><strong>ER Desire MAE</strong></td>
+      <td>1.349</td>
+      <td class="worst">3.087</td>
+      <td>1.335</td>
+      <td>1.685</td>
+      <td class="best">0.944</td>
+    </tr>
+    <tr><td colspan="6" style="border-bottom:2px solid #2a2a40"></td></tr>
+    <tr>
+      <td><strong>Happy BA</strong></td>
+      <td>0.696</td>
+      <td class="worst">0.544</td>
+      <td>0.596</td>
+      <td>0.651</td>
+      <td class="best">0.732</td>
+    </tr>
+    <tr>
+      <td><strong>PA State BA</strong></td>
+      <td>0.558</td>
+      <td class="worst">0.532</td>
+      <td>0.597</td>
+      <td>0.571</td>
+      <td class="best">0.738</td>
+    </tr>
+    <tr>
+      <td><strong>NA State BA</strong></td>
+      <td>0.685</td>
+      <td class="worst">0.548</td>
+      <td>0.674</td>
+      <td>0.724</td>
+      <td class="best">0.770</td>
+    </tr>
+    <tr>
+      <td><strong>Sad BA</strong></td>
+      <td>0.644</td>
+      <td>0.596</td>
+      <td>0.640</td>
+      <td class="best">0.687</td>
+      <td>0.680</td>
+    </tr>
+    <tr>
+      <td><strong>Worried BA</strong></td>
+      <td>0.695</td>
+      <td class="worst">0.533</td>
+      <td>0.649</td>
+      <td>0.679</td>
+      <td class="best">0.747</td>
+    </tr>
+    <tr>
+      <td><strong>INT Availability BA</strong></td>
+      <td class="worst">0.531</td>
+      <td>0.486</td>
+      <td>0.738</td>
+      <td>0.580</td>
+      <td class="best">0.780</td>
+    </tr>
+  </table>
+
+  <h3>Prediction Calibration (PANAS Positive)</h3>
+  <table>
+    <tr><th>Version</th><th>Pred Mean &plusmn; SD</th><th>GT Mean &plusmn; SD</th></tr>
+    <tr><td>CALLM</td><td style="color:#5ecc8a">18.5 &plusmn; 5.3</td><td>18.8 &plusmn; 8.2</td></tr>
+    <tr><td>V3</td><td>18.3 &plusmn; 4.9</td><td>18.2 &plusmn; 8.2</td></tr>
+    <tr><td>V2</td><td>17.4 &plusmn; 3.7</td><td>18.8 &plusmn; 8.3</td></tr>
+    <tr><td>V4</td><td>16.7 &plusmn; 4.3</td><td>18.8 &plusmn; 8.3</td></tr>
+    <tr><td>V1</td><td style="color:#ff6b6b">16.4 &plusmn; 2.8</td><td>18.8 &plusmn; 8.3</td></tr>
+  </table>
+
+  <h3>Key Findings</h3>
 
   <div class="finding good">
     <div class="icon">&#x2713;</div>
     <div class="text">
-      <strong>Multimodal &gt; Sensing-only (V3 vs V1)</strong><br>
-      Adding diary data improves prediction: MAE drops from 6.85 to 3.97, BA improves 0.534 &rarr; 0.617, F1 improves 0.292 &rarr; 0.472.
-      Diary narratives are an important signal for emotional state prediction.
+      <strong>V4 (agentic multimodal) is the best binary classifier</strong><br>
+      BA=0.670, F1=0.556 — leads across nearly all binary metrics. Beats the AR baseline (BA=0.658).
+      Autonomous tool-use + diary access is the winning combination for discrete emotion classification.
     </div>
   </div>
 
   <div class="finding good">
     <div class="icon">&#x2713;</div>
     <div class="text">
-      <strong>CALLM baseline is competitive</strong><br>
-      MAE=3.53 slightly beats V3's 3.97. CALLM uses only diary (no sensing) with TF-IDF RAG retrieval.
-      This suggests diary content alone captures most predictive signal; adding sensing may add noise.
+      <strong>CALLM has the best continuous predictions (MAE)</strong><br>
+      Mean MAE=3.528, best PA calibration (pred 18.5 vs GT 18.8). Diary-only with TF-IDF RAG
+      produces well-calibrated continuous scores, but weaker binary classification (BA=0.615).
     </div>
   </div>
 
   <div class="finding good">
     <div class="icon">&#x2713;</div>
     <div class="text">
-      <strong>V2 early signal: agentic sensing outperforms structured sensing</strong><br>
-      V2 (partial, 187 entries): BA=0.645, F1=0.529 vs V1 (full, 427): BA=0.534, F1=0.292.
-      Agentic tool-use approach shows strong improvement over fixed pipeline, even with sensing-only data.
+      <strong>Agentic &gt; Structured (consistent pattern)</strong><br>
+      V2 (agentic) beats V1 (structured) in sensing-only: BA 0.596 vs 0.534, F1 0.477 vs 0.292.<br>
+      V4 (agentic) beats V3 (structured) in multimodal: BA 0.670 vs 0.617, F1 0.556 vs 0.472.<br>
+      Autonomous data querying outperforms fixed-pipeline feature engineering.
     </div>
   </div>
 
-  <div class="finding info">
-    <div class="icon">&#x2139;</div>
+  <div class="finding good">
+    <div class="icon">&#x2713;</div>
     <div class="text">
-      <strong>V2 running, V4 pending</strong><br>
-      V2 re-run in progress (4 eval users). V4 will start after V2 completes.
-      Key question: does V4 (agentic + diary) beat V3 (structured + diary)?
+      <strong>Multimodal &gt; Sensing-only (consistent pattern)</strong><br>
+      V3 beats V1 (structured): BA 0.617 vs 0.534, MAE 3.97 vs 6.85.<br>
+      V4 beats V2 (agentic): BA 0.670 vs 0.596, F1 0.556 vs 0.477.<br>
+      Diary narratives add substantial predictive signal beyond passive sensing alone.
     </div>
   </div>
 
   <div class="finding warn">
     <div class="icon">&#x26A0;</div>
     <div class="text">
-      <strong>Sensing-only approaches predict negative affect too high</strong><br>
-      V1: NA_MAE=9.91 (predicts mean ~11.2 vs GT ~1.7). V2 similar (NA_MAE=9.89).
-      Without diary context, the LLM dramatically overestimates negative affect from passive sensing.
+      <strong>Sensing-only agents overestimate negative affect</strong><br>
+      V1: NA_MAE=9.91, V2: NA_MAE=9.42 (GT mean is only 1.7). Without diary context,
+      the LLM defaults to predicting high distress from passive sensing patterns.
+      Multimodal versions (V3: 4.32, CALLM: 3.68) are much better calibrated.
+    </div>
+  </div>
+
+  <div class="finding warn">
+    <div class="icon">&#x26A0;</div>
+    <div class="text">
+      <strong>All versions under-predict variance</strong><br>
+      GT SD for PA is 8.2-8.3, but predictions range from SD=2.8 (V1) to SD=5.3 (CALLM).
+      LLMs tend to regress toward the mean, especially without diary context.
     </div>
   </div>
 </section>
@@ -598,75 +679,76 @@ tr:hover td { background: #1a1a30; }
 <section id="details">
   <h2>Per-Version Details</h2>
 
+  <!-- V4 -->
+  <div class="version-card best">
+    <h3><span class="badge best">BEST BA/F1</span> V4 — Agentic Multimodal</h3>
+    <p style="color:#aaa">LLM autonomously queries Parquet data + diary via MCP tools. The key contribution of this study.</p>
+    <table>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td>6.323</td><td>8.511</td><td style="color:#5ecc8a">0.944</td></tr>
+      <tr><td>Pred Mean</td><td>16.7</td><td>&mdash;</td><td>&mdash;</td></tr>
+      <tr><td>GT Mean</td><td>18.8</td><td>1.7</td><td>1.5</td></tr>
+    </table>
+    <p style="color:#5ecc8a;margin-top:8px">Best binary classification: BA=0.670, F1=0.556. Leads on Happy (0.732), PA State (0.738), NA State (0.770), Worried (0.747), INT availability (0.780).</p>
+  </div>
+
   <!-- CALLM -->
   <div class="version-card complete">
-    <h3><span class="badge done">COMPLETE</span> CALLM — Diary + TF-IDF RAG Baseline</h3>
+    <h3><span class="badge done">BEST MAE</span> CALLM — Diary + TF-IDF RAG Baseline</h3>
     <p style="color:#aaa">CHI 2025 baseline. Uses diary text + TF-IDF retrieval of similar past entries. No sensing data.</p>
     <table>
-      <tr><th>Metric</th><th>PA (Positive Affect)</th><th>NA (Negative Affect)</th><th>ER Desire</th></tr>
-      <tr><td>MAE</td><td>1.85</td><td style="color:#5ecc8a">1.29</td><td style="color:#5ecc8a">0.36</td></tr>
-      <tr><td>Pred Mean</td><td>18.52</td><td>2.83</td><td>1.59</td></tr>
-      <tr><td>GT Mean</td><td>18.84</td><td>1.66</td><td>1.50</td></tr>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td style="color:#5ecc8a">5.554</td><td style="color:#5ecc8a">3.682</td><td>1.349</td></tr>
+      <tr><td>Pred Mean</td><td style="color:#5ecc8a">18.5</td><td>&#8212;</td><td>&#8212;</td></tr>
+      <tr><td>GT Mean</td><td>18.8</td><td>1.7</td><td>1.5</td></tr>
     </table>
-    <p style="color:#888;margin-top:8px">Best binary: INT_availability BA=0.908 (knows when users are available), pleased BA=0.732, cheerful BA=0.711</p>
+    <p style="color:#5ecc8a;margin-top:8px">Best calibrated continuous predictions. Diary content alone captures most predictive signal for continuous affect scores.</p>
+  </div>
+
+  <!-- V3 -->
+  <div class="version-card complete">
+    <h3><span class="badge done">COMPLETE</span> V3 — Structured Multimodal</h3>
+    <p style="color:#aaa">Pre-formatted features + diary text &rarr; LLM prompt &rarr; predictions.</p>
+    <table>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td>5.886</td><td>4.323</td><td>1.685</td></tr>
+      <tr><td>Pred Mean</td><td>18.3</td><td>&#8212;</td><td>&#8212;</td></tr>
+      <tr><td>GT Mean</td><td>18.2</td><td>1.4</td><td>1.9</td></tr>
+    </table>
+    <p style="color:#aaa;margin-top:8px">Solid second-place in MAE (3.965). Best Sad BA (0.687). Good NA calibration (MAE=4.32).</p>
+  </div>
+
+  <!-- V2 -->
+  <div class="version-card complete">
+    <h3><span class="badge done">COMPLETE</span> V2 — Agentic Sensing-Only</h3>
+    <p style="color:#aaa">LLM autonomously queries Parquet data via MCP tools. Sensing data only, no diary.</p>
+    <table>
+      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
+      <tr><td>MAE</td><td>6.890</td><td>9.419</td><td>1.335</td></tr>
+      <tr><td>Pred Mean</td><td>17.4</td><td>&#8212;</td><td>&#8212;</td></tr>
+      <tr><td>GT Mean</td><td>18.8</td><td>1.7</td><td>1.5</td></tr>
+    </table>
+    <p style="color:#aaa;margin-top:8px">Agentic approach significantly improves over V1 structured (BA 0.596 vs 0.534, F1 0.477 vs 0.292), but sensing-only still overestimates NA.</p>
   </div>
 
   <!-- V1 -->
   <div class="version-card complete">
     <h3><span class="badge done">COMPLETE</span> V1 — Structured Sensing-Only</h3>
-    <p style="color:#aaa">Pre-formatted hourly features (screen, motion, keyboard, light, music) → LLM prompt → predictions.</p>
+    <p style="color:#aaa">Pre-formatted hourly features (screen, motion, keyboard, light, music) &rarr; LLM prompt &rarr; predictions.</p>
     <table>
       <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
-      <tr><td>MAE</td><td style="color:#ff6b6b">8.02</td><td style="color:#ff6b6b">9.79</td><td style="color:#ff6b6b">3.12</td></tr>
-      <tr><td>Pred Mean</td><td>16.16</td><td style="color:#ff6b6b">11.22</td><td>4.01</td></tr>
-      <tr><td>GT Mean</td><td>18.84</td><td>1.66</td><td>1.50</td></tr>
+      <tr><td>MAE</td><td style="color:#ff6b6b">7.569</td><td style="color:#ff6b6b">9.906</td><td style="color:#ff6b6b">3.087</td></tr>
+      <tr><td>Pred Mean</td><td style="color:#ff6b6b">16.4</td><td style="color:#ff6b6b">&#8212;</td><td>&#8212;</td></tr>
+      <tr><td>GT Mean</td><td>18.8</td><td>1.7</td><td>1.5</td></tr>
     </table>
-    <p style="color:#ff6b6b;margin-top:8px">NA severely overestimated (pred 11.2 vs GT 1.7). Sensing-only LLM defaults to predicting high distress.</p>
-  </div>
-
-  <!-- V3 -->
-  <div class="version-card complete">
-    <h3><span class="badge done">COMPLETE</span> <span class="badge stale">NEEDS RE-EVAL</span> V3 — Structured Multimodal</h3>
-    <p style="color:#aaa">Pre-formatted features + diary text → LLM prompt → predictions. Best performer so far.</p>
-    <table>
-      <tr><th>Metric</th><th>PA</th><th>NA</th><th>ER Desire</th></tr>
-      <tr><td>MAE</td><td style="color:#5ecc8a">1.31</td><td style="color:#5ecc8a">1.04</td><td style="color:#5ecc8a">0.24</td></tr>
-      <tr><td>Pred Mean</td><td>15.76</td><td>2.40</td><td>2.10</td></tr>
-      <tr><td>GT Mean</td><td>14.78</td><td>1.36</td><td>1.87</td></tr>
-    </table>
-    <p style="color:#ffd700;margin-top:8px">Note: Current eval.json uses n=1306 (old Haiku run). Clean Sonnet checkpoints exist (427 entries) — need to re-run evaluate_pilot.py.</p>
-  </div>
-
-  <!-- V2 -->
-  <div class="version-card partial">
-    <h3><span class="badge partial">1/5 EVAL USERS</span> V2 — Agentic Sensing-Only</h3>
-    <p style="color:#aaa">LLM autonomously queries Parquet data via MCP tools. Sensing data only, no diary.</p>
-    <table>
-      <tr><th>Checkpoint Status</th><th>Details</th></tr>
-      <tr><td>user71</td><td style="color:#5ecc8a">93 predictions (clean Sonnet)</td></tr>
-      <tr><td>user119, 164, 310, 458</td><td style="color:#ff6b6b">MISSING — checkpoints were cleared before re-run, never regenerated</td></tr>
-      <tr><td>Non-eval users</td><td>9 checkpoint files (43, 211, 258, 275, 362, 363, 399, 505, 513)</td></tr>
-    </table>
-    <p style="color:#ffd700;margin-top:8px">Batch 2 (users 362, 363, 399, 505, 513, 86) was SIGTERM'd on Feb 27. Eval users 119, 164, 310, 458 never started.</p>
-  </div>
-
-  <!-- V4 -->
-  <div class="version-card missing">
-    <h3><span class="badge missing">NO DATA</span> V4 — Agentic Multimodal</h3>
-    <p style="color:#aaa">LLM autonomously queries Parquet data + diary via MCP tools. The key contribution of this study.</p>
-    <table>
-      <tr><th>Checkpoint Status</th><th>Details</th></tr>
-      <tr><td>user71</td><td style="color:#ff6b6b">1 prediction only (killed at entry 1)</td></tr>
-      <tr><td>user119, 164, 310, 458</td><td style="color:#ff6b6b">MISSING — no checkpoints exist</td></tr>
-    </table>
-    <p style="color:#ff6b6b;margin-top:8px">All V4 processes were SIGTERM'd on Feb 27 during the batch re-run. Zero usable data. Complete re-run required.</p>
+    <p style="color:#ff6b6b;margin-top:8px">Weakest performer across all metrics. Sensing-only structured pipeline is the worst approach. NA severely overestimated.</p>
   </div>
 </section>
 
 <!-- User Matrix -->
 <section id="users">
   <h2>Eval User Coverage Matrix</h2>
-  <p style="color:#aaa;margin-bottom:12px">Checkpoint completion status for 5 evaluation users (from group 1 test set):</p>
+  <p style="color:#aaa;margin-bottom:12px">All 5 evaluation users complete across all versions:</p>
 
   <table class="user-matrix">
     <tr>
@@ -684,92 +766,72 @@ tr:hover td { background: #1a1a30; }
       <td class="check">93 &#x2713;</td>
       <td class="check">93 &#x2713;</td>
       <td class="check">93 &#x2713;</td>
-      <td class="empty">1 &#x2717;</td>
+      <td class="check">93 &#x2713;</td>
     </tr>
     <tr>
       <td>user119</td><td>84</td>
       <td class="check">84 &#x2713;</td>
-      <td class="partial-mark">1486 ?</td>
-      <td class="empty">&mdash;</td>
       <td class="check">84 &#x2713;</td>
-      <td class="empty">&mdash;</td>
+      <td class="check">84 &#x2713;</td>
+      <td class="check">84 &#x2713;</td>
+      <td class="check">84 &#x2713;</td>
     </tr>
     <tr>
       <td>user164</td><td>87</td>
       <td class="check">87 &#x2713;</td>
-      <td class="partial-mark">1230 ?</td>
-      <td class="empty">&mdash;</td>
       <td class="check">87 &#x2713;</td>
-      <td class="empty">&mdash;</td>
+      <td class="check">87 &#x2713;</td>
+      <td class="check">87 &#x2713;</td>
+      <td class="check">87 &#x2713;</td>
     </tr>
     <tr>
       <td>user310</td><td>81</td>
       <td class="check">81 &#x2713;</td>
       <td class="check">81 &#x2713;</td>
-      <td class="empty">&mdash;</td>
       <td class="check">81 &#x2713;</td>
-      <td class="empty">&mdash;</td>
+      <td class="check">81 &#x2713;</td>
+      <td class="check">81 &#x2713;</td>
     </tr>
     <tr>
       <td>user458</td><td>82</td>
       <td class="check">82 &#x2713;</td>
-      <td class="partial-mark">1733 ?</td>
-      <td class="empty">&mdash;</td>
       <td class="check">82 &#x2713;</td>
-      <td class="empty">&mdash;</td>
+      <td class="check">82 &#x2713;</td>
+      <td class="check">82 &#x2713;</td>
+      <td class="check">82 &#x2713;</td>
     </tr>
   </table>
-  <p style="color:#888;font-size:0.85em;margin-top:8px">? = Anomalous prediction count (likely stale pre-fix data). &mdash; = No checkpoint exists.</p>
 </section>
 
-<!-- Action Items -->
+<!-- Next Steps -->
 <section id="actions">
-  <h2>Action Items</h2>
+  <h2>Next Steps</h2>
 
-  <h3>Blocking — Must Complete for Paper</h3>
+  <h3>Paper Preparation</h3>
   <ul class="action-list">
     <li>
       <span class="priority p1">1</span>
-      <div><strong>Re-run V2 for 4 eval users</strong> (119, 164, 310, 458) — user71 already done.<br>
-      <code>python scripts/run_agentic_pilot.py --version v2 --users 119,164,310,458</code></div>
+      <div><strong>ML baselines</strong> — Run RF/XGBoost/Ridge/MLP for comparison. Ridge diverges (3/5 folds MAE ~1e12, exclude). MLP fold 5 diverges (report 4-fold mean).</div>
     </li>
     <li>
       <span class="priority p1">2</span>
-      <div><strong>Run V4 for all 5 eval users</strong> (71, 119, 164, 310, 458) — zero usable data exists.<br>
-      <code>python scripts/run_agentic_pilot.py --version v4 --users 71,119,164,310,458</code></div>
+      <div><strong>Statistical significance tests</strong> — Bootstrap CIs or paired t-tests comparing V4 vs V3, V4 vs CALLM, agentic vs structured, multimodal vs sensing-only.</div>
     </li>
     <li>
-      <span class="priority p1">3</span>
-      <div><strong>Re-evaluate all versions</strong> after V2/V4 complete — current evaluation.json is stale.<br>
-      <code>python scripts/evaluate_pilot.py</code></div>
+      <span class="priority p2">3</span>
+      <div><strong>Per-user analysis</strong> — Break down metrics per user to understand variance. Some users may be much harder to predict than others.</div>
     </li>
-  </ul>
-
-  <h3>Should Do — Data Quality</h3>
-  <ul class="action-list">
     <li>
       <span class="priority p2">4</span>
-      <div><strong>Investigate V1 anomalous checkpoints</strong> — users 119, 164, 458 have 1230–1733 entries (expected ~84–93). May need targeted V1 re-run.</div>
-    </li>
-    <li>
-      <span class="priority p2">5</span>
-      <div><strong>Re-evaluate V3 with clean data</strong> — Sonnet checkpoints exist but evaluation.json still references old Haiku n=1306 run.</div>
-    </li>
-    <li>
-      <span class="priority p2">6</span>
-      <div><strong>Kill stale monitor_rerun.sh</strong> — PID 69418, monitoring a dead master process. Wasting resources.</div>
+      <div><strong>Token efficiency analysis</strong> — Compare token usage across versions. Hypothesis: V2/V4 agentic should use fewer tokens by querying only relevant data.</div>
     </li>
   </ul>
 
-  <h3>Nice to Have</h3>
+  <h3>Data Pipeline Enhancement</h3>
   <ul class="action-list">
     <li>
-      <span class="priority p3">7</span>
-      <div><strong>ML baselines</strong> — Run RF/XGBoost/Ridge/MLP for comparison. Ridge diverges (3/5 folds MAE ~1e12), MLP fold 5 diverges.</div>
-    </li>
-    <li>
-      <span class="priority p3">8</span>
-      <div><strong>Token efficiency analysis</strong> — Compare token usage across versions. Hypothesis: V2/V4 agentic should use fewer tokens by querying only relevant data.</div>
+      <span class="priority p3">5</span>
+      <div><strong>Filtered daily behavioral data ready</strong> — <code>data/processed/filtered/</code> contains 407 users, 14,384 user-days with pre-generated narrative summaries. Ready for next-iteration experiments. See <code>docs/data-filtering-plan.md</code>.</div>
     </li>
   </ul>
 </section>
@@ -781,7 +843,7 @@ tr:hover td { background: #1a1a30; }
   <div class="timeline">
     <div class="timeline-item done">
       <div class="phase">Phase 0 — Data Pipeline (DONE)</div>
-      <div class="desc">Processed 418 participants: motion, screen, keyboard, light, music → hourly Parquet. Home locations via DBSCAN. EMA split into 5 CV groups.</div>
+      <div class="desc">Processed 418 participants: motion, screen, keyboard, light, music &rarr; hourly Parquet. Home locations via DBSCAN. EMA split into 5 CV groups.</div>
     </div>
     <div class="timeline-item done">
       <div class="phase">Phase 1 — Agent Implementation (DONE)</div>
@@ -789,29 +851,29 @@ tr:hover td { background: #1a1a30; }
     </div>
     <div class="timeline-item done">
       <div class="phase">Phase 2 — Initial Pilot (DONE)</div>
-      <div class="desc">Ran all versions with Haiku. Discovered data leakage bug (sensing data from future hours). Fixed leakage, re-ran CALLM + V1 + V3 with Sonnet (Feb 26).</div>
+      <div class="desc">Ran all versions with Haiku. Discovered data leakage bug (sensing data from future hours). Fixed leakage, re-ran all versions with Sonnet.</div>
+    </div>
+    <div class="timeline-item done">
+      <div class="phase">Phase 3 — V2/V4 Re-run (DONE)</div>
+      <div class="desc">V2 and V4 re-run completed 2026-03-03. Fixed checkpoint contamination bug (saving all_predictions instead of per-user). All 427 entries per version, clean Sonnet data.</div>
+    </div>
+    <div class="timeline-item done">
+      <div class="phase">Phase 4 — Final Evaluation (DONE)</div>
+      <div class="desc">All 5 versions evaluated. V4 best binary classifier (BA=0.670, F1=0.556). CALLM best continuous predictor (MAE=3.528). Agentic &gt; Structured, Multimodal &gt; Sensing-only confirmed.</div>
     </div>
     <div class="timeline-item active">
-      <div class="phase">Phase 3 — V2/V4 Re-run (IN PROGRESS)</div>
-      <div class="desc">V2 re-run started 2026-03-02 14:01 for 4 eval users (119, 164, 310, 458). User71 already has clean data. V4 will start after V2 completes. ETA: ~11h for V2, ~11h for V4.</div>
-    </div>
-    <div class="timeline-item">
-      <div class="phase">Phase 4 — Final Evaluation</div>
-      <div class="desc">Run evaluate_pilot.py on all clean checkpoints. Generate comparison tables, per-user breakdowns, and confidence intervals.</div>
-    </div>
-    <div class="timeline-item">
-      <div class="phase">Phase 5 — ML Baselines</div>
+      <div class="phase">Phase 5 — ML Baselines (NEXT)</div>
       <div class="desc">Run RF, XGBoost, Ridge, MLP. Compare against LLM approaches. Ridge diverges (exclude). MLP fold 5 diverges (report 4-fold).</div>
     </div>
     <div class="timeline-item">
       <div class="phase">Phase 6 — Paper Writing</div>
-      <div class="desc">CHI 2026 or IMWUT submission. Key story: structured vs agentic × sensing vs multimodal. CALLM as strong diary-only baseline.</div>
+      <div class="desc">CHI 2026 or IMWUT submission. Key story: structured vs agentic &times; sensing vs multimodal. V4 as best performer, CALLM as strong baseline. Filtered data pipeline for next iteration.</div>
     </div>
   </div>
 </section>
 
 <footer style="text-align:center;padding:40px 20px;color:#555;font-size:0.85em;border-top:1px solid #1e1e30;margin-top:40px">
-  Proactive Affective Agent — BUCS Pilot Dashboard &mdash; Last updated 2026-03-02 14:10 &mdash; 3/5 versions complete &mdash; V2 running, V4 pending
+  Proactive Affective Agent — BUCS Pilot Dashboard &mdash; Last updated 2026-03-03 01:30 &mdash; 5/5 versions complete &mdash; V4 best performer (BA=0.670)
 </footer>
 
 </div>
