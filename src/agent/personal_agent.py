@@ -1,18 +1,18 @@
-"""PersonalAgent: orchestrates CALLM, V1, V2, V3, V4 workflows for a single user.
+"""PersonalAgent: orchestrates CALLM, V1-V6 workflows for a single user.
 
 Each user gets their own PersonalAgent. The agent delegates to the appropriate
 workflow based on the version parameter.
 
-2x2 Research Design:
-                    Structured (fixed pipeline)    Agentic (autonomous tool-use)
-  Sensing-only      V1                             V2
-  Multimodal        V3                             V4 <- key contribution
+Research Design:
+                    Structured       Agentic (raw tools)    Agentic (filtered + tools)
+  Sensing-only      V1               V2                     V5
+  Multimodal        V3               V4                     V6
 
   CALLM: diary + TF-IDF RAG (diary only) -- CHI 2025 baseline
 
 Backend:
   V1/V3/CALLM: ClaudeCodeClient (claude -p CLI, Max subscription, free)
-  V2/V4: AgenticCCAgent (claude --print + MCP server, Max subscription, free)
+  V2/V4/V5/V6: AgenticCCAgent (claude --print + MCP server, Max subscription, free)
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class PersonalAgent:
-    """Per-user agent that predicts emotional states using CALLM/V1/V2/V3/V4."""
+    """Per-user agent that predicts emotional states using CALLM/V1-V6."""
 
     def __init__(
         self,
@@ -43,6 +43,7 @@ class PersonalAgent:
         memory_doc: str = "",
         retriever: TFIDFRetriever | None = None,
         processed_dir: Path | None = None,
+        filtered_data_dir: Path | None = None,
         agentic_model: str = "sonnet",
         agentic_max_turns: int = 16,
         # Legacy params (ignored, kept for backward compat)
@@ -51,7 +52,7 @@ class PersonalAgent:
         agentic_hard_limit: int = 20,
     ) -> None:
         self.study_id = study_id
-        self.version = version  # "callm", "v1", "v2", "v3", "v4"
+        self.version = version  # "callm", "v1", "v2", "v3", "v4", "v5", "v6"
         self.llm = llm_client
         self.profile = profile or UserProfile(study_id=study_id)
         self.memory_doc = memory_doc
@@ -60,15 +61,27 @@ class PersonalAgent:
         # Initialize workflow
         if version == "v1":
             self._v1 = StructuredWorkflow(llm_client)
-        elif version in ("v2", "v4"):
-            # V2/V4: Agentic agents via claude --print (free, Max subscription)
+        elif version in ("v2", "v4", "v5", "v6"):
+            # Agentic agents via claude --print (free, Max subscription)
             if processed_dir is None:
                 raise ValueError(
                     f"{version.upper()} requires processed_dir (path to data/processed/). "
                     f"Pass processed_dir= when constructing PersonalAgent."
                 )
             from src.agent.cc_agent import AgenticCCAgent
-            mode = "multimodal" if version == "v4" else "sensing_only"
+            _version_mode = {
+                "v2": "sensing_only",
+                "v4": "multimodal",
+                "v5": "filtered_sensing",
+                "v6": "filtered_multimodal",
+            }
+            mode = _version_mode[version]
+            # V5/V6 require filtered_data_dir
+            if version in ("v5", "v6") and filtered_data_dir is None:
+                raise ValueError(
+                    f"{version.upper()} requires filtered_data_dir (path to data/processed/filtered/). "
+                    f"Pass filtered_data_dir= when constructing PersonalAgent."
+                )
             self._agentic = AgenticCCAgent(
                 study_id=study_id,
                 profile=self.profile,
@@ -77,6 +90,7 @@ class PersonalAgent:
                 model=agentic_model,
                 max_turns=agentic_max_turns,
                 mode=mode,
+                filtered_data_dir=filtered_data_dir,
             )
         elif version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
@@ -114,6 +128,10 @@ class PersonalAgent:
             return self._run_v3(ema_row, sensing_day, date_str)
         elif self.version == "v4":
             return self._run_v4(ema_row, session_memory=session_memory)
+        elif self.version == "v5":
+            return self._run_v5(ema_row, session_memory=session_memory)
+        elif self.version == "v6":
+            return self._run_v6(ema_row, session_memory=session_memory)
         else:
             raise ValueError(f"Unknown version: {self.version}")
 
@@ -204,6 +222,19 @@ class PersonalAgent:
 
     def _run_v4(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
         """V4 Agentic Multimodal: claude --print + MCP tools + diary text."""
+        diary_text = None
+        if ema_row is not None:
+            diary_text = str(ema_row.get("emotion_driver", ""))
+            if diary_text.lower() == "nan" or not diary_text.strip():
+                diary_text = None
+        return self._agentic.predict(ema_row=ema_row, diary_text=diary_text, session_memory=session_memory)
+
+    def _run_v5(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
+        """V5 Agentic Filtered Sensing: filtered narrative + MCP tools, NO diary."""
+        return self._agentic.predict(ema_row=ema_row, diary_text=None, session_memory=session_memory)
+
+    def _run_v6(self, ema_row, session_memory: str | None = None) -> dict[str, Any]:
+        """V6 Agentic Filtered Multimodal: filtered narrative + diary + MCP tools."""
         diary_text = None
         if ema_row is not None:
             diary_text = str(ema_row.get("emotion_driver", ""))

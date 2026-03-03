@@ -26,7 +26,7 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # ---------------------------------------------------------------------------
 
 PILOT_USERS = [71, 119, 164, 310, 458]
-VERSIONS = ["callm", "v1", "v2", "v3", "v4"]
+VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
 # Targets to show prominently in the summary table
 KEY_CONTINUOUS = ["PANAS_Pos", "PANAS_Neg", "ER_desire"]

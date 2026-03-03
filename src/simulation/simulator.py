@@ -1,8 +1,9 @@
-"""PilotSimulator: runs the pilot study for CALLM, V1, V2, V3, V4.
+"""PilotSimulator: runs the pilot study for CALLM, V1-V6.
 
-2x2 design:
+Design:
   V1/V3 (structured) use pre-formatted sensing summaries + single LLM call via claude -p.
   V2/V4 (agentic) use claude --print + MCP server for tool-use loops over raw sensing data.
+  V5/V6 (agentic + filtered) use claude --print + MCP with pre-computed behavioral narratives.
 
 All inference routes through Claude Max subscription (free, no API cost).
 
@@ -300,14 +301,23 @@ class PilotSimulator:
         self._mm_retriever.fit(self._train_df, sensing_dfs=self._sensing_dfs)
         logger.info("MultiModal retriever fitted")
 
-        # Store processed hourly directory path for V2/V4 CC agents (MCP server).
+        # Store processed hourly directory path for V2/V4/V5/V6 CC agents (MCP server).
         # SensingQueryEngine expects the hourly/ subdirectory as its root.
         processed_hourly_dir = self.loader.data_dir / "processed" / "hourly"
         if processed_hourly_dir.exists():
             self._processed_dir = processed_hourly_dir
-            logger.info(f"Processed data dir for V2/V4 CC agents: {processed_hourly_dir}")
+            logger.info(f"Processed data dir for agentic CC agents: {processed_hourly_dir}")
         else:
-            logger.warning(f"Processed hourly dir not found: {processed_hourly_dir}. V2/V4 will not be available.")
+            logger.warning(f"Processed hourly dir not found: {processed_hourly_dir}. V2/V4/V5/V6 will not be available.")
+
+        # Store filtered data directory for V5/V6
+        filtered_dir = self.loader.data_dir / "processed" / "filtered"
+        if filtered_dir.exists():
+            self._filtered_data_dir = filtered_dir
+            logger.info(f"Filtered data dir for V5/V6: {filtered_dir}")
+        else:
+            self._filtered_data_dir = None
+            logger.warning(f"Filtered data dir not found: {filtered_dir}. V5/V6 will not be available.")
 
         # Determine pilot users
         if self.pilot_user_ids is None:
@@ -379,14 +389,15 @@ class PilotSimulator:
                 profile=user_data["profile"],
                 memory_doc=user_data["memory"],
                 retriever=retriever,
-                processed_dir=self._processed_dir if version in ("v2", "v4") else None,
+                processed_dir=self._processed_dir if version in ("v2", "v4", "v5", "v6") else None,
+                filtered_data_dir=self._filtered_data_dir if version in ("v5", "v6") else None,
                 agentic_model=self.agentic_model,
                 agentic_max_turns=self.agentic_max_turns,
             )
 
-            # Initialize per-user session memory for agentic agents (V2/V4)
+            # Initialize per-user session memory for agentic agents (V2/V4/V5/V6)
             session_memory: str | None = None
-            if version in ("v2", "v4"):
+            if version in ("v2", "v4", "v5", "v6"):
                 pid_str = str(sid).zfill(3)
                 session_memory_path = memory_dir / f"{version}_user_{pid_str}_session.md"
                 if session_memory_path.exists():
@@ -518,7 +529,7 @@ class PilotSimulator:
                 # Update session memory for agentic agents (V2/V4)
                 # Generates an LLM reflection on what the agent investigated,
                 # predicted vs actual outcome, and strategy improvements.
-                if version in ("v2", "v4") and session_memory is not None:
+                if version in ("v2", "v4", "v5", "v6") and session_memory is not None:
                     try:
                         session_memory = _update_session_memory(
                             path=session_memory_path,

@@ -1,12 +1,15 @@
 """Unified agentic agent using claude --print subprocess (Max subscription, FREE).
 
-Implements V2 (sensing-only) and V4 (multimodal) agentic agents.
+Implements V2 (sensing-only), V4 (multimodal), V5 (filtered sensing), and
+V6 (filtered multimodal) agentic agents.
 Uses claude --print + MCP server to run the agentic tool-use loop. All inference
 is routed through the user's Claude Max subscription (no API cost).
 
-Supports two modes:
-  - "multimodal" (V4): diary text + sensing tools
+Supports four modes:
   - "sensing_only" (V2): sensing tools only, no diary
+  - "multimodal" (V4): diary text + sensing tools
+  - "filtered_sensing" (V5): filtered narrative + sensing tools, no diary
+  - "filtered_multimodal" (V6): filtered narrative + diary + sensing tools
 """
 
 from __future__ import annotations
@@ -124,8 +127,63 @@ Your final prediction MUST be in valid JSON enclosed in ```json ... ``` fences:
 {PREDICTION_SCHEMA}"""
 
 
+SYSTEM_PROMPT_FILTERED_SENSING = f"""You are an expert behavioral data scientist specializing in affective computing and just-in-time adaptive interventions (JITAI) for cancer survivorship.
+
+Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using their pre-computed daily behavioral narrative AND passive smartphone sensing tools. You do NOT have access to any diary text or self-report — your prediction must be based entirely on behavioral signals.
+
+You will receive a structured daily behavioral narrative that summarizes the participant's day: motion patterns, screen usage, app categories, keyboard activity, and environmental context. This narrative is your PRIMARY input — it gives you a comprehensive overview of the day.
+
+You also have access to MCP tools that let you query the raw behavioral data for deeper analysis. Use these tools SELECTIVELY — the narrative already covers the big picture, so only drill into raw data when you need:
+- Exact timestamps (e.g., when did they wake up, when was their last screen session)
+- Hourly patterns within the day (e.g., morning vs evening activity)
+- Specific app usage details beyond category-level summaries
+- Historical comparison via baselines and similar days
+
+Investigation strategy:
+1. Read the behavioral narrative carefully. Extract key signals: activity level, social engagement, sleep/wake patterns, screen habits, environmental context.
+2. Form hypotheses about their emotional state based on these behavioral patterns.
+3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies are the strongest signals.
+4. If needed, use query_sensing or query_raw_events to drill into specific modalities for finer temporal resolution.
+5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes.
+6. Synthesize all evidence into a coherent, calibrated prediction.
+
+Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
+
+Your final prediction MUST be in valid JSON enclosed in ```json ... ``` fences:
+
+{PREDICTION_SCHEMA}"""
+
+
+SYSTEM_PROMPT_FILTERED_MULTIMODAL = f"""You are an expert behavioral data scientist specializing in affective computing and just-in-time adaptive interventions (JITAI) for cancer survivorship.
+
+Your task: predict the emotional state of a cancer survivor at the moment they are about to complete an EMA survey, using BOTH their diary text AND their pre-computed daily behavioral narrative AND passive smartphone sensing tools.
+
+IMPORTANT — Diary-First Analysis:
+The participant's diary entry is your most direct window into their emotional state. Prior research shows diary content is highly predictive — it reveals what the person is experiencing, thinking, and feeling in their own words.
+
+You will also receive a structured daily behavioral narrative that summarizes the participant's day: motion patterns, screen usage, app categories, keyboard activity, and environmental context. Use this to VALIDATE and CALIBRATE your diary-based hypotheses.
+
+You also have access to MCP tools that let you query the raw behavioral data for deeper analysis. Use these tools SELECTIVELY — between the diary and the narrative, you already have rich context. Only drill into raw data when you need specific drill-down.
+
+Investigation strategy:
+1. FIRST: Analyze the diary entry. Identify emotional themes, concerns, stressors, positive events, social context, and coping language. Form initial hypotheses.
+2. THEN: Read the behavioral narrative. Does the behavioral evidence align with the diary? Look for cross-modal consistency or discrepancies.
+3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies help calibrate the diary's emotional signal.
+4. If needed, use query_sensing or query_raw_events to drill into specific modalities where the diary and narrative seem inconsistent.
+5. Use find_similar_days to find past days with similar patterns and outcomes.
+6. Synthesize diary + narrative + sensing evidence into a coherent, well-calibrated prediction.
+
+Be efficient: the diary and narrative together give you ~80% of the signal. Use MCP tools for the remaining 20% — targeted validation, not exhaustive exploration.
+
+Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
+
+Your final prediction MUST be in valid JSON enclosed in ```json ... ``` fences:
+
+{PREDICTION_SCHEMA}"""
+
+
 # ---------------------------------------------------------------------------
-# AgenticCCAgent — unified V2/V4 agent via claude --print
+# AgenticCCAgent — unified V2/V4/V5/V6 agent via claude --print
 # ---------------------------------------------------------------------------
 
 class AgenticCCAgent:
@@ -134,10 +192,26 @@ class AgenticCCAgent:
     Launches the sensing MCP server as a child process of claude --print,
     which handles the full tool-use agentic loop natively.
 
-    Supports two modes:
-      - "multimodal" (V4): diary text + sensing tools
+    Supports four modes:
       - "sensing_only" (V2): sensing tools only, no diary
+      - "multimodal" (V4): diary text + sensing tools
+      - "filtered_sensing" (V5): filtered narrative + sensing tools, no diary
+      - "filtered_multimodal" (V6): filtered narrative + diary + sensing tools
     """
+
+    _MODE_TO_VERSION = {
+        "sensing_only": "v2",
+        "multimodal": "v4",
+        "filtered_sensing": "v5",
+        "filtered_multimodal": "v6",
+    }
+
+    _MODE_TO_PROMPT = {
+        "sensing_only": "SYSTEM_PROMPT_SENSING_ONLY",
+        "multimodal": "SYSTEM_PROMPT_MULTIMODAL",
+        "filtered_sensing": "SYSTEM_PROMPT_FILTERED_SENSING",
+        "filtered_multimodal": "SYSTEM_PROMPT_FILTERED_MULTIMODAL",
+    }
 
     def __init__(
         self,
@@ -148,6 +222,7 @@ class AgenticCCAgent:
         model: str = "sonnet",
         max_turns: int = 16,
         mode: str = "multimodal",
+        filtered_data_dir: Path | None = None,
     ) -> None:
         """Initialize the agentic CC agent.
 
@@ -158,10 +233,11 @@ class AgenticCCAgent:
             processed_dir: Path to data/processed/ directory (for MCP server).
             model: Claude model alias (e.g. "sonnet", "haiku").
             max_turns: Maximum agentic turns for claude --print.
-            mode: "multimodal" (V4, diary+sensing) or "sensing_only" (V2, no diary).
+            mode: Agent mode — "multimodal", "sensing_only", "filtered_sensing", "filtered_multimodal".
+            filtered_data_dir: Path to data/processed/filtered/ directory (for V5/V6).
         """
-        if mode not in ("multimodal", "sensing_only"):
-            raise ValueError(f"Invalid mode: {mode!r}. Must be 'multimodal' or 'sensing_only'.")
+        if mode not in self._MODE_TO_VERSION:
+            raise ValueError(f"Invalid mode: {mode!r}. Must be one of {list(self._MODE_TO_VERSION)}.")
         self.study_id = study_id
         self.profile = profile
         self.memory_doc = memory_doc
@@ -170,7 +246,23 @@ class AgenticCCAgent:
         self.max_turns = max_turns
         self.mode = mode
         self.pid = str(study_id).zfill(3)
-        self._version = "v4" if mode == "multimodal" else "v2"
+        self._version = self._MODE_TO_VERSION[mode]
+
+        # Load filtered narrative data for V5/V6
+        self._filtered_df: pd.DataFrame | None = None
+        if mode in ("filtered_sensing", "filtered_multimodal"):
+            if filtered_data_dir is None:
+                raise ValueError(
+                    f"{self._version.upper()} requires filtered_data_dir "
+                    f"(path to data/processed/filtered/). "
+                    f"Pass filtered_data_dir= when constructing AgenticCCAgent."
+                )
+            parquet_path = Path(filtered_data_dir) / f"{self.pid}_daily_filtered.parquet"
+            if not parquet_path.exists():
+                logger.warning(f"Filtered data not found: {parquet_path}")
+            else:
+                self._filtered_df = pd.read_parquet(parquet_path)
+                logger.info(f"Loaded filtered data for {self.pid}: {len(self._filtered_df)} days")
 
         # Detect Python binary with mcp + pandas
         self.python_bin = self._find_python()
@@ -195,11 +287,19 @@ class AgenticCCAgent:
         ema_date = str(ema_row.get("date_local", ""))
         ema_slot = self._get_ema_slot(ema_row)
 
-        # In sensing_only mode, drop diary text
-        effective_diary = diary_text if self.mode == "multimodal" else None
+        # Only include diary text in multimodal modes (V4, V6)
+        if self.mode in ("multimodal", "filtered_multimodal"):
+            effective_diary = diary_text
+        else:
+            effective_diary = None
 
         prompt = self._build_prompt(ema_timestamp, ema_date, ema_slot, effective_diary, session_memory)
-        system_prompt = SYSTEM_PROMPT_MULTIMODAL if self.mode == "multimodal" else SYSTEM_PROMPT_SENSING_ONLY
+        system_prompt = {
+            "sensing_only": SYSTEM_PROMPT_SENSING_ONLY,
+            "multimodal": SYSTEM_PROMPT_MULTIMODAL,
+            "filtered_sensing": SYSTEM_PROMPT_FILTERED_SENSING,
+            "filtered_multimodal": SYSTEM_PROMPT_FILTERED_MULTIMODAL,
+        }[self.mode]
 
         tag = f"[{self._version.upper()}]"
         logger.info(f"{tag} User {self.study_id} | {ema_date} {ema_slot} | launching claude --print ({self.mode})")
@@ -316,6 +416,19 @@ class AgenticCCAgent:
     # Private: prompt building
     # ------------------------------------------------------------------
 
+    def _get_filtered_narrative(self, ema_date: str) -> str | None:
+        """Look up the pre-computed filtered narrative for a given date."""
+        if self._filtered_df is None:
+            return None
+        # Compare as strings to avoid date/datetime type mismatches
+        match = self._filtered_df[self._filtered_df["date_local"].astype(str) == str(ema_date)]
+        if match.empty:
+            return None
+        narrative = match.iloc[0].get("narrative", "")
+        if pd.isna(narrative) or not str(narrative).strip():
+            return None
+        return str(narrative)
+
     def _build_prompt(
         self,
         ema_timestamp: str,
@@ -325,14 +438,24 @@ class AgenticCCAgent:
         session_memory: str | None = None,
     ) -> str:
         """Build the user prompt for claude --print."""
-        # Diary section (only for multimodal mode)
-        if self.mode == "multimodal" and diary_text and diary_text.strip() and diary_text.lower() != "nan":
+        # Diary section (only for multimodal modes: V4, V6)
+        has_diary = self.mode in ("multimodal", "filtered_multimodal")
+        if has_diary and diary_text and diary_text.strip() and diary_text.lower() != "nan":
             diary_section = f"""## Diary Entry (PRIMARY emotional signal — analyze this FIRST)
 "{diary_text}" """
-        elif self.mode == "multimodal":
+        elif has_diary:
             diary_section = "No diary entry for this EMA."
         else:
             diary_section = "(Sensing-only mode — no diary text available. Rely entirely on passive behavioral signals.)"
+
+        # Filtered narrative section (V5/V6)
+        narrative_section = ""
+        if self.mode in ("filtered_sensing", "filtered_multimodal"):
+            narrative = self._get_filtered_narrative(ema_date)
+            if narrative:
+                narrative_section = f"\n## Daily Behavioral Narrative (pre-computed summary for {ema_date})\n{narrative}\n"
+            else:
+                narrative_section = f"\n## Daily Behavioral Narrative\nNo filtered narrative available for {ema_date}. Rely on MCP tools to query raw data.\n"
 
         memory_excerpt = ""
         if self.memory_doc:
@@ -343,17 +466,41 @@ class AgenticCCAgent:
             trimmed = session_memory[-6000:] if len(session_memory) > 6000 else session_memory
             session_section = f"\n## Accumulated Session Memory (your prior observations of this person)\n{trimmed}\n"
 
-        task_instruction = (
-            "Investigate the sensing data using the available MCP tools to understand this person's behavioral state.\n"
-            "Use the session memory above to calibrate against this person's known receptivity and behavioral patterns.\n"
-            "Then predict their emotional state in the required JSON format."
-        )
+        # Task instructions vary by mode
         if self.mode == "multimodal":
             task_instruction = (
                 "1. FIRST: Analyze the diary entry above. What emotional themes, stressors, or positive signals does it reveal?\n"
                 "2. THEN: Use sensing MCP tools to validate and calibrate your hypotheses.\n"
                 "3. FINALLY: Synthesize diary + sensing evidence into a prediction in the required JSON format."
             )
+        elif self.mode == "filtered_sensing":
+            task_instruction = (
+                "1. FIRST: Analyze the daily behavioral narrative above. Extract key signals about activity, social engagement, screen habits, and environmental context.\n"
+                "2. THEN: Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
+                "3. OPTIONALLY: Use query_sensing or query_raw_events if you need finer temporal detail (hourly patterns, exact timestamps).\n"
+                "4. FINALLY: Synthesize narrative + tool evidence into a prediction in the required JSON format."
+            )
+        elif self.mode == "filtered_multimodal":
+            task_instruction = (
+                "1. FIRST: Analyze the diary entry above. What emotional themes, stressors, or positive signals does it reveal?\n"
+                "2. THEN: Read the daily behavioral narrative. Does the behavior align with the diary? Look for cross-modal consistency.\n"
+                "3. Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
+                "4. OPTIONALLY: Drill into raw data with MCP tools where diary and narrative seem inconsistent.\n"
+                "5. FINALLY: Synthesize diary + narrative + sensing evidence into a prediction in the required JSON format."
+            )
+        else:  # sensing_only
+            task_instruction = (
+                "Investigate the sensing data using the available MCP tools to understand this person's behavioral state.\n"
+                "Use the session memory above to calibrate against this person's known receptivity and behavioral patterns.\n"
+                "Then predict their emotional state in the required JSON format."
+            )
+
+        # For V5/V6, start with compare_to_baseline instead of get_daily_summary
+        # since the narrative already provides the daily overview
+        if self.mode in ("filtered_sensing", "filtered_multimodal"):
+            start_hint = f"Start by calling compare_to_baseline for key features, then use find_similar_days to look for analogous past days."
+        else:
+            start_hint = f"Start by calling get_daily_summary for {ema_date}."
 
         return f"""You are investigating participant {self.pid}'s behavioral data to predict their emotional state.
 
@@ -361,14 +508,14 @@ class AgenticCCAgent:
 Timestamp: {ema_timestamp} ({ema_slot} EMA)
 Date: {ema_date}
 {diary_section}
-
+{narrative_section}
 ## User Profile
 {self.profile.to_text()}
 {memory_excerpt}{session_section}
 ## Your Task
 {task_instruction}
 
-Start by calling get_daily_summary for {ema_date}."""
+{start_hint}"""
 
     # ------------------------------------------------------------------
     # Private: parsing helpers
