@@ -46,11 +46,28 @@ def detect_platform(pid: str) -> str:
 
 
 def load_hourly(pid: str, modality: str) -> pd.DataFrame | None:
-    """Load hourly parquet for a user+modality. Returns None if missing."""
+    """Load hourly parquet for a user+modality. Returns None if missing.
+
+    Also deduplicates *ghost rows* — rows where ``hour_local == hour_utc``
+    (i.e. timezone offset was erroneously set to 0).  When duplicate
+    ``hour_local`` values exist, the ghost row is dropped and the correctly
+    offset row is kept.
+    """
     f = HOURLY_DIR / modality / f"{pid}_{modality}_hourly.parquet"
     if not f.exists():
         return None
     df = pd.read_parquet(f)
+
+    # ── Deduplicate ghost rows ──────────────────────────────────────
+    if "hour_local" in df.columns and "hour_utc" in df.columns:
+        utc_naive = df["hour_utc"].dt.tz_localize(None)
+        df["_is_ghost"] = df["hour_local"] == utc_naive
+        # Sort so non-ghost (real) rows come first, then drop dups
+        df = df.sort_values("_is_ghost").drop_duplicates(
+            subset=["hour_local"], keep="first"
+        )
+        df = df.drop(columns=["_is_ghost"]).reset_index(drop=True)
+
     # Ensure date column
     if "date_local" not in df.columns:
         for col in df.columns:

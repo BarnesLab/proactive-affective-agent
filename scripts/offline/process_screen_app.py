@@ -393,6 +393,17 @@ def process_participant_android(pid_str: str) -> pd.DataFrame | None:
     if raw.empty:
         return None
 
+    # Deduplicate accumulating snapshots: AWARE framework records multiple
+    # snapshots per session with the same epoch_usagewindow_start but
+    # incrementally larger epoch_usagewindow_end.  Keep only the final
+    # (latest) snapshot per (app, session_start) pair.
+    if 'id_app' in raw.columns:
+        before = len(raw)
+        raw = raw.sort_values('epoch_usagewindow_end').drop_duplicates(
+            subset=['id_app', 'epoch_usagewindow_start'], keep='last'
+        )
+        # Typically removes ~90% of rows (accumulating snapshot duplicates)
+
     # Assign app categories
     if 'id_app' in raw.columns:
         raw['app_cat'] = raw['id_app'].apply(categorize_app)
