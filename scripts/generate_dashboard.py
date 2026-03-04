@@ -914,15 +914,12 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 /* Notice box */
 .notice {{
-  background: #f9758315;
-  border: 1px solid #f9758355;
   border-radius: 8px;
   padding: 14px 18px;
   margin-bottom: 20px;
   font-size: 12px;
   line-height: 1.6;
 }}
-.notice strong {{ color: var(--accent-red); }}
 .notice-info {{
   background: #58a6ff15;
   border: 1px solid #58a6ff55;
@@ -959,12 +956,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   using passive smartphone sensing and diary data. 5 pilot users, 427 EMA entries each.
 </p>
 
-<div class="notice">
-  <strong>Data Leakage Notice:</strong> CALLM and V3 include cross-participant EMA outcomes
-  (PANAS_Pos, PANAS_Neg, ER_desire) in RAG examples, giving them an informational advantage
-  over V2/V4/V5/V6 which only receive receptivity feedback. CALLM's low MAE may partly reflect
-  this leakage rather than genuine predictive power.
-</div>
 
 <h3>Research Design Matrix</h3>
 <table class="design-matrix">
