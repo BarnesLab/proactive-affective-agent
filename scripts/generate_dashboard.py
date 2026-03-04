@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Generate interactive HTML dashboard for pilot experiment results.
 
-Reads unified JSONL records (*_records.jsonl) and generates a self-contained
-HTML dashboard with Chart.js visualizations, dark theme, and detailed
-per-entry inspection including agent process, predictions, and raw data.
+Reads unified JSONL records (*_records.jsonl), V5/V6 checkpoints, evaluation.json,
+and trace files. Generates a self-contained HTML dashboard with:
+- Overview: aggregate metrics, bar charts, research design matrix
+- Methodology: version descriptions, agent flow diagrams (Mermaid.js), data pipeline
+- Per-User Analysis: time series, entry inspection, version comparison
 
 Usage:
     python scripts/generate_dashboard.py
@@ -19,13 +21,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PILOT_DIR = PROJECT_ROOT / "outputs" / "pilot"
 
-VERSIONS = ["callm", "v1", "v2", "v3", "v4"]
+VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 VERSION_LABELS = {
     "callm": "CALLM",
     "v1": "V1 Structured",
     "v2": "V2 Agentic",
     "v3": "V3 Struct+Diary",
     "v4": "V4 Agent+Diary",
+    "v5": "V5 Filtered",
+    "v6": "V6 Filtered+Diary",
 }
 VERSION_COLORS = {
     "callm": "#f97583",
@@ -33,6 +37,8 @@ VERSION_COLORS = {
     "v2": "#d2a8ff",
     "v3": "#3fb950",
     "v4": "#f0883e",
+    "v5": "#56d4dd",
+    "v6": "#f778ba",
 }
 
 BINARY_STATES = [
@@ -55,7 +61,6 @@ def load_all_records() -> dict:
     total = 0
 
     for fpath in files:
-        # Parse version and user from filename: {version}_user{id}_records.jsonl
         m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name)
         if not m:
             continue
@@ -87,7 +92,6 @@ def load_all_records() -> dict:
                         "versions": {},
                     }
 
-                # Truncate large text fields to manage output size
                 full_prompt = rec.get("full_prompt", "") or ""
                 full_response = rec.get("full_response", "") or ""
                 system_prompt = rec.get("system_prompt", "") or ""
@@ -137,11 +141,173 @@ def load_all_records() -> dict:
     return users
 
 
-def build_js_data(users: dict) -> dict:
-    """Convert internal data structure to JS-friendly format.
+def load_v5v6_checkpoints(users: dict) -> dict:
+    """Load V5/V6 checkpoint data and merge into users dict.
 
-    Returns: {user_id: [sorted list of entry dicts]}
+    V5/V6 only have checkpoint files (no JSONL records), so we
+    convert them to the same record format.
     """
+    pilot_users = [71, 119, 164, 310, 458]
+    added = 0
+
+    for ver in ["v5", "v6"]:
+        for uid in pilot_users:
+            cp_path = PILOT_DIR / "checkpoints" / f"{ver}_user{uid}_checkpoint.json"
+            if not cp_path.exists():
+                continue
+
+            data = json.loads(cp_path.read_text())
+            preds = data.get("predictions", [])
+            gts = data.get("ground_truths", [])
+            metadata = data.get("metadata", [])
+
+            if uid not in users:
+                users[uid] = {}
+
+            for i, (pred, gt) in enumerate(zip(preds, gts)):
+                meta = metadata[i] if i < len(metadata) else {}
+                ts = meta.get("timestamp_local", "")
+                date_str = ts.split(" ")[0] if ts else ""
+                # Determine slot from timestamp
+                slot = "unknown"
+                if ts:
+                    try:
+                        hour = int(ts.split(" ")[1].split(":")[0])
+                        if hour < 12:
+                            slot = "morning"
+                        elif hour < 17:
+                            slot = "afternoon"
+                        else:
+                            slot = "evening"
+                    except (IndexError, ValueError):
+                        pass
+
+                # Find matching entry_idx or create new
+                entry_idx = None
+                for idx, entry in users[uid].items():
+                    if entry.get("timestamp", "").startswith(ts[:16] if ts else "NONE"):
+                        entry_idx = idx
+                        break
+                    if entry.get("date") == date_str and entry.get("slot") == slot:
+                        # Check if this entry already has this version
+                        if ver not in entry.get("versions", {}):
+                            entry_idx = idx
+                            break
+
+                if entry_idx is None:
+                    # Create new entry
+                    entry_idx = max(users[uid].keys(), default=-1) + 1
+                    users[uid][entry_idx] = {
+                        "date": date_str,
+                        "timestamp": ts,
+                        "slot": slot,
+                        "ground_truth": gt,
+                        "versions": {},
+                    }
+
+                # Build version record from checkpoint prediction
+                users[uid][entry_idx]["versions"][ver] = {
+                    "prediction": {k: v for k, v in pred.items()
+                                   if k not in ("reasoning", "confidence")},
+                    "reasoning": pred.get("reasoning", ""),
+                    "confidence": pred.get("confidence"),
+                    "sensing_summary": "",
+                    "tool_calls": None,
+                    "n_tool_calls": None,
+                    "n_rounds": None,
+                    "rag_cases": [],
+                    "memory_excerpt": "",
+                    "emotion_driver": "",
+                    "trait_summary": "",
+                    "has_diary": ver == "v6",
+                    "diary_length": None,
+                    "model": "sonnet",
+                    "elapsed_seconds": None,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "cost_usd": 0,
+                    "llm_calls": None,
+                    "conversation_length": None,
+                    "modalities_available": [],
+                    "modalities_missing": [],
+                    "full_prompt": "",
+                    "prompt_truncated": False,
+                    "full_response": "",
+                    "response_truncated": False,
+                    "system_prompt": "",
+                }
+                added += 1
+
+    print(f"  Loaded {added} V5/V6 entries from checkpoints")
+    return users
+
+
+def load_evaluation() -> dict:
+    """Load evaluation.json for aggregate metrics."""
+    eval_path = PILOT_DIR / "evaluation.json"
+    if eval_path.exists():
+        return json.loads(eval_path.read_text())
+    return {}
+
+
+def load_token_stats() -> dict:
+    """Load token stats from trace files."""
+    traces_dir = PILOT_DIR / "traces"
+    stats = {}
+    if not traces_dir.exists():
+        return stats
+
+    for f in traces_dir.glob("*.json"):
+        parts = f.stem.split("_")
+        ver = parts[0]
+        try:
+            data = json.loads(f.read_text())
+            inp = data.get("_input_tokens", 0) or 0
+            out = data.get("_output_tokens", 0) or 0
+            if inp > 0:
+                if ver not in stats:
+                    stats[ver] = {"input": 0, "output": 0, "count": 0, "calls": 0}
+                stats[ver]["input"] += inp
+                stats[ver]["output"] += out
+                stats[ver]["count"] += 1
+                stats[ver]["calls"] += data.get("_llm_calls", 1) or 1
+        except Exception:
+            pass
+
+    return stats
+
+
+def load_elapsed_stats() -> dict:
+    """Load elapsed time stats from JSONL records."""
+    stats = {}
+    for fpath in sorted(PILOT_DIR.glob("*_records.jsonl")):
+        m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name)
+        if not m:
+            continue
+        ver = m.group(1)
+        if ver not in stats:
+            stats[ver] = {"total": 0, "count": 0, "max": 0}
+
+        with open(fpath) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                    elapsed = rec.get("elapsed_seconds")
+                    if elapsed and elapsed > 0:
+                        stats[ver]["total"] += elapsed
+                        stats[ver]["count"] += 1
+                        stats[ver]["max"] = max(stats[ver]["max"], elapsed)
+                except Exception:
+                    pass
+
+    return stats
+
+
+def build_js_data(users: dict) -> dict:
+    """Convert internal data structure to JS-friendly format."""
     js_data = {}
     for uid in sorted(users.keys()):
         entries = []
@@ -153,21 +319,26 @@ def build_js_data(users: dict) -> dict:
     return js_data
 
 
-def generate_html(js_data: dict, output_path: Path):
+def generate_html(js_data: dict, eval_data: dict, token_stats: dict,
+                  elapsed_stats: dict, output_path: Path):
     """Generate the self-contained HTML dashboard."""
     data_json = json.dumps(js_data, default=str, ensure_ascii=False)
     versions_json = json.dumps(VERSIONS)
     labels_json = json.dumps(VERSION_LABELS)
     colors_json = json.dumps(VERSION_COLORS)
     binary_json = json.dumps(BINARY_STATES)
+    eval_json = json.dumps(eval_data, default=str)
+    token_json = json.dumps(token_stats)
+    elapsed_json = json.dumps(elapsed_stats)
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pilot Study Dashboard</title>
+<title>Proactive Affective Agent — Pilot Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
 :root {{
   --bg-primary: #0d1117;
@@ -183,6 +354,8 @@ def generate_html(js_data: dict, output_path: Path):
   --accent-red: #f97583;
   --accent-orange: #f0883e;
   --accent-purple: #d2a8ff;
+  --accent-cyan: #56d4dd;
+  --accent-pink: #f778ba;
   --sidebar-width: 280px;
 }}
 
@@ -193,21 +366,45 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .header {{
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
-  padding: 12px 20px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: sticky; top: 0; z-index: 100;
+  height: 48px;
 }}
-.header h1 {{ font-size: 15px; color: var(--text-primary); font-weight: 600; }}
+.header h1 {{ font-size: 15px; color: var(--text-primary); font-weight: 600; white-space: nowrap; }}
+.nav-tabs {{
+  display: flex;
+  gap: 0;
+  height: 100%;
+  margin-left: 32px;
+}}
+.nav-tab {{
+  padding: 0 20px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+}}
+.nav-tab:hover {{ color: var(--text-secondary); }}
+.nav-tab.active {{ color: var(--accent-blue); border-bottom-color: var(--accent-blue); font-weight: 600; }}
 .header-stats {{ font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; }}
 .header-stat {{ display: flex; align-items: center; gap: 4px; }}
 .header-stat .num {{ color: var(--text-primary); font-weight: 600; }}
 
 /* Layout */
-.container {{ display: flex; height: calc(100vh - 45px); }}
+.page {{ display: none; height: calc(100vh - 48px); overflow-y: auto; }}
+.page.active {{ display: block; }}
+.page-analysis {{ display: none; height: calc(100vh - 48px); }}
+.page-analysis.active {{ display: flex; }}
 
-/* Sidebar */
+/* Analysis layout with sidebar */
 .sidebar {{
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
@@ -215,6 +412,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  overflow-y: auto;
 }}
 .sidebar-filters {{
   padding: 10px 12px;
@@ -223,39 +421,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   flex-direction: column;
   gap: 6px;
 }}
-.filter-row {{
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}}
-.filter-row label {{
-  font-size: 11px;
-  color: var(--text-muted);
-  width: 40px;
-  flex-shrink: 0;
-}}
-.filter-row select {{
-  flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-}}
-.user-list {{
-  flex: 1;
-  overflow-y: auto;
-}}
-.user-item {{
-  padding: 8px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background 0.1s;
-}}
+.filter-row {{ display: flex; gap: 6px; align-items: center; }}
+.filter-row label {{ font-size: 11px; color: var(--text-muted); width: 40px; flex-shrink: 0; }}
+.filter-row select {{ flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); padding: 3px 6px; border-radius: 4px; font-size: 11px; }}
+.user-list {{ flex: 1; overflow-y: auto; }}
+.user-item {{ padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; transition: background 0.1s; }}
 .user-item:hover {{ background: var(--bg-tertiary); }}
 .user-item.active {{ background: var(--bg-tertiary); border-left: 3px solid var(--accent-blue); padding-left: 9px; }}
 .user-item .uid {{ font-weight: 600; color: var(--text-primary); font-size: 13px; }}
@@ -263,14 +433,221 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .user-item .ver-dots {{ display: flex; gap: 3px; margin-top: 2px; justify-content: flex-end; }}
 .ver-dot {{ width: 8px; height: 8px; border-radius: 50%; }}
 
-/* Main content */
-.main {{
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 20px;
-}}
+.main {{ flex: 1; overflow-y: auto; padding: 16px 20px; }}
 
-/* User Summary */
+/* ─── Overview Page ─── */
+.overview-content {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+.overview-content h2 {{ font-size: 20px; color: var(--text-primary); margin-bottom: 16px; font-weight: 600; }}
+.overview-content h3 {{ font-size: 15px; color: var(--text-primary); margin: 20px 0 12px; font-weight: 600; }}
+
+/* Research Design Matrix */
+.design-matrix {{
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+  font-size: 13px;
+}}
+.design-matrix th {{
+  padding: 10px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}}
+.design-matrix td {{
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  text-align: center;
+  vertical-align: middle;
+}}
+.design-matrix td.row-header {{
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+}}
+.matrix-cell {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+}}
+.matrix-cell .dot {{ width: 10px; height: 10px; border-radius: 50%; }}
+
+/* Metric Cards */
+.metric-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}}
+.metric-card {{
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}}
+.metric-card h4 {{
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}}
+.metric-card .chart-wrap {{ position: relative; height: 220px; }}
+
+/* Results table */
+.results-table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 24px;
+}}
+.results-table th {{
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: center;
+}}
+.results-table th:first-child {{ text-align: left; }}
+.results-table td {{
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  text-align: center;
+}}
+.results-table td:first-child {{ text-align: left; font-weight: 600; }}
+.results-table tr:hover {{ background: var(--bg-tertiary); }}
+.best-val {{ color: var(--accent-green); font-weight: 700; }}
+.warn-val {{ color: var(--accent-red); font-size: 10px; }}
+
+/* Token stats */
+.token-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}}
+.token-stat {{
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+}}
+.token-stat .ts-label {{ font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }}
+.token-stat .ts-val {{ font-size: 18px; font-weight: 700; color: var(--text-primary); }}
+.token-stat .ts-sub {{ font-size: 10px; color: var(--text-muted); margin-top: 2px; }}
+
+/* ─── Methodology Page ─── */
+.method-content {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+.method-content h2 {{ font-size: 20px; color: var(--text-primary); margin-bottom: 16px; font-weight: 600; }}
+
+.version-card {{
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}}
+.version-card-header {{
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+}}
+.version-card-header .v-badge {{
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}}
+.version-card-header .v-title {{ font-size: 15px; color: var(--text-primary); font-weight: 600; }}
+.version-card-header .v-tags {{ display: flex; gap: 6px; margin-left: auto; }}
+.version-card-header .v-tag {{
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}}
+.version-card-body {{
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}}
+.version-card-body .v-desc {{ font-size: 13px; line-height: 1.7; color: var(--text-secondary); }}
+.version-card-body .v-desc strong {{ color: var(--text-primary); }}
+.version-card-body .v-flow {{ min-height: 120px; }}
+
+/* Data pipeline */
+.data-compare {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+}}
+.data-box {{
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}}
+.data-box h4 {{
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}}
+.data-box .data-tag {{
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}}
+.data-box pre {{
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-primary);
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+}}
+.data-box .file-list {{
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-family: monospace;
+}}
+.data-box .file-list span {{ color: var(--accent-blue); }}
+
+/* Mermaid overrides for dark theme */
+.mermaid {{ background: transparent !important; }}
+
+/* ─── Per-User Analysis (existing styles) ─── */
 .user-summary {{
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -285,7 +662,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .user-summary .stats {{ display: flex; gap: 16px; font-size: 12px; color: var(--text-muted); }}
 .user-summary .stat-val {{ color: var(--text-primary); font-weight: 600; }}
 
-/* Chart container */
 .chart-container {{
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -293,11 +669,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   padding: 12px 16px;
   margin-bottom: 16px;
 }}
-.chart-controls {{
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}}
+.chart-controls {{ display: flex; gap: 6px; margin-bottom: 10px; }}
 .chart-btn {{
   padding: 4px 12px;
   border: 1px solid var(--border);
@@ -312,7 +684,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .chart-btn.active {{ background: var(--bg-tertiary); border-color: var(--accent-blue); color: var(--accent-blue); }}
 .chart-wrap {{ position: relative; height: 220px; }}
 
-/* Entry timeline */
 .timeline-strip {{
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -320,17 +691,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   padding: 10px 16px;
   margin-bottom: 16px;
 }}
-.timeline-strip h3 {{
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  font-weight: 500;
-}}
-.timeline-dots {{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}}
+.timeline-strip h3 {{ font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }}
+.timeline-dots {{ display: flex; flex-wrap: wrap; gap: 4px; }}
 .t-dot {{
   width: 14px; height: 14px;
   border-radius: 3px;
@@ -348,8 +710,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .t-dot-tip {{
   display: none;
   position: absolute;
-  bottom: 20px;
-  left: 50%;
+  bottom: 20px; left: 50%;
   transform: translateX(-50%);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -363,7 +724,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 }}
 .t-dot:hover .t-dot-tip {{ display: block; }}
 
-/* Entry detail */
 .detail-panel {{
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -380,21 +740,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 }}
 .detail-header h3 {{ font-size: 14px; color: var(--text-primary); }}
 .detail-header .badges {{ display: flex; gap: 6px; }}
-.badge {{
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10px;
-  font-weight: 600;
-}}
+.badge {{ padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }}
 .badge-conf {{ background: #388bfd33; color: var(--accent-blue); }}
 .badge-slot {{ background: #21262d; color: var(--text-muted); }}
 
-/* Tabs */
-.tab-bar {{
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
-}}
+.tab-bar {{ display: flex; border-bottom: 1px solid var(--border); background: var(--bg-primary); }}
 .tab {{
   padding: 8px 16px;
   cursor: pointer;
@@ -408,19 +758,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .tab-content {{ display: none; padding: 16px; }}
 .tab-content.active {{ display: block; }}
 
-/* Predictions tab */
-.cont-preds {{
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-}}
-.cont-card {{
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-}}
+.cont-preds {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }}
+.cont-card {{ background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }}
 .cont-card .metric-name {{ font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 6px; }}
 .cont-card .gt-row {{ display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }}
 .cont-card .gt-val {{ font-size: 18px; font-weight: 700; color: var(--text-primary); }}
@@ -430,39 +769,17 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .pred-val {{ font-weight: 600; }}
 .pred-err {{ color: var(--text-muted); }}
 
-/* Binary grid */
 .binary-section {{ margin-top: 8px; }}
 .binary-section h4 {{ font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }}
-.binary-table {{
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-}}
-.binary-table th {{
-  padding: 4px 8px;
-  text-align: center;
-  font-weight: 600;
-  font-size: 10px;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-}}
-.binary-table td {{
-  padding: 4px 8px;
-  text-align: center;
-  border-bottom: 1px solid #21262d;
-}}
+.binary-table {{ width: 100%; border-collapse: collapse; font-size: 11px; }}
+.binary-table th {{ padding: 4px 8px; text-align: center; font-weight: 600; font-size: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); }}
+.binary-table td {{ padding: 4px 8px; text-align: center; border-bottom: 1px solid #21262d; }}
 .binary-table td:first-child {{ text-align: left; color: var(--text-secondary); }}
 .b-match {{ color: var(--accent-green); font-weight: 600; }}
 .b-miss {{ color: var(--accent-red); font-weight: 600; }}
 .b-na {{ color: #484f58; }}
 
-/* Process tab */
-.process-section {{
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 8px;
-  overflow: hidden;
-}}
+.process-section {{ border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }}
 .process-header {{
   padding: 8px 12px;
   background: var(--bg-primary);
@@ -497,74 +814,21 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   color: var(--text-secondary);
   margin: 4px 0;
 }}
-.tool-call {{
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin: 4px 0;
-  font-size: 11px;
-}}
+.tool-call {{ background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; margin: 4px 0; font-size: 11px; }}
 .tool-call .tool-name {{ color: var(--accent-purple); font-weight: 600; }}
 .tool-call .tool-input {{ color: var(--text-muted); font-family: monospace; font-size: 10px; }}
-.tool-call .tool-preview {{ color: #484f58; font-size: 10px; margin-top: 2px; }}
-
-/* RAG case */
-.rag-case {{
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
-  margin: 4px 0;
-  font-size: 11px;
-}}
+.rag-case {{ background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; margin: 4px 0; font-size: 11px; }}
 .rag-sim {{ color: var(--accent-green); font-weight: 600; font-size: 10px; }}
 
-/* Raw tab */
-.raw-stats {{
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}}
-.raw-stat {{
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
-  text-align: center;
-}}
+.raw-stats {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }}
+.raw-stat {{ background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 8px; text-align: center; }}
 .raw-stat .rs-label {{ font-size: 10px; color: var(--text-muted); }}
 .raw-stat .rs-val {{ font-size: 14px; font-weight: 600; color: var(--text-primary); margin-top: 2px; }}
 
-/* Version comparison */
-.version-comparison {{
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  overflow: hidden;
-}}
-.vc-header {{
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--text-primary);
-  font-weight: 600;
-}}
-.vc-grid {{
-  display: grid;
-  gap: 0;
-}}
-.vc-card {{
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  display: grid;
-  grid-template-columns: 110px 1fr 1fr 1fr 120px;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}}
+.version-comparison {{ background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }}
+.vc-header {{ padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-primary); font-weight: 600; }}
+.vc-grid {{ display: grid; gap: 0; }}
+.vc-card {{ padding: 12px 16px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 130px 1fr 1fr 1fr 100px; align-items: center; gap: 8px; font-size: 12px; }}
 .vc-card:last-child {{ border-bottom: none; }}
 .vc-version {{ font-weight: 600; font-size: 12px; }}
 .vc-val {{ text-align: center; }}
@@ -572,12 +836,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .vc-val .l {{ font-size: 9px; color: var(--text-muted); display: block; }}
 .vc-conf {{ text-align: right; color: var(--text-muted); font-size: 11px; }}
 
-/* Version selector for detail */
-.ver-selector {{
-  display: flex;
-  gap: 4px;
-  margin-bottom: 0;
-}}
+.ver-selector {{ display: flex; gap: 4px; }}
 .ver-btn {{
   padding: 4px 10px;
   border: 1px solid var(--border);
@@ -591,7 +850,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .ver-btn:hover {{ background: var(--bg-tertiary); }}
 .ver-btn.active {{ border-color: currentColor; font-weight: 600; }}
 
-/* Welcome state */
 .welcome {{
   display: flex;
   flex-direction: column;
@@ -603,17 +861,27 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 }}
 .welcome h2 {{ font-size: 18px; color: var(--text-primary); margin-bottom: 8px; }}
 .welcome p {{ max-width: 400px; line-height: 1.6; }}
-.welcome .legend {{
-  display: flex;
-  gap: 16px;
-  margin-top: 20px;
-  flex-wrap: wrap;
-  justify-content: center;
-}}
+.welcome .legend {{ display: flex; gap: 16px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }}
 .legend-item {{ display: flex; align-items: center; gap: 4px; font-size: 11px; }}
 .legend-swatch {{ width: 12px; height: 12px; border-radius: 3px; }}
 
-/* Scrollbar */
+/* Notice box */
+.notice {{
+  background: #f9758315;
+  border: 1px solid #f9758355;
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+}}
+.notice strong {{ color: var(--accent-red); }}
+.notice-info {{
+  background: #58a6ff15;
+  border: 1px solid #58a6ff55;
+}}
+.notice-info strong {{ color: var(--accent-blue); }}
+
 ::-webkit-scrollbar {{ width: 6px; }}
 ::-webkit-scrollbar-track {{ background: var(--bg-primary); }}
 ::-webkit-scrollbar-thumb {{ background: #30363d; border-radius: 3px; }}
@@ -623,11 +891,484 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 <body>
 
 <div class="header">
-  <h1>Proactive Affective Agent — Pilot Dashboard</h1>
+  <h1>Proactive Affective Agent</h1>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="switchPage('overview')">Overview</div>
+    <div class="nav-tab" onclick="switchPage('methodology')">Methodology</div>
+    <div class="nav-tab" onclick="switchPage('analysis')">Per-User Analysis</div>
+  </div>
   <div class="header-stats" id="headerStats"></div>
 </div>
 
-<div class="container">
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- OVERVIEW PAGE -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page active" id="page-overview">
+<div class="overview-content">
+
+<h2>Pilot Study Results — 7 Agent Versions</h2>
+<p style="color:var(--text-muted);margin-bottom:20px;line-height:1.6">
+  Comparison of 7 LLM-based emotional state prediction approaches for cancer survivors
+  using passive smartphone sensing and diary data. 5 pilot users, 427 EMA entries each.
+</p>
+
+<div class="notice">
+  <strong>Data Leakage Notice:</strong> CALLM and V3 include cross-participant EMA outcomes
+  (PANAS_Pos, PANAS_Neg, ER_desire) in RAG examples, giving them an informational advantage
+  over V2/V4/V5/V6 which only receive receptivity feedback. CALLM's low MAE may partly reflect
+  this leakage rather than genuine predictive power.
+</div>
+
+<h3>Research Design Matrix</h3>
+<table class="design-matrix">
+  <tr>
+    <th></th>
+    <th>Structured (fixed pipeline)</th>
+    <th>Agentic (raw MCP tools)</th>
+    <th>Agentic (filtered narrative + tools)</th>
+  </tr>
+  <tr>
+    <td class="row-header">Sensing only</td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#79c0ff"></span>V1</span></td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#d2a8ff"></span>V2</span></td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#56d4dd"></span>V5</span></td>
+  </tr>
+  <tr>
+    <td class="row-header">Multimodal (+ diary)</td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#3fb950"></span>V3</span></td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#f0883e"></span>V4</span></td>
+    <td><span class="matrix-cell"><span class="dot" style="background:#f778ba"></span>V6</span></td>
+  </tr>
+  <tr>
+    <td class="row-header">Baseline (diary + RAG)</td>
+    <td colspan="3"><span class="matrix-cell"><span class="dot" style="background:#f97583"></span>CALLM (CHI 2025 baseline)</span></td>
+  </tr>
+</table>
+
+<h3>Aggregate Performance Comparison</h3>
+<div class="metric-grid">
+  <div class="metric-card">
+    <h4>Mean MAE (lower is better)</h4>
+    <div class="chart-wrap"><canvas id="chartMAE"></canvas></div>
+  </div>
+  <div class="metric-card">
+    <h4>Balanced Accuracy (higher is better)</h4>
+    <div class="chart-wrap"><canvas id="chartBA"></canvas></div>
+  </div>
+  <div class="metric-card">
+    <h4>Mean F1 Score (higher is better)</h4>
+    <div class="chart-wrap"><canvas id="chartF1"></canvas></div>
+  </div>
+  <div class="metric-card">
+    <h4>Avg Elapsed Time per Prediction</h4>
+    <div class="chart-wrap"><canvas id="chartTime"></canvas></div>
+  </div>
+</div>
+
+<h3>Detailed Results</h3>
+<table class="results-table" id="resultsTable"></table>
+
+<h3>Key Continuous Targets — MAE Breakdown</h3>
+<table class="results-table" id="continuousTable"></table>
+
+<h3>Key Binary Targets — Balanced Accuracy</h3>
+<table class="results-table" id="binaryTable"></table>
+
+<h3>Token Consumption</h3>
+<div class="notice-info notice">
+  <strong>Note:</strong> Token data is only available for structured versions (CALLM, V1, V3) which use
+  <code>claude -p</code> with direct token reporting. Agentic versions (V2, V4, V5, V6) use
+  <code>claude --print</code> subprocess and do not report token counts. Elapsed time is shown as a proxy.
+</div>
+<div id="tokenSection"></div>
+
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- METHODOLOGY PAGE -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-methodology">
+<div class="method-content">
+
+<h2>Methodology — Agent Architectures</h2>
+<p style="color:var(--text-muted);margin-bottom:20px;line-height:1.6">
+  Each version implements a different approach to predicting emotional states from
+  smartphone sensing data. All versions use Claude Sonnet via Max subscription (free inference).
+</p>
+
+<h3>Data Pipeline Comparison</h3>
+<div class="data-compare">
+  <div class="data-box">
+    <h4>
+      Raw Hourly Data
+      <span class="data-tag" style="background:#d2a8ff33;color:#d2a8ff">V2, V4</span>
+    </h4>
+    <div class="file-list">
+      <span>data/processed/hourly/screen/</span> — screen on/off events<br>
+      <span>data/processed/hourly/motion/</span> — accelerometer activity<br>
+      <span>data/processed/hourly/keyinput/</span> — keyboard events<br>
+      <span>data/processed/hourly/light/</span> — ambient light (Android only)<br>
+      <span>data/processed/hourly/mus/</span> — app usage snapshots<br>
+    </div>
+    <pre>hour  screen_on  screen_off  unlock_count  total_min
+0       2         2          1            12.3
+1       0         0          0             0.0
+2       0         0          0             0.0
+...
+23      5         5          3            45.7
+
+[One file per user per day, ~24 rows each]
+[Agent must query via MCP tools, parse columns,
+ form hypotheses from raw numbers]</pre>
+  </div>
+  <div class="data-box">
+    <h4>
+      Filtered Daily Narratives
+      <span class="data-tag" style="background:#56d4dd33;color:#56d4dd">V5, V6</span>
+    </h4>
+    <div class="file-list">
+      <span>data/processed/filtered/{{pid}}_daily_filtered.parquet</span><br>
+      One row per user per day with structured narrative
+    </div>
+    <pre>[Motion] Mostly sedentary indoor day.
+  walk=15 min (z=-0.31), car=53 min (z=+5.67),
+  stationary=1372 min.
+  Anomaly: car travel 53 min unusually high.
+
+[Screen] 12 screen opens, 0.0 min total.
+  Zero recorded screen-on time suggests
+  tracking gap or phone-off period.
+
+[Apps] Top: Social-Networking=82 min,
+  Entertainment=45 min, Productivity=23 min.
+  Total app time 3.2 hr.
+
+[Keyboard] No keyboard activity recorded.
+
+[Environment] Light levels suggest indoor
+  environment (avg 42 lux, dim conditions).</pre>
+  </div>
+</div>
+
+<!-- CALLM -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#f97583">CALLM</span>
+    <span class="v-title">Diary + TF-IDF RAG Baseline (CHI 2025)</span>
+    <div class="v-tags">
+      <span class="v-tag">structured</span>
+      <span class="v-tag">diary-only</span>
+      <span class="v-tag">single LLM call</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p>The <strong>CALLM</strong> baseline uses diary text as primary input. A TF-IDF retriever
+      finds similar diary entries from other participants, and their emotional outcomes are
+      provided as reference cases. The LLM makes predictions in a single structured call.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary text + trait profile + memory doc + RAG examples (with outcomes)</p>
+      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
+      <p style="margin-top:8px;color:var(--accent-red)">Note: RAG examples include ground truth PANAS/ER scores from training data (data leakage)</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Diary Text"] --> B["TF-IDF RAG"]
+        B --> C["Claude Sonnet<br/>(single call)"]
+        D["Trait Profile"] --> C
+        E["Memory Doc"] --> C
+        C --> F["Prediction JSON"]
+        style A fill:#f97583,color:#000
+        style F fill:#3fb950,color:#000
+        style C fill:#58a6ff,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V1 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#79c0ff;color:#000">V1</span>
+    <span class="v-title">Structured Sensing-Only</span>
+    <div class="v-tags">
+      <span class="v-tag">structured</span>
+      <span class="v-tag">sensing-only</span>
+      <span class="v-tag">single LLM call</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V1</strong> uses a fixed pipeline to extract features from hourly sensing data
+      (screen, motion, keyboard, light). A <code>SensingDay</code> dataclass summarizes the day's
+      behavioral patterns, which are formatted into a structured prompt for a single LLM call.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Sensing summary (fixed format) + trait profile + memory doc</p>
+      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
+      <p><strong>No diary text</strong> — purely behavioral signal</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Hourly<br/>Parquet"] --> B["SensingDay<br/>Extractor"]
+        B --> C["Format<br/>Summary"]
+        C --> D["Claude Sonnet<br/>(single call)"]
+        E["Trait Profile"] --> D
+        D --> F["Prediction JSON"]
+        style A fill:#79c0ff,color:#000
+        style F fill:#3fb950,color:#000
+        style D fill:#58a6ff,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V2 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#d2a8ff;color:#000">V2</span>
+    <span class="v-title">Agentic Sensing-Only</span>
+    <div class="v-tags">
+      <span class="v-tag">agentic</span>
+      <span class="v-tag">sensing-only</span>
+      <span class="v-tag">multi-turn tool-use</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V2</strong> gives the LLM autonomous access to raw sensing data via MCP tools.
+      The agent decides which data to query, forms hypotheses, and iteratively explores
+      the data before making predictions. Uses <code>claude --print</code> with tool-use loop.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> MCP tools (query_screen, query_motion, etc.) + trait profile</p>
+      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      <p><strong>No diary text</strong> — agent must find signals autonomously from raw data</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Claude Sonnet<br/>(autonomous)"] -->|"query_screen()"| B["MCP<br/>Server"]
+        B -->|"raw data"| A
+        A -->|"query_motion()"| B
+        A -->|"query_keyboard()"| B
+        C["Trait Profile"] --> A
+        A --> D["Prediction JSON"]
+        style A fill:#d2a8ff,color:#000
+        style B fill:#f0883e,color:#000
+        style D fill:#3fb950,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V3 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#3fb950;color:#000">V3</span>
+    <span class="v-title">Structured Multimodal (Sensing + Diary)</span>
+    <div class="v-tags">
+      <span class="v-tag">structured</span>
+      <span class="v-tag">multimodal</span>
+      <span class="v-tag">single LLM call</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V3</strong> combines diary text with structured sensing data in a fixed pipeline.
+      Uses MultiModal RAG to find similar cases (diary + sensing patterns), then makes
+      predictions in a single structured call.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary + sensing summary + multimodal RAG + trait profile</p>
+      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
+      <p style="color:var(--accent-red)">Note: RAG examples include ground truth outcomes (data leakage, same as CALLM)</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Diary Text"] --> B["MultiModal<br/>RAG"]
+        G["Sensing<br/>Summary"] --> B
+        B --> C["Claude Sonnet<br/>(single call)"]
+        D["Trait Profile"] --> C
+        G --> C
+        A --> C
+        C --> F["Prediction JSON"]
+        style A fill:#3fb950,color:#000
+        style G fill:#79c0ff,color:#000
+        style F fill:#3fb950,color:#000
+        style C fill:#58a6ff,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V4 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#f0883e;color:#000">V4</span>
+    <span class="v-title">Agentic Multimodal (Sensing + Diary)</span>
+    <div class="v-tags">
+      <span class="v-tag">agentic</span>
+      <span class="v-tag">multimodal</span>
+      <span class="v-tag">multi-turn tool-use</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V4</strong> combines autonomous tool-use with diary text. The agent reads the diary
+      first, forms hypotheses about the person's emotional state, then selectively queries
+      raw sensing data via MCP tools to validate and refine predictions.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary text + MCP tools + session memory + trait profile</p>
+      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      <p><strong>Session memory:</strong> accumulates receptivity feedback across entries</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Claude Sonnet<br/>(autonomous)"] -->|"query tools"| B["MCP<br/>Server"]
+        B -->|"raw data"| A
+        C["Diary Text"] --> A
+        D["Session Memory"] --> A
+        E["Trait Profile"] --> A
+        A --> F["Prediction JSON"]
+        style A fill:#f0883e,color:#000
+        style B fill:#d2a8ff,color:#000
+        style C fill:#3fb950,color:#000
+        style F fill:#3fb950,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V5 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#56d4dd;color:#000">V5</span>
+    <span class="v-title">Agentic Filtered Sensing-Only</span>
+    <div class="v-tags">
+      <span class="v-tag">agentic</span>
+      <span class="v-tag">filtered narrative</span>
+      <span class="v-tag">sensing-only</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V5</strong> provides a pre-computed filtered behavioral narrative as primary context.
+      The narrative includes structured sections ([Motion], [Screen], [Apps], [Keyboard], [Environment])
+      with anomaly detection and z-scores. The agent starts with this rich summary and can
+      drill down into raw data via MCP tools when needed.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Filtered narrative + MCP tools (for drill-down) + trait profile</p>
+      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      <p><strong>No diary text</strong> — narrative provides comprehensive behavioral context</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Filtered<br/>Narrative"] --> B["Claude Sonnet<br/>(autonomous)"]
+        B -->|"drill-down"| C["MCP<br/>Server"]
+        C -->|"raw details"| B
+        D["Session Memory"] --> B
+        E["Trait Profile"] --> B
+        B --> F["Prediction JSON"]
+        style A fill:#56d4dd,color:#000
+        style B fill:#56d4dd,color:#000
+        style C fill:#d2a8ff,color:#000
+        style F fill:#3fb950,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- V6 -->
+<div class="version-card">
+  <div class="version-card-header">
+    <span class="v-badge" style="background:#f778ba;color:#000">V6</span>
+    <span class="v-title">Agentic Filtered Multimodal (Best)</span>
+    <div class="v-tags">
+      <span class="v-tag">agentic</span>
+      <span class="v-tag">filtered narrative</span>
+      <span class="v-tag">multimodal</span>
+      <span class="v-tag" style="border-color:var(--accent-green);color:var(--accent-green)">BEST</span>
+    </div>
+  </div>
+  <div class="version-card-body">
+    <div class="v-desc">
+      <p><strong>V6</strong> combines all modalities: diary text + filtered behavioral narrative + MCP tool access.
+      The agent reads the diary first for emotional context, then uses the pre-computed narrative
+      to understand behavioral patterns, and can drill into raw data for specific details.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary text + filtered narrative + MCP tools + session memory + trait profile</p>
+      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      <p style="color:var(--accent-green)"><strong>Best overall:</strong> BA=0.676, F1=0.558 (highest binary classification)</p>
+    </div>
+    <div class="v-flow">
+      <div class="mermaid">
+      graph LR
+        A["Diary Text"] --> B["Claude Sonnet<br/>(autonomous)"]
+        G["Filtered<br/>Narrative"] --> B
+        B -->|"drill-down"| C["MCP<br/>Server"]
+        C -->|"raw details"| B
+        D["Session Memory"] --> B
+        E["Trait Profile"] --> B
+        B --> F["Prediction JSON"]
+        style A fill:#f778ba,color:#000
+        style G fill:#56d4dd,color:#000
+        style B fill:#f778ba,color:#000
+        style C fill:#d2a8ff,color:#000
+        style F fill:#3fb950,color:#000
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Backend Architecture</h3>
+<div class="data-compare">
+  <div class="data-box">
+    <h4>
+      Structured Versions
+      <span class="data-tag" style="background:#58a6ff33;color:#58a6ff">CALLM, V1, V3</span>
+    </h4>
+    <pre>Python Process
+  |
+  +-- ClaudeCodeClient
+  |     |
+  |     +-- subprocess: claude -p "prompt"
+  |     |     (single call, waits for response)
+  |     |
+  |     +-- Returns: JSON prediction
+  |
+  +-- Fixed data pipeline
+        (extract features -> format -> prompt)</pre>
+  </div>
+  <div class="data-box">
+    <h4>
+      Agentic Versions
+      <span class="data-tag" style="background:#d2a8ff33;color:#d2a8ff">V2, V4, V5, V6</span>
+    </h4>
+    <pre>Python Process
+  |
+  +-- AgenticCCAgent
+  |     |
+  |     +-- subprocess: claude --print \\
+  |     |     --model sonnet \\
+  |     |     --mcp-config mcp.json \\
+  |     |     --max-turns 16
+  |     |
+  |     +-- Agent autonomously:
+  |           1. Reads context (narrative/diary)
+  |           2. Calls MCP tools (query_screen, etc.)
+  |           3. Reasons about patterns
+  |           4. Returns JSON prediction
+  |
+  +-- MCP Server (SensingQueryEngine)
+        Exposes: query_screen, query_motion,
+        query_keyboard, query_light, query_apps</pre>
+  </div>
+</div>
+
+</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- PER-USER ANALYSIS PAGE -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-analysis" id="page-analysis">
   <div class="sidebar">
     <div class="sidebar-filters">
       <div class="filter-row">
@@ -659,11 +1400,15 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 </div>
 
 <script>
+// ── Data ─────────────────────────────────────────────────────────────────
 const DATA = {data_json};
 const VERSIONS = {versions_json};
 const VERSION_LABELS = {labels_json};
 const VERSION_COLORS = {colors_json};
 const BINARY_STATES = {binary_json};
+const EVAL_DATA = {eval_json};
+const TOKEN_STATS = {token_json};
+const ELAPSED_STATS = {elapsed_json};
 const USERS = Object.keys(DATA).map(Number).sort((a,b) => a - b);
 
 let activeUser = null;
@@ -672,9 +1417,41 @@ let activeVersion = null;
 let activeMetric = 'PANAS_Pos';
 let activeTab = 'predictions';
 let timeChart = null;
+let currentPage = 'overview';
+
+// ── Page navigation ──────────────────────────────────────────────────────
+function switchPage(page) {{
+  currentPage = page;
+  document.querySelectorAll('.nav-tab').forEach((t, i) => {{
+    const pages = ['overview', 'methodology', 'analysis'];
+    t.classList.toggle('active', pages[i] === page);
+  }});
+  document.getElementById('page-overview').classList.toggle('active', page === 'overview');
+  document.getElementById('page-methodology').classList.toggle('active', page === 'methodology');
+  document.getElementById('page-analysis').classList.toggle('active', page === 'analysis');
+
+  // Re-init mermaid when methodology page shown
+  if (page === 'methodology') {{
+    setTimeout(() => mermaid.run(), 100);
+  }}
+}}
 
 // ── Init ────────────────────────────────────────────────────────────────
 function init() {{
+  // Mermaid dark theme
+  mermaid.initialize({{
+    startOnLoad: false,
+    theme: 'dark',
+    themeVariables: {{
+      primaryColor: '#1c2128',
+      primaryTextColor: '#f0f6fc',
+      primaryBorderColor: '#30363d',
+      lineColor: '#8b949e',
+      secondaryColor: '#161b22',
+      tertiaryColor: '#21262d',
+    }}
+  }});
+
   // Populate version filter
   const vSel = document.getElementById('filterVersion');
   VERSIONS.forEach(v => {{
@@ -701,10 +1478,251 @@ function init() {{
   document.getElementById('headerStats').innerHTML =
     `<div class="header-stat"><span class="num">${{USERS.length}}</span> users</div>` +
     `<div class="header-stat"><span class="num">${{totalEntries}}</span> entries</div>` +
-    `<div class="header-stat"><span class="num">${{totalRecords}}</span> records</div>` +
     `<div class="header-stat"><span class="num">${{allVersions.size}}</span> versions</div>`;
 
   renderUserList();
+  renderOverviewCharts();
+  renderResultsTables();
+  renderTokenSection();
+}}
+
+// ── Overview Charts ─────────────────────────────────────────────────────
+function renderOverviewCharts() {{
+  const versions = VERSIONS.filter(v => EVAL_DATA[v]?.available);
+  const labels = versions.map(v => VERSION_LABELS[v]);
+  const colors = versions.map(v => VERSION_COLORS[v]);
+
+  // MAE chart
+  new Chart(document.getElementById('chartMAE'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [{{
+        data: versions.map(v => EVAL_DATA[v]?.aggregate?.mean_mae ?? 0),
+        backgroundColor: colors.map(c => c + 'bb'),
+        borderColor: colors,
+        borderWidth: 1,
+      }}]
+    }},
+    options: barOpts('MAE', true)
+  }});
+
+  // BA chart
+  new Chart(document.getElementById('chartBA'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [{{
+        data: versions.map(v => EVAL_DATA[v]?.aggregate?.mean_ba ?? 0),
+        backgroundColor: colors.map(c => c + 'bb'),
+        borderColor: colors,
+        borderWidth: 1,
+      }}]
+    }},
+    options: barOpts('BA', false, [0.4, 0.75])
+  }});
+
+  // F1 chart
+  new Chart(document.getElementById('chartF1'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [{{
+        data: versions.map(v => EVAL_DATA[v]?.aggregate?.mean_f1 ?? 0),
+        backgroundColor: colors.map(c => c + 'bb'),
+        borderColor: colors,
+        borderWidth: 1,
+      }}]
+    }},
+    options: barOpts('F1', false, [0.2, 0.65])
+  }});
+
+  // Elapsed time chart
+  const elapsedData = versions.map(v => {{
+    const s = ELAPSED_STATS[v];
+    if (s && s.count > 0) return s.total / s.count;
+    return 0;
+  }});
+  new Chart(document.getElementById('chartTime'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [{{
+        data: elapsedData,
+        backgroundColor: colors.map(c => c + 'bb'),
+        borderColor: colors,
+        borderWidth: 1,
+      }}]
+    }},
+    options: barOpts('Seconds', true)
+  }});
+}}
+
+function barOpts(yLabel, lowerBetter, suggestedRange) {{
+  return {{
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {{
+      legend: {{ display: false }},
+      tooltip: {{
+        backgroundColor: '#1c2128',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        titleColor: '#f0f6fc',
+        bodyColor: '#c9d1d9',
+        callbacks: {{
+          label: ctx => `${{yLabel}}: ${{ctx.parsed.y.toFixed(3)}}`
+        }}
+      }}
+    }},
+    scales: {{
+      x: {{ ticks: {{ color: '#8b949e', font: {{ size: 10 }} }}, grid: {{ display: false }} }},
+      y: {{
+        ticks: {{ color: '#8b949e', font: {{ size: 10 }} }},
+        grid: {{ color: '#21262d' }},
+        suggestedMin: suggestedRange ? suggestedRange[0] : undefined,
+        suggestedMax: suggestedRange ? suggestedRange[1] : undefined,
+      }}
+    }}
+  }};
+}}
+
+// ── Results Tables ──────────────────────────────────────────────────────
+function renderResultsTables() {{
+  const versions = VERSIONS.filter(v => EVAL_DATA[v]?.available);
+
+  // Aggregate results
+  let html = '<tr><th>Metric</th>';
+  versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
+  html += '</tr>';
+
+  // Find bests
+  const metrics = ['mean_mae', 'mean_ba', 'mean_f1'];
+  const metricLabels = ['Mean MAE', 'Mean BA', 'Mean F1'];
+  const lowerBetter = [true, false, false];
+
+  metrics.forEach((m, i) => {{
+    const vals = versions.map(v => EVAL_DATA[v]?.aggregate?.[m] ?? null);
+    const best = lowerBetter[i]
+      ? Math.min(...vals.filter(x => x !== null))
+      : Math.max(...vals.filter(x => x !== null));
+    html += `<tr><td>${{metricLabels[i]}}</td>`;
+    vals.forEach(v => {{
+      if (v === null) {{ html += '<td>-</td>'; return; }}
+      const cls = Math.abs(v - best) < 0.001 ? 'best-val' : '';
+      html += `<td class="${{cls}}">${{v.toFixed(3)}}</td>`;
+    }});
+    html += '</tr>';
+  }});
+
+  // N entries
+  html += '<tr><td>N entries</td>';
+  versions.forEach(v => html += `<td>${{EVAL_DATA[v]?.n_entries ?? '-'}}</td>`);
+  html += '</tr>';
+
+  document.getElementById('resultsTable').innerHTML = html;
+
+  // Continuous targets
+  const contTargets = ['PANAS_Pos', 'PANAS_Neg', 'ER_desire'];
+  html = '<tr><th>Target</th>';
+  versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
+  html += '<th style="color:var(--text-muted)">GT Stats</th></tr>';
+
+  contTargets.forEach(t => {{
+    const vals = versions.map(v => EVAL_DATA[v]?.continuous?.[t]?.mae ?? null);
+    const best = Math.min(...vals.filter(x => x !== null));
+    html += `<tr><td>${{t}}</td>`;
+    vals.forEach(v => {{
+      if (v === null) {{ html += '<td>-</td>'; return; }}
+      const cls = Math.abs(v - best) < 0.001 ? 'best-val' : '';
+      html += `<td class="${{cls}}">${{v.toFixed(3)}}</td>`;
+    }});
+    // GT stats from first available version
+    const ref = versions.find(v => EVAL_DATA[v]?.continuous?.[t]);
+    if (ref) {{
+      const s = EVAL_DATA[ref].continuous[t];
+      html += `<td style="color:var(--text-muted);font-size:11px">mean=${{s.gt_mean.toFixed(1)}} std=${{s.gt_std.toFixed(1)}}</td>`;
+    }} else {{
+      html += '<td>-</td>';
+    }}
+    html += '</tr>';
+  }});
+  document.getElementById('continuousTable').innerHTML = html;
+
+  // Binary targets
+  const binTargets = ['Individual_level_happy_State', 'Individual_level_PA_State',
+    'Individual_level_NA_State', 'Individual_level_sad_State',
+    'Individual_level_worried_State', 'INT_availability'];
+  html = '<tr><th>Target</th>';
+  versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
+  html += '</tr>';
+
+  binTargets.forEach(t => {{
+    const vals = versions.map(v => EVAL_DATA[v]?.binary?.[t]?.ba ?? null);
+    const best = Math.max(...vals.filter(x => x !== null));
+    const label = t.replace('Individual_level_', '').replace('_State', '');
+    html += `<tr><td>${{label}}</td>`;
+    vals.forEach(v => {{
+      if (v === null) {{ html += '<td>-</td>'; return; }}
+      const cls = Math.abs(v - best) < 0.001 ? 'best-val' : '';
+      html += `<td class="${{cls}}">${{v.toFixed(3)}}</td>`;
+    }});
+    html += '</tr>';
+  }});
+  document.getElementById('binaryTable').innerHTML = html;
+}}
+
+// ── Token Section ───────────────────────────────────────────────────────
+function renderTokenSection() {{
+  const container = document.getElementById('tokenSection');
+  const versions = ['callm', 'v1', 'v3'];  // only structured have token data
+
+  let html = '<div class="token-grid">';
+  versions.forEach(v => {{
+    const s = TOKEN_STATS[v];
+    if (!s) return;
+    const avgIn = Math.round(s.input / s.count);
+    const avgOut = Math.round(s.output / s.count);
+    const avgTotal = avgIn + avgOut;
+
+    html += `
+      <div class="token-stat" style="border-color:${{VERSION_COLORS[v]}}55">
+        <div class="ts-label" style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</div>
+        <div class="ts-val">${{(avgTotal / 1000).toFixed(1)}}K</div>
+        <div class="ts-sub">avg tokens/pred</div>
+      </div>
+      <div class="token-stat">
+        <div class="ts-label">Input</div>
+        <div class="ts-val">${{(avgIn / 1000).toFixed(1)}}K</div>
+        <div class="ts-sub">avg input tokens</div>
+      </div>
+      <div class="token-stat">
+        <div class="ts-label">Output</div>
+        <div class="ts-val">${{(avgOut / 1000).toFixed(1)}}K</div>
+        <div class="ts-sub">avg output tokens</div>
+      </div>
+    `;
+  }});
+  html += '</div>';
+
+  // Elapsed time comparison for all versions
+  html += '<h4 style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:0.3px">Avg Elapsed Time per Prediction (all versions)</h4>';
+  html += '<div class="token-grid">';
+  VERSIONS.forEach(v => {{
+    const s = ELAPSED_STATS[v];
+    if (!s || s.count === 0) return;
+    const avg = (s.total / s.count).toFixed(1);
+    html += `
+      <div class="token-stat" style="border-color:${{VERSION_COLORS[v]}}55">
+        <div class="ts-label" style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</div>
+        <div class="ts-val">${{avg}}s</div>
+        <div class="ts-sub">${{s.count}} samples, max ${{s.max.toFixed(0)}}s</div>
+      </div>
+    `;
+  }});
+  html += '</div>';
+
+  container.innerHTML = html;
 }}
 
 // ── User list ───────────────────────────────────────────────────────────
@@ -718,7 +1736,6 @@ function renderUserList() {{
     const vers = new Set();
     entries.forEach(e => Object.keys(e.versions).forEach(v => vers.add(v)));
 
-    // Filter: skip users without selected version
     if (fVer !== 'all' && !vers.has(fVer)) return;
 
     const count = fVer === 'all' ? entries.length
@@ -760,7 +1777,6 @@ function renderUserView(uid) {{
 
   let html = '';
 
-  // User summary card
   html += `<div class="user-summary">
     <h2>User ${{uid}}</h2>
     <div class="stats">
@@ -769,7 +1785,6 @@ function renderUserView(uid) {{
     </div>
   </div>`;
 
-  // Time series chart
   html += `<div class="chart-container">
     <div class="chart-controls">
       ${{['PANAS_Pos', 'PANAS_Neg', 'ER_desire'].map(m =>
@@ -779,7 +1794,6 @@ function renderUserView(uid) {{
     <div class="chart-wrap"><canvas id="timeChart"></canvas></div>
   </div>`;
 
-  // Entry timeline
   html += `<div class="timeline-strip">
     <h3>Entry Timeline (click to inspect)</h3>
     <div class="timeline-dots">
@@ -794,15 +1808,10 @@ function renderUserView(uid) {{
     </div>
   </div>`;
 
-  // Entry detail
   html += '<div id="entryDetail"></div>';
-
   main.innerHTML = html;
-
-  // Render chart
   renderTimeChart(uid, entries);
 
-  // If entry was selected, re-render detail
   if (activeEntryIdx !== null) {{
     const entry = entries.find(e => e.idx === activeEntryIdx);
     if (entry) renderEntryDetail(uid, entry);
@@ -818,7 +1827,6 @@ function renderTimeChart(uid, entries) {{
   const labels = entries.map(e => e.date || `#${{e.idx}}`);
   const datasets = [];
 
-  // Ground truth
   datasets.push({{
     label: 'Ground Truth',
     data: entries.map(e => e.ground_truth?.[activeMetric] ?? null),
@@ -831,7 +1839,6 @@ function renderTimeChart(uid, entries) {{
     spanGaps: true,
   }});
 
-  // Each version
   const fVer = document.getElementById('filterVersion').value;
   const versionsToShow = fVer === 'all' ? VERSIONS : [fVer];
 
@@ -870,9 +1877,7 @@ function renderTimeChart(uid, entries) {{
         }}
       }},
       plugins: {{
-        legend: {{
-          labels: {{ color: '#8b949e', font: {{ size: 11 }}, boxWidth: 12 }}
-        }},
+        legend: {{ labels: {{ color: '#8b949e', font: {{ size: 11 }}, boxWidth: 12 }} }},
         tooltip: {{
           backgroundColor: '#1c2128',
           borderColor: '#30363d',
@@ -883,14 +1888,8 @@ function renderTimeChart(uid, entries) {{
         }}
       }},
       scales: {{
-        x: {{
-          ticks: {{ color: '#8b949e', font: {{ size: 10 }}, maxRotation: 45 }},
-          grid: {{ color: '#21262d' }}
-        }},
-        y: {{
-          ticks: {{ color: '#8b949e', font: {{ size: 10 }} }},
-          grid: {{ color: '#21262d' }}
-        }}
+        x: {{ ticks: {{ color: '#8b949e', font: {{ size: 10 }}, maxRotation: 45 }}, grid: {{ color: '#21262d' }} }},
+        y: {{ ticks: {{ color: '#8b949e', font: {{ size: 10 }} }}, grid: {{ color: '#21262d' }} }}
       }}
     }}
   }});
@@ -908,12 +1907,10 @@ function selectEntry(uid, idx) {{
   const entry = entries.find(e => e.idx === idx);
   if (!entry) return;
 
-  // Update timeline dot highlights
   document.querySelectorAll('.t-dot').forEach(d => d.classList.remove('active'));
   const dot = document.querySelector(`.t-dot[onclick="selectEntry(${{uid}}, ${{idx}})"]`);
   if (dot) dot.classList.add('active');
 
-  // Pick default version
   const availVers = Object.keys(entry.versions);
   if (!activeVersion || !availVers.includes(activeVersion)) {{
     activeVersion = availVers[0] || VERSIONS[0];
@@ -932,7 +1929,6 @@ function renderEntryDetail(uid, entry) {{
 
   let html = '';
 
-  // Version comparison bar
   html += `<div class="version-comparison">
     <div class="vc-header">Version Comparison — Entry #${{entry.idx}} (${{entry.date}} ${{entry.slot}})</div>
     <div class="vc-grid">
@@ -964,7 +1960,6 @@ function renderEntryDetail(uid, entry) {{
     </div>
   </div>`;
 
-  // Detail panel with tabs
   html += `<div class="detail-panel">
     <div class="detail-header">
       <h3>Entry #${{entry.idx}} Detail</h3>
@@ -1004,7 +1999,6 @@ function renderPredictionsTab(entry, version) {{
 
   let html = `<div class="tab-content ${{activeTab === 'predictions' ? 'active' : ''}}" id="tab-predictions">`;
 
-  // Continuous predictions
   html += '<div class="cont-preds">';
   ['PANAS_Pos', 'PANAS_Neg', 'ER_desire'].forEach(m => {{
     const gv = gt[m]; const pv = pred[m];
@@ -1021,7 +2015,6 @@ function renderPredictionsTab(entry, version) {{
   }});
   html += '</div>';
 
-  // Binary states
   html += `<div class="binary-section">
     <h4>Binary Emotional States</h4>
     <table class="binary-table">
@@ -1036,7 +2029,7 @@ function renderPredictionsTab(entry, version) {{
     if (gv != null && pv != null) {{
       const match = gv === pv;
       matchCls = match ? 'b-match' : 'b-miss';
-      matchStr = match ? '✓' : '✗';
+      matchStr = match ? '+' : 'x';
     }}
     html += `<tr>
       <td>${{s}}</td>
@@ -1046,7 +2039,6 @@ function renderPredictionsTab(entry, version) {{
     </tr>`;
   }});
 
-  // Count matches
   let matches = 0, total = 0;
   BINARY_STATES.forEach(s => {{
     const key = 'Individual_level_' + s + '_State';
@@ -1058,7 +2050,6 @@ function renderPredictionsTab(entry, version) {{
       <td class="${{matches/total > 0.7 ? 'b-match' : 'b-miss'}}">${{matches}}/${{total}} (${{(matches/total*100).toFixed(0)}}%)</td></tr>`;
   }}
   html += '</table></div>';
-
   html += '</div>';
   return html;
 }}
@@ -1069,17 +2060,12 @@ function renderProcessTab(entry, version) {{
 
   let html = `<div class="tab-content ${{activeTab === 'process' ? 'active' : ''}}" id="tab-process">`;
 
-  // Reasoning
   if (vd.reasoning) {{
     html += collapsible('Reasoning', `<pre>${{esc(vd.reasoning)}}</pre>`, true);
   }}
-
-  // Sensing summary
   if (vd.sensing_summary) {{
     html += collapsible('Sensing Summary', `<pre>${{esc(vd.sensing_summary)}}</pre>`);
   }}
-
-  // Tool calls (V2/V4)
   if (vd.tool_calls && vd.tool_calls.length > 0) {{
     let tc = `<div style="margin-bottom:4px;color:var(--text-muted);font-size:11px">${{vd.tool_calls.length}} tool calls across ${{vd.n_rounds || '?'}} rounds</div>`;
     vd.tool_calls.forEach((t, i) => {{
@@ -1088,16 +2074,13 @@ function renderProcessTab(entry, version) {{
         <span style="color:var(--text-muted);font-size:10px">#${{t.index || i+1}}</span>
         <span class="tool-name">${{esc(t.tool_name || '')}}</span>
         ${{inputStr ? `<div class="tool-input">${{esc(inputStr.substring(0, 120))}}</div>` : ''}}
-        ${{t.result_preview ? `<div class="tool-preview">${{esc(String(t.result_preview).substring(0, 150))}}</div>` : ''}}
       </div>`;
     }});
     html += collapsible(`Tool Calls (${{vd.tool_calls.length}})`, tc, true);
   }}
-
-  // RAG cases
   if (vd.rag_cases && vd.rag_cases.length > 0) {{
     let rc = '';
-    vd.rag_cases.forEach((r, i) => {{
+    vd.rag_cases.forEach(r => {{
       rc += `<div class="rag-case">
         <span class="rag-sim">${{r.similarity?.toFixed(2) || '?'}}</span>
         "${{esc(String(r.text || '').substring(0, 100))}}"
@@ -1106,23 +2089,15 @@ function renderProcessTab(entry, version) {{
     }});
     html += collapsible(`RAG Cases (${{vd.rag_cases.length}})`, rc);
   }}
-
-  // Memory excerpt
   if (vd.memory_excerpt) {{
     html += collapsible('Memory Excerpt', `<pre>${{esc(vd.memory_excerpt)}}</pre>`);
   }}
-
-  // Emotion driver / diary
   if (vd.emotion_driver) {{
     html += collapsible('Diary / Emotion Driver', `<pre>${{esc(vd.emotion_driver)}}</pre>`);
   }}
-
-  // Trait summary
   if (vd.trait_summary) {{
     html += collapsible('Trait Summary', `<pre>${{esc(vd.trait_summary)}}</pre>`);
   }}
-
-  // Modalities
   if (vd.modalities_available && vd.modalities_available.length > 0) {{
     html += collapsible('Modalities', `
       <div style="font-size:11px">
@@ -1145,7 +2120,6 @@ function renderRawTab(entry, version) {{
 
   let html = `<div class="tab-content ${{activeTab === 'raw' ? 'active' : ''}}" id="tab-raw">`;
 
-  // Stats grid
   html += '<div class="raw-stats">';
   const stats = [
     ['Input Tokens', vd.input_tokens || 0],
@@ -1162,18 +2136,13 @@ function renderRawTab(entry, version) {{
   }});
   html += '</div>';
 
-  // System prompt
   if (vd.system_prompt) {{
     html += collapsible('System Prompt', `<pre>${{esc(vd.system_prompt)}}</pre>`);
   }}
-
-  // Full prompt
   if (vd.full_prompt) {{
     const trunc = vd.prompt_truncated ? ' (truncated)' : '';
     html += collapsible(`Full Prompt${{trunc}}`, `<pre>${{esc(vd.full_prompt)}}</pre>`);
   }}
-
-  // Full response
   if (vd.full_response) {{
     const trunc = vd.response_truncated ? ' (truncated)' : '';
     html += collapsible(`Full Response${{trunc}}`, `<pre>${{esc(vd.full_response)}}</pre>`);
@@ -1187,7 +2156,7 @@ function renderRawTab(entry, version) {{
 function collapsible(title, content, openByDefault) {{
   return `<div class="process-section">
     <div class="process-header" onclick="toggleCollapse(this)">
-      ${{title}} <span class="arrow">${{openByDefault ? '▾' : '▸'}}</span>
+      ${{title}} <span class="arrow">${{openByDefault ? 'v' : '>'}}</span>
     </div>
     <div class="process-body ${{openByDefault ? 'open' : ''}}">${{content}}</div>
   </div>`;
@@ -1196,7 +2165,7 @@ function collapsible(title, content, openByDefault) {{
 function toggleCollapse(el) {{
   const body = el.nextElementSibling;
   body.classList.toggle('open');
-  el.querySelector('.arrow').textContent = body.classList.contains('open') ? '▾' : '▸';
+  el.querySelector('.arrow').textContent = body.classList.contains('open') ? 'v' : '>';
 }}
 
 function switchDetailVersion(v) {{
@@ -1247,7 +2216,7 @@ function errBadge(pred, gt) {{
   if (pred == null || gt == null) return '';
   const err = Math.abs(pred - gt).toFixed(1);
   const color = errColor(pred, gt);
-  return `<span style="font-size:9px;color:${{color}}">±${{err}}</span>`;
+  return `<span style="font-size:9px;color:${{color}}">+/-${{err}}</span>`;
 }}
 
 init();
@@ -1270,12 +2239,24 @@ def main():
     print("Loading JSONL records...")
     users = load_all_records()
 
+    print("Loading V5/V6 checkpoints...")
+    users = load_v5v6_checkpoints(users)
+
+    print("Loading evaluation data...")
+    eval_data = load_evaluation()
+
+    print("Loading token stats...")
+    token_stats = load_token_stats()
+
+    print("Loading elapsed time stats...")
+    elapsed_stats = load_elapsed_stats()
+
     print("Building dashboard data...")
     js_data = build_js_data(users)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    generate_html(js_data, output_path)
+    generate_html(js_data, eval_data, token_stats, elapsed_stats, output_path)
 
 
 if __name__ == "__main__":
