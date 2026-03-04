@@ -325,8 +325,10 @@ class AgenticCCAgent:
         prediction["_n_tool_calls"] = len(parsed_tool_calls)
         prediction["_n_rounds"] = len(parsed_tool_calls)  # approximate: 1 tool ≈ 1 round in CC mode
         prediction["_conversation_length"] = 0  # not available in CC mode
-        prediction["_input_tokens"] = 0  # not available from claude --print
-        prediction["_output_tokens"] = 0
+        usage = getattr(self, "_last_usage", {})
+        prediction["_input_tokens"] = usage.get("input_tokens", 0)
+        prediction["_output_tokens"] = usage.get("output_tokens", 0)
+        prediction["_cost_usd"] = usage.get("cost_usd", 0)
         prediction["_total_tokens"] = 0
         prediction["_cost_usd"] = 0.0  # free via Max subscription
         prediction["_llm_calls"] = 1  # one subprocess call
@@ -343,7 +345,11 @@ class AgenticCCAgent:
     # ------------------------------------------------------------------
 
     def _run_claude(self, ema_timestamp: str, ema_date: str, prompt: str, system_prompt: str) -> str:
-        """Write temp MCP config and call claude --print, returning stdout text."""
+        """Write temp MCP config and call claude --print, returning stdout text.
+
+        Returns the LLM text output. Token usage is stored in self._last_usage.
+        """
+        self._last_usage: dict = {}
         mcp_server_path = PROJECT_ROOT / "src" / "sense" / "mcp_server.py"
 
         mcp_config = {
@@ -375,6 +381,7 @@ class AgenticCCAgent:
             cmd = [
                 "claude",
                 "--print",
+                "--output-format", "json",
                 "--model", self.model,
                 "--max-turns", str(self.max_turns),
                 "--mcp-config", mcp_config_path,
@@ -401,7 +408,7 @@ class AgenticCCAgent:
             if result.returncode != 0:
                 logger.warning(f"{tag} claude --print exited {result.returncode}: {result.stderr[:300]}")
 
-            return result.stdout.strip()
+            return self._unwrap_json_output(result.stdout.strip(), tag)
 
         except subprocess.TimeoutExpired:
             logger.error(f"{tag} claude --print timed out after 600s")
@@ -411,6 +418,29 @@ class AgenticCCAgent:
             return ""
         finally:
             Path(mcp_config_path).unlink(missing_ok=True)
+
+    def _unwrap_json_output(self, raw: str, tag: str = "") -> str:
+        """Unwrap --output-format json response, extract token usage."""
+        if not raw:
+            return ""
+        try:
+            wrapper = json.loads(raw)
+            if isinstance(wrapper, dict):
+                usage = wrapper.get("usage", {})
+                if isinstance(usage, dict):
+                    self._last_usage = {
+                        "input_tokens": usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+                        "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+                        "cost_usd": wrapper.get("total_cost_usd", 0),
+                    }
+                    logger.info(f"{tag} tokens: {self._last_usage.get('input_tokens', 0)}in + {self._last_usage.get('output_tokens', 0)}out")
+                if "result" in wrapper:
+                    return str(wrapper["result"])
+        except json.JSONDecodeError:
+            pass
+        return raw
 
     # ------------------------------------------------------------------
     # Private: prompt building
