@@ -995,15 +995,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 <h3>Aggregate Performance Comparison</h3>
 <div class="metric-grid">
   <div class="metric-card">
-    <h4>Mean MAE (lower is better)</h4>
-    <div class="chart-wrap"><canvas id="chartMAE"></canvas></div>
-  </div>
-  <div class="metric-card">
     <h4>Balanced Accuracy (higher is better)</h4>
     <div class="chart-wrap"><canvas id="chartBA"></canvas></div>
   </div>
   <div class="metric-card">
-    <h4>Mean F1 Score (higher is better)</h4>
+    <h4>Mean Macro F1 (higher is better)</h4>
     <div class="chart-wrap"><canvas id="chartF1"></canvas></div>
   </div>
   <div class="metric-card">
@@ -1015,11 +1011,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 <h3>Detailed Results</h3>
 <table class="results-table" id="resultsTable"></table>
 
-<h3>Key Continuous Targets — MAE Breakdown</h3>
-<table class="results-table" id="continuousTable"></table>
+<h3>All Binary Targets — Balanced Accuracy</h3>
+<table class="results-table" id="binaryBATable"></table>
 
-<h3>Key Binary Targets — Balanced Accuracy</h3>
-<table class="results-table" id="binaryTable"></table>
+<h3>All Binary Targets — Macro F1</h3>
+<table class="results-table" id="binaryF1Table"></table>
 
 <h3>Token Consumption</h3>
 <div class="notice-info notice">
@@ -1539,21 +1535,6 @@ function renderOverviewCharts() {{
   const labels = versions.map(v => VERSION_LABELS[v]);
   const colors = versions.map(v => VERSION_COLORS[v]);
 
-  // MAE chart
-  new Chart(document.getElementById('chartMAE'), {{
-    type: 'bar',
-    data: {{
-      labels,
-      datasets: [{{
-        data: versions.map(v => EVAL_DATA[v]?.aggregate?.mean_mae ?? 0),
-        backgroundColor: colors.map(c => c + 'bb'),
-        borderColor: colors,
-        borderWidth: 1,
-      }}]
-    }},
-    options: barOpts('MAE', true)
-  }});
-
   // BA chart
   new Chart(document.getElementById('chartBA'), {{
     type: 'bar',
@@ -1581,7 +1562,7 @@ function renderOverviewCharts() {{
         borderWidth: 1,
       }}]
     }},
-    options: barOpts('F1', false, [0.2, 0.65])
+    options: barOpts('Macro F1', false, [0.2, 0.65])
   }});
 
   // Elapsed time chart
@@ -1644,9 +1625,9 @@ function renderResultsTables() {{
   html += '</tr>';
 
   // Find bests
-  const metrics = ['mean_mae', 'mean_ba', 'mean_f1'];
-  const metricLabels = ['Mean MAE', 'Mean BA', 'Mean F1'];
-  const lowerBetter = [true, false, false];
+  const metrics = ['mean_ba', 'mean_f1'];
+  const metricLabels = ['Mean BA', 'Mean Macro F1'];
+  const lowerBetter = [false, false];
 
   metrics.forEach((m, i) => {{
     const vals = versions.map(v => EVAL_DATA[v]?.aggregate?.[m] ?? null);
@@ -1669,42 +1650,22 @@ function renderResultsTables() {{
 
   document.getElementById('resultsTable').innerHTML = html;
 
-  // Continuous targets
-  const contTargets = ['PANAS_Pos', 'PANAS_Neg', 'ER_desire'];
-  html = '<tr><th>Target</th>';
-  versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
-  html += '<th style="color:var(--text-muted)">GT Stats</th></tr>';
-
-  contTargets.forEach(t => {{
-    const vals = versions.map(v => EVAL_DATA[v]?.continuous?.[t]?.mae ?? null);
-    const best = Math.min(...vals.filter(x => x !== null));
-    html += `<tr><td>${{t}}</td>`;
-    vals.forEach(v => {{
-      if (v === null) {{ html += '<td>-</td>'; return; }}
-      const cls = Math.abs(v - best) < 0.001 ? 'best-val' : '';
-      html += `<td class="${{cls}}">${{v.toFixed(3)}}</td>`;
-    }});
-    // GT stats from first available version
-    const ref = versions.find(v => EVAL_DATA[v]?.continuous?.[t]);
-    if (ref) {{
-      const s = EVAL_DATA[ref].continuous[t];
-      html += `<td style="color:var(--text-muted);font-size:11px">mean=${{s.gt_mean.toFixed(1)}} std=${{s.gt_std.toFixed(1)}}</td>`;
-    }} else {{
-      html += '<td>-</td>';
-    }}
-    html += '</tr>';
-  }});
-  document.getElementById('continuousTable').innerHTML = html;
-
-  // Binary targets
-  const binTargets = ['Individual_level_happy_State', 'Individual_level_PA_State',
-    'Individual_level_NA_State', 'Individual_level_sad_State',
-    'Individual_level_worried_State', 'INT_availability'];
+  // All binary targets — BA table
+  const allBinTargets = [
+    'Individual_level_PA_State', 'Individual_level_NA_State',
+    'Individual_level_happy_State', 'Individual_level_sad_State',
+    'Individual_level_afraid_State', 'Individual_level_miserable_State',
+    'Individual_level_worried_State', 'Individual_level_cheerful_State',
+    'Individual_level_pleased_State', 'Individual_level_grateful_State',
+    'Individual_level_lonely_State', 'Individual_level_interactions_quality_State',
+    'Individual_level_pain_State', 'Individual_level_forecasting_State',
+    'Individual_level_ER_desire_State', 'INT_availability',
+  ];
   html = '<tr><th>Target</th>';
   versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
   html += '</tr>';
 
-  binTargets.forEach(t => {{
+  allBinTargets.forEach(t => {{
     const vals = versions.map(v => EVAL_DATA[v]?.binary?.[t]?.ba ?? null);
     const best = Math.max(...vals.filter(x => x !== null));
     const label = t.replace('Individual_level_', '').replace('_State', '');
@@ -1716,7 +1677,44 @@ function renderResultsTables() {{
     }});
     html += '</tr>';
   }});
-  document.getElementById('binaryTable').innerHTML = html;
+  html += '<tr style="border-top:2px solid var(--border);font-weight:600"><td>Mean BA</td>';
+  versions.forEach(v => {{
+    const agg = EVAL_DATA[v]?.aggregate?.mean_ba;
+    const allBAs = versions.map(vv => EVAL_DATA[vv]?.aggregate?.mean_ba ?? 0);
+    const best = Math.max(...allBAs);
+    const cls = agg && Math.abs(agg - best) < 0.001 ? 'best-val' : '';
+    html += agg != null ? `<td class="${{cls}}">${{agg.toFixed(3)}}</td>` : '<td>-</td>';
+  }});
+  html += '</tr>';
+  document.getElementById('binaryBATable').innerHTML = html;
+
+  // All binary targets — Macro F1 table
+  html = '<tr><th>Target</th>';
+  versions.forEach(v => html += `<th style="color:${{VERSION_COLORS[v]}}">${{VERSION_LABELS[v]}}</th>`);
+  html += '</tr>';
+
+  allBinTargets.forEach(t => {{
+    const vals = versions.map(v => EVAL_DATA[v]?.binary?.[t]?.f1 ?? null);
+    const best = Math.max(...vals.filter(x => x !== null));
+    const label = t.replace('Individual_level_', '').replace('_State', '');
+    html += `<tr><td>${{label}}</td>`;
+    vals.forEach(v => {{
+      if (v === null) {{ html += '<td>-</td>'; return; }}
+      const cls = Math.abs(v - best) < 0.001 ? 'best-val' : '';
+      html += `<td class="${{cls}}">${{v.toFixed(3)}}</td>`;
+    }});
+    html += '</tr>';
+  }});
+  html += '<tr style="border-top:2px solid var(--border);font-weight:600"><td>Mean Macro F1</td>';
+  versions.forEach(v => {{
+    const agg = EVAL_DATA[v]?.aggregate?.mean_f1;
+    const allF1s = versions.map(vv => EVAL_DATA[vv]?.aggregate?.mean_f1 ?? 0);
+    const best = Math.max(...allF1s);
+    const cls = agg && Math.abs(agg - best) < 0.001 ? 'best-val' : '';
+    html += agg != null ? `<td class="${{cls}}">${{agg.toFixed(3)}}</td>` : '<td>-</td>';
+  }});
+  html += '</tr>';
+  document.getElementById('binaryF1Table').innerHTML = html;
 }}
 
 // ── Token Section ───────────────────────────────────────────────────────
