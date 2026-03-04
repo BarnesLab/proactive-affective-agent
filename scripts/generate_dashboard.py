@@ -1234,8 +1234,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
           <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
           <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
           <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
-          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
-          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity patterns (ER desire + availability only)</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and receptivity signals</li>
           <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
         </ul>
       </details>
@@ -1321,8 +1321,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
           <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
           <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
           <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
-          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
-          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity patterns (ER desire + availability only)</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and receptivity signals</li>
           <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
         </ul>
       </details>
@@ -1371,8 +1371,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
           <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
           <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
           <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
-          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
-          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity patterns (ER desire + availability only)</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and receptivity signals</li>
           <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
         </ul>
       </details>
@@ -1423,8 +1423,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
           <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
           <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
           <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
-          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
-          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity patterns (ER desire + availability only)</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and receptivity signals</li>
           <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
         </ul>
       </details>
