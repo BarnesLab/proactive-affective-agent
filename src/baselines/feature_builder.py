@@ -209,6 +209,106 @@ def impute_features(X: pd.DataFrame, strategy: str = "median") -> pd.DataFrame:
         raise ValueError(f"Unknown strategy: {strategy}")
 
 
+def build_parquet_features_3d(
+    ema_df: pd.DataFrame,
+    processed_dir: str | Path,
+    user_ids: list[int] | None = None,
+    lookback_hours: int = 24,
+) -> tuple[np.ndarray, pd.DataFrame, pd.DataFrame]:
+    """Build 3D feature tensor preserving hourly temporal structure for LSTM.
+
+    Instead of flattening all hourly features into one row (h0_screen_on_min, ...),
+    this returns a 3D array of shape (n_samples, lookback_hours, n_features) where
+    each hour is a separate timestep.
+
+    Args:
+        ema_df: EMA DataFrame with Study_ID, timestamp_local, and target columns.
+        processed_dir: Path to data/processed/hourly/ directory.
+        user_ids: If provided, only build features for these users.
+        lookback_hours: Hours of sensing history before each EMA (default 24).
+
+    Returns:
+        Tuple of (X_3d, y_continuous, y_binary):
+        - X_3d: np.ndarray of shape (n_samples, lookback_hours, n_features).
+        - y_continuous: DataFrame with CONTINUOUS_TARGETS columns.
+        - y_binary: DataFrame with BINARY_STATE_TARGETS + INT_availability columns.
+    """
+    from src.data.hourly_features import HourlyFeatureLoader, HourlySensingWindow
+
+    loader = HourlyFeatureLoader(processed_dir=processed_dir)
+
+    if user_ids is not None:
+        ema_df = ema_df[ema_df["Study_ID"].isin(user_ids)]
+
+    # Get feature names from the HourlySensingWindow dataclass fields
+    # (exclude hour_start, hour_end, and missingness counters)
+    _skip = {"hour_start", "hour_end", "n_structural_missing", "n_device_missing", "n_participant_missing"}
+    feature_names = [
+        f.name for f in HourlySensingWindow.__dataclass_fields__.values()
+        if f.name not in _skip
+    ]
+
+    rows_3d: list[np.ndarray] = []
+    rows_y_cont: list[dict] = []
+    rows_y_bin: list[dict] = []
+
+    for _, ema_row in ema_df.iterrows():
+        sid = int(ema_row["Study_ID"])
+        ts = ema_row.get("timestamp_local") or ema_row.get("Timestamp_start")
+
+        try:
+            ctx = loader.get_features_for_ema(sid, ts, lookback_hours=lookback_hours)
+        except Exception:
+            ctx = None
+
+        # Build per-hour feature matrix
+        hour_matrix = np.full((lookback_hours, len(feature_names)), np.nan, dtype=np.float32)
+        if ctx is not None:
+            for h_idx, window in enumerate(ctx.windows[:lookback_hours]):
+                for f_idx, fname in enumerate(feature_names):
+                    val = getattr(window, fname, None)
+                    if val is not None:
+                        try:
+                            hour_matrix[h_idx, f_idx] = float(val)
+                        except (TypeError, ValueError):
+                            pass
+        rows_3d.append(hour_matrix)
+
+        # Continuous targets
+        cont = {t: ema_row.get(t, np.nan) for t in CONTINUOUS_TARGETS}
+        rows_y_cont.append(cont)
+
+        # Binary targets
+        bin_targets: dict[str, float] = {}
+        for target in BINARY_STATE_TARGETS:
+            val = ema_row.get(target)
+            if pd.notna(val):
+                if isinstance(val, bool):
+                    bin_targets[target] = int(val)
+                elif isinstance(val, str):
+                    bin_targets[target] = 1 if val.lower().strip() in ("true", "1", "yes") else 0
+                else:
+                    bin_targets[target] = int(bool(val))
+            else:
+                bin_targets[target] = np.nan
+        avail = ema_row.get("INT_availability")
+        bin_targets["INT_availability"] = (
+            1 if str(avail).lower().strip() == "yes" else 0
+        ) if pd.notna(avail) else np.nan
+        rows_y_bin.append(bin_targets)
+
+    X_3d = np.stack(rows_3d, axis=0)  # (n_samples, lookback_hours, n_features)
+    y_cont = pd.DataFrame(rows_y_cont)
+    y_bin = pd.DataFrame(rows_y_bin)
+
+    logger.info(
+        f"Built 3D Parquet features: {X_3d.shape[0]} samples, "
+        f"{X_3d.shape[1]} hours, {X_3d.shape[2]} features/hour, "
+        f"missing rate={np.isnan(X_3d).mean():.1%}"
+    )
+    return X_3d, y_cont, y_bin
+
+
 def build_parquet_features(
     ema_df: pd.DataFrame,
     processed_dir: str | Path,

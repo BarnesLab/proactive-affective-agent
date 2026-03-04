@@ -19,6 +19,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.svm import SVC, SVR
 from sklearn.metrics import (
     balanced_accuracy_score,
     f1_score,
@@ -59,7 +60,7 @@ class MLBaseline:
     ) -> None:
         """
         Args:
-            model_name: "rf", "xgboost", "logistic", or "ridge".
+            model_name: "rf", "xgboost", "logistic", "ridge", or "svm".
             task: "regression" or "classification".
             n_jobs: Parallelism for GridSearchCV and RF (default: -1 = all cores).
             scale_pos_weight: For XGBClassifier, ratio of negative to positive
@@ -112,6 +113,11 @@ class MLBaseline:
             # RidgeCV selects alpha internally; avoids divergence with many features
             from sklearn.linear_model import RidgeCV
             return RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])
+        elif name == "svm":
+            if task == "regression":
+                return SVR(kernel="rbf")
+            else:
+                return SVC(kernel="rbf", class_weight="balanced", random_state=42)
         else:
             raise ValueError(f"Unknown model: {name}")
 
@@ -175,6 +181,11 @@ class MLBaseline:
         elif self.model_name == "logistic":
             return {
                 "model__C": [0.01, 0.1, 1.0, 10.0],
+            }
+        elif self.model_name == "svm":
+            return {
+                "model__C": [0.1, 1.0, 10.0],
+                "model__gamma": ["scale"],
             }
         # ridge (RidgeCV) — alpha is tuned internally
         return {}
@@ -272,8 +283,8 @@ class MLBaselinePipeline:
     Inner GridSearchCV uses ``n_jobs=1`` in this mode to avoid oversubscription.
     """
 
-    REGRESSION_MODELS = ["rf", "xgboost", "ridge"]
-    CLASSIFICATION_MODELS = ["rf", "xgboost", "logistic"]
+    REGRESSION_MODELS = ["rf", "xgboost", "ridge", "svm"]
+    CLASSIFICATION_MODELS = ["rf", "xgboost", "logistic", "svm"]
 
     def __init__(
         self,
@@ -310,7 +321,7 @@ class MLBaselinePipeline:
         self.parallel = parallel
 
         if model_names is None:
-            model_names = ["rf", "xgboost", "logistic", "ridge"]
+            model_names = ["rf", "xgboost", "logistic", "ridge", "svm"]
         if not HAS_XGBOOST:
             model_names = [m for m in model_names if m != "xgboost"]
         self.model_names = model_names
@@ -340,7 +351,7 @@ class MLBaselinePipeline:
         jobs = []
 
         # --- Regression targets ---
-        reg_models = [m for m in self.model_names if m in ("rf", "xgboost", "ridge")]
+        reg_models = [m for m in self.model_names if m in ("rf", "xgboost", "ridge", "svm")]
         for target in CONTINUOUS_TARGETS:
             y_tr = y_cont_train[target].values
             y_te = y_cont_test[target].values
@@ -554,7 +565,7 @@ class MLBaselinePipeline:
             if mask_tr.sum() < 10 or mask_te.sum() < 5:
                 continue
 
-            reg_models = [m for m in self.model_names if m in ("rf", "xgboost", "ridge")]
+            reg_models = [m for m in self.model_names if m in ("rf", "xgboost", "ridge", "svm")]
             for model_name in reg_models:
                 try:
                     model = MLBaseline(model_name, task="regression", n_jobs=self.n_jobs)
@@ -595,7 +606,7 @@ class MLBaselinePipeline:
             n_neg = len(y_tr_int) - n_pos
             spw = n_neg / max(n_pos, 1)
 
-            clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic")]
+            clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic", "svm")]
             for model_name in clf_models:
                 try:
                     model = MLBaseline(

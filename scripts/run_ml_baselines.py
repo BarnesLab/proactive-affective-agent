@@ -37,8 +37,8 @@ def main():
         help="Feature type: parquet=hourly Parquet files (default), daily=legacy aggregate CSVs"
     )
     parser.add_argument(
-        "--models", type=str, default="rf,xgboost,logistic,ridge",
-        help="Comma-separated model names: rf, xgboost, logistic, ridge"
+        "--models", type=str, default="rf,xgboost,logistic,ridge,svm",
+        help="Comma-separated model names: rf, xgboost, logistic, ridge, svm"
     )
     parser.add_argument(
         "--output", type=str, default=None,

@@ -31,6 +31,11 @@ try:
 except ImportError:
     CombinedBaselinePipeline = None
 
+try:
+    from src.baselines.lstm_baseline import LSTMBaselinePipeline
+except ImportError:
+    LSTMBaselinePipeline = None
+
 from src.baselines import feature_builder
 
 __all__ = [
@@ -39,5 +44,6 @@ __all__ = [
     "DLBaselinePipeline",
     "TransformerBaselinePipeline",
     "CombinedBaselinePipeline",
+    "LSTMBaselinePipeline",
     "feature_builder",
 ]

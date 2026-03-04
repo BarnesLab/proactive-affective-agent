@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Run all four advanced baseline pipelines and print a combined summary table.
+"""Run all five advanced baseline pipelines and print a combined summary table.
 
 Pipelines:
   - TextBaselinePipeline    : TF-IDF + BoW on diary text (emotion_driver)
   - DLBaselinePipeline      : MLP on hourly Parquet features (requires PyTorch)
+  - LSTMBaselinePipeline    : LSTM on hourly 3D Parquet features (requires PyTorch)
   - TransformerBaselinePipeline : Sentence-transformer embeddings on diary text
   - CombinedBaselinePipeline : Parquet features + sentence-transformer embeddings (late fusion)
 
 Usage:
     python scripts/run_dl_baselines.py [--splits-dir PATH] [--output PATH] [--hourly-dir PATH]
     python scripts/run_dl_baselines.py --pipelines text,transformer  # run subset
+    python scripts/run_dl_baselines.py --pipelines lstm              # LSTM only
 
 Results are saved to outputs/advanced_baselines/<pipeline_name>/.
 """
@@ -45,8 +47,8 @@ def main() -> None:
         description="Run advanced (DL / text / transformer / combined) baselines"
     )
     parser.add_argument(
-        "--pipelines", type=str, default="text,dl,transformer,combined",
-        help="Comma-separated list of pipelines to run: text, dl, transformer, combined"
+        "--pipelines", type=str, default="text,dl,lstm,transformer,combined",
+        help="Comma-separated list of pipelines to run: text, dl, lstm, transformer, combined"
     )
     parser.add_argument(
         "--splits-dir", type=str, default=None,
@@ -119,6 +121,24 @@ def main() -> None:
             logging.warning(f"DLBaselinePipeline skipped (missing dependency): {e}")
         except Exception as e:
             logging.error(f"DLBaselinePipeline failed: {e}")
+
+    # --- LSTM baseline ---
+    if "lstm" in pipelines_to_run:
+        logging.info("Running LSTMBaselinePipeline...")
+        try:
+            from src.baselines.lstm_baseline import LSTMBaselinePipeline
+            pipeline = LSTMBaselinePipeline(
+                splits_dir=splits_dir,
+                output_dir=base_output / f"lstm{fold_suffix}",
+                processed_hourly_dir=hourly_dir,
+            )
+            results = pipeline.run_all_folds(folds=folds)
+            all_summaries["LSTM"] = results
+            _print_summary("LSTM Baseline", results)
+        except ImportError as e:
+            logging.warning(f"LSTMBaselinePipeline skipped (missing dependency): {e}")
+        except Exception as e:
+            logging.error(f"LSTMBaselinePipeline failed: {e}")
 
     # --- Transformer (sentence-transformer) baseline ---
     if "transformer" in pipelines_to_run:
