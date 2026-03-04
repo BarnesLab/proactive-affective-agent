@@ -254,6 +254,8 @@ def _run_single_user(
             "timestamp_local": ts,
             "date_local": ema_date,
             "version": version,
+            "elapsed_seconds": round(elapsed, 1),
+            "n_tool_calls": pred.get("_n_tool_calls", 0),
             "prediction": pred,
             "ground_truth": gt,
         }
@@ -543,8 +545,14 @@ def _save_combined_checkpoints(all_results: list[dict], output_dir: Path) -> Non
         if not preds:
             continue
 
-        # Clean predictions (remove _ prefixed keys for checkpoint)
-        clean_preds = [{k: v for k, v in p.items() if not k.startswith("_")} for p in preds]
+        # Clean predictions: keep reasoning/confidence, remove internal _ keys
+        clean_preds = []
+        for p in preds:
+            cp = {k: v for k, v in p.items() if not k.startswith("_")}
+            # Preserve reasoning from _ key if not already present
+            if "reasoning" not in cp and "_reasoning" in p:
+                cp["reasoning"] = p["_reasoning"]
+            clean_preds.append(cp)
 
         checkpoint = {
             "version": version,

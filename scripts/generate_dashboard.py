@@ -279,8 +279,10 @@ def load_token_stats() -> dict:
 
 
 def load_elapsed_stats() -> dict:
-    """Load elapsed time stats from JSONL records."""
+    """Load elapsed time stats from JSONL records and V5/V6 results files."""
     stats = {}
+
+    # From JSONL records (CALLM, V1-V4)
     for fpath in sorted(PILOT_DIR.glob("*_records.jsonl")):
         m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name)
         if not m:
@@ -302,6 +304,51 @@ def load_elapsed_stats() -> dict:
                         stats[ver]["max"] = max(stats[ver]["max"], elapsed)
                 except Exception:
                     pass
+
+    # From V5/V6 results files and JSONL checkpoints
+    filtered_dir = PROJECT_ROOT / "outputs" / "filtered_pilot"
+    if filtered_dir.exists():
+        # Results JSON files (have metadata with elapsed_seconds)
+        for fpath in sorted(filtered_dir.glob("*_results_*.json")):
+            try:
+                data = json.loads(fpath.read_text())
+                ver = data.get("run_config", {}).get("version", "")
+                if not ver:
+                    continue
+                if ver not in stats:
+                    stats[ver] = {"total": 0, "count": 0, "max": 0}
+                for m in data.get("metadata", []):
+                    elapsed = m.get("elapsed_seconds")
+                    if elapsed and elapsed > 0:
+                        stats[ver]["total"] += elapsed
+                        stats[ver]["count"] += 1
+                        stats[ver]["max"] = max(stats[ver]["max"], elapsed)
+            except Exception:
+                pass
+
+        # JSONL checkpoint files (may have elapsed_seconds per entry)
+        cp_dir = filtered_dir / "checkpoints"
+        if cp_dir.exists():
+            for fpath in sorted(cp_dir.glob("*.jsonl")):
+                m = re.match(r"^user_\d+_(v\d+)\.jsonl$", fpath.name)
+                if not m:
+                    continue
+                ver = m.group(1)
+                if ver not in stats:
+                    stats[ver] = {"total": 0, "count": 0, "max": 0}
+                with open(fpath) as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+                        try:
+                            rec = json.loads(line)
+                            elapsed = rec.get("elapsed_seconds")
+                            if elapsed and elapsed > 0:
+                                stats[ver]["total"] += elapsed
+                                stats[ver]["count"] += 1
+                                stats[ver]["max"] = max(stats[ver]["max"], elapsed)
+                        except Exception:
+                            pass
 
     return stats
 
