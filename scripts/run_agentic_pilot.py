@@ -372,6 +372,7 @@ def _run_user(
     # is managed externally via session_memory passed at each predict() call).
     # Uses claude --print + MCP server (free via Max subscription).
     from src.agent.cc_agent import AgenticCCAgent
+    from src.utils.rate_limit import RateLimitError
     agent = AgenticCCAgent(
         study_id=study_id,
         profile=profile,
@@ -405,6 +406,9 @@ def _run_user(
                 diary_text=diary_text,
                 session_memory=session_memory,
             )
+        except RateLimitError as exc:
+            logger.error(f"    Rate limit hit — stopping user {study_id}: {exc}")
+            break
         except Exception as exc:
             logger.error(f"    Prediction error for {ts}: {exc}")
             pred = agent._fallback_prediction()
@@ -417,6 +421,15 @@ def _run_user(
             f"    Done in {elapsed:.1f}s | tool_calls={pred.get('_n_tool_calls', '?')} "
             f"| confidence={pred.get('confidence', '?'):.2f}"
         )
+
+        # Skip checkpointing obvious fallback predictions (empty output + low confidence)
+        is_fallback = (
+            pred.get("confidence") == 0.1
+            and "fallback" in str(pred.get("reasoning", "")).lower()
+        )
+        if is_fallback:
+            logger.warning(f"    Skipping fallback prediction for {ts} (not checkpointed)")
+            continue
 
         gt = _extract_ground_truth(ema_row)
         meta = {

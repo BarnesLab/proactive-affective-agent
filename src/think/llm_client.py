@@ -14,6 +14,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.utils.rate_limit import (
+    RateLimitError,
+    RateLimitType,
+    classify_error,
+    send_telegram,
+)
+
 logger = logging.getLogger(__name__)
 
 # Path to the JSON schema for structured output
@@ -92,6 +99,24 @@ class ClaudeCodeClient:
 
                 if result.returncode != 0:
                     stderr = result.stderr.strip()
+                    limit_type = classify_error(stderr, result.returncode)
+
+                    if limit_type == RateLimitType.WEEKLY:
+                        send_telegram(
+                            f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
+                            f"Experiment stopped. Resume after limit resets."
+                        )
+                        raise RateLimitError(f"Weekly rate limit: {stderr[:200]}")
+
+                    if limit_type == RateLimitType.HOURLY:
+                        logger.warning(f"Hourly rate limit hit (attempt {attempt}). Waiting 30 min...")
+                        if attempt == 1:
+                            send_telegram(
+                                f"[proactive-affective-agent] Rate limit hit (structured agent) — waiting 30min"
+                            )
+                        time.sleep(1800)
+                        continue
+
                     logger.warning(f"Claude CLI returned code {result.returncode}: {stderr}")
                     if attempt < self.max_retries:
                         wait = self.backoff_base ** attempt

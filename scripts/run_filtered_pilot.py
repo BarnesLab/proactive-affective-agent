@@ -53,7 +53,7 @@ from src.evaluation.metrics import compute_all
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "filtered_pilot"
 DEFAULT_MODEL = "sonnet"
 DEFAULT_MAX_TOOL_CALLS = 8
-DEFAULT_WORKERS = 5  # parallel workers (version×user pairs)
+DEFAULT_WORKERS = 1  # sequential is safer; avoids multi-process rate limit amplification
 
 DELAY_BETWEEN_EMAS = 1.0  # seconds between EMA entries within a user
 
@@ -93,6 +93,7 @@ def _run_single_user(
     from src.data.schema import UserProfile
     from src.agent.cc_agent import AgenticCCAgent
     from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
+    from src.utils.rate_limit import RateLimitError
 
     loader = DataLoader(data_dir=Path(data_dir))
 
@@ -216,6 +217,9 @@ def _run_single_user(
                 diary_text=diary_text if version == "v6" else None,
                 session_memory=session_memory,
             )
+        except RateLimitError as exc:
+            log.error(f"Rate limit hit — stopping user {study_id}: {exc}")
+            break
         except Exception as exc:
             log.error(f"Prediction error: {exc}")
             pred = agent._fallback_prediction()
@@ -225,6 +229,15 @@ def _run_single_user(
 
         elapsed = time.time() - t0
         log.info(f"Done in {elapsed:.1f}s | tools={pred.get('_n_tool_calls', '?')} | conf={pred.get('confidence', '?')}")
+
+        # Skip checkpointing obvious fallback predictions (empty output + low confidence)
+        is_fallback = (
+            pred.get("confidence") == 0.1
+            and "fallback" in str(pred.get("reasoning", "")).lower()
+        )
+        if is_fallback:
+            log.warning(f"Skipping fallback prediction for {ts} (not checkpointed)")
+            continue
 
         gt = _extract_ground_truth(ema_row)
         meta = {

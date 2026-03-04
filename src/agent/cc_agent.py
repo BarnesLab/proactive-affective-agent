@@ -26,6 +26,12 @@ from typing import Any
 import pandas as pd
 
 from src.data.schema import UserProfile
+from src.utils.rate_limit import (
+    RateLimitError,
+    RateLimitType,
+    classify_error,
+    send_telegram,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -344,10 +350,25 @@ class AgenticCCAgent:
     # Private: core subprocess call
     # ------------------------------------------------------------------
 
+    # Retry constants
+    _TRANSIENT_RETRIES = 3
+    _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
+    _HOURLY_WAIT = 1800  # 30 minutes
+    _HOURLY_MAX_RETRIES = 12  # up to 6 hours total
+    _TIMEOUT_RETRIES = 3
+    _TIMEOUT_BACKOFF = [10, 20, 40]
+
     def _run_claude(self, ema_timestamp: str, ema_date: str, prompt: str, system_prompt: str) -> str:
-        """Write temp MCP config and call claude --print, returning stdout text.
+        """Write temp MCP config and call claude --print with retry logic.
+
+        Retry strategy:
+        - Transient errors: 3 retries, exponential backoff (2s, 4s, 8s)
+        - Hourly rate limit: wait 30 min, retry up to 12 times (6h total)
+        - Weekly limit: send Telegram alert, raise RateLimitError
+        - Timeout: 3 retries with backoff
 
         Returns the LLM text output. Token usage is stored in self._last_usage.
+        Raises RateLimitError on weekly limit (caller should stop experiment).
         """
         self._last_usage: dict = {}
         mcp_server_path = PROJECT_ROOT / "src" / "sense" / "mcp_server.py"
@@ -377,42 +398,112 @@ class AgenticCCAgent:
             mcp_config_path = f.name
 
         tag = f"[{self._version.upper()}]"
+        cmd = [
+            "claude",
+            "--print",
+            "--output-format", "json",
+            "--model", self.model,
+            "--max-turns", str(self.max_turns),
+            "--mcp-config", mcp_config_path,
+            "--append-system-prompt", system_prompt,
+            "--no-session-persistence",
+            prompt,
+            "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
+        ]
+
+        # Strip nested-session guards so claude --print can be launched as subprocess
+        _blocked = {"CLAUDECODE", "CLAUDE_CODE", "CLAUDE_CODE_SESSION_ID"}
+        env = {k: v for k, v in os.environ.items() if k not in _blocked}
+        env["PYTHONPATH"] = str(PROJECT_ROOT)
+
+        transient_attempts = 0
+        hourly_attempts = 0
+        timeout_attempts = 0
+        _notified_hourly = False
+
         try:
-            cmd = [
-                "claude",
-                "--print",
-                "--output-format", "json",
-                "--model", self.model,
-                "--max-turns", str(self.max_turns),
-                "--mcp-config", mcp_config_path,
-                "--append-system-prompt", system_prompt,
-                "--no-session-persistence",
-                prompt,
-                "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
-            ]
+            while True:
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                        env=env,
+                        cwd=str(PROJECT_ROOT),
+                    )
 
-            # Strip nested-session guards so claude --print can be launched as subprocess
-            _blocked = {"CLAUDECODE", "CLAUDE_CODE", "CLAUDE_CODE_SESSION_ID"}
-            env = {k: v for k, v in os.environ.items() if k not in _blocked}
-            env["PYTHONPATH"] = str(PROJECT_ROOT)
+                    if result.returncode == 0:
+                        return self._unwrap_json_output(result.stdout.strip(), tag)
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=600,
-                env=env,
-                cwd=str(PROJECT_ROOT),
-            )
+                    # Non-zero exit — classify the error
+                    limit_type = classify_error(result.stderr, result.returncode)
+                    stderr_preview = result.stderr[:300] if result.stderr else "(empty)"
 
-            if result.returncode != 0:
-                logger.warning(f"{tag} claude --print exited {result.returncode}: {result.stderr[:300]}")
+                    if limit_type == RateLimitType.WEEKLY:
+                        msg = (
+                            f"[proactive-affective-agent] Weekly rate limit hit\n"
+                            f"Version: {self._version.upper()}, User: {self.study_id}\n"
+                            f"Experiment stopped. Resume after limit resets."
+                        )
+                        send_telegram(msg)
+                        raise RateLimitError(
+                            f"Weekly rate limit hit: {stderr_preview}",
+                            RateLimitType.WEEKLY,
+                        )
 
-            return self._unwrap_json_output(result.stdout.strip(), tag)
+                    if limit_type == RateLimitType.HOURLY:
+                        hourly_attempts += 1
+                        if hourly_attempts > self._HOURLY_MAX_RETRIES:
+                            msg = (
+                                f"[proactive-affective-agent] Rate limit: exhausted all retries\n"
+                                f"Version: {self._version.upper()}, User: {self.study_id}\n"
+                                f"Waited {self._HOURLY_WAIT * self._HOURLY_MAX_RETRIES / 3600:.1f}h total. Stopping."
+                            )
+                            send_telegram(msg)
+                            raise RateLimitError(
+                                f"Hourly rate limit: exhausted {self._HOURLY_MAX_RETRIES} retries",
+                                RateLimitType.HOURLY,
+                            )
+                        if not _notified_hourly:
+                            send_telegram(
+                                f"[proactive-affective-agent] Rate limit hit — waiting 30min\n"
+                                f"Version: {self._version.upper()}, User: {self.study_id}\n"
+                                f"Will retry up to {self._HOURLY_MAX_RETRIES} times."
+                            )
+                            _notified_hourly = True
+                        logger.warning(
+                            f"{tag} Hourly rate limit (attempt {hourly_attempts}/{self._HOURLY_MAX_RETRIES}). "
+                            f"Waiting {self._HOURLY_WAIT}s..."
+                        )
+                        import time
+                        time.sleep(self._HOURLY_WAIT)
+                        continue
 
-        except subprocess.TimeoutExpired:
-            logger.error(f"{tag} claude --print timed out after 600s")
-            return ""
+                    # Transient error
+                    transient_attempts += 1
+                    if transient_attempts > self._TRANSIENT_RETRIES:
+                        logger.error(f"{tag} Transient error after {self._TRANSIENT_RETRIES} retries: {stderr_preview}")
+                        return ""
+                    wait = self._TRANSIENT_BACKOFF[min(transient_attempts - 1, len(self._TRANSIENT_BACKOFF) - 1)]
+                    logger.warning(f"{tag} Transient error (attempt {transient_attempts}), retrying in {wait}s: {stderr_preview}")
+                    import time
+                    time.sleep(wait)
+                    continue
+
+                except subprocess.TimeoutExpired:
+                    timeout_attempts += 1
+                    if timeout_attempts > self._TIMEOUT_RETRIES:
+                        logger.error(f"{tag} Timed out after {self._TIMEOUT_RETRIES} retries")
+                        return ""
+                    wait = self._TIMEOUT_BACKOFF[min(timeout_attempts - 1, len(self._TIMEOUT_BACKOFF) - 1)]
+                    logger.warning(f"{tag} Timeout (attempt {timeout_attempts}), retrying in {wait}s")
+                    import time
+                    time.sleep(wait)
+                    continue
+
+        except RateLimitError:
+            raise
         except Exception as exc:
             logger.error(f"{tag} subprocess error: {exc}")
             return ""
