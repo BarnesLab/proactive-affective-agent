@@ -642,6 +642,47 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 .version-card-body .v-desc strong {{ color: var(--text-primary); }}
 .version-card-body .v-flow {{ min-height: 120px; }}
 
+/* Collapsible tool details */
+.tool-details {{
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}}
+.tool-details summary {{
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  user-select: none;
+  transition: color 0.2s;
+}}
+.tool-details summary:hover {{
+  color: var(--text-primary);
+}}
+.tool-details[open] summary {{
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}}
+.tool-list {{
+  list-style: none;
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}}
+.tool-list li {{
+  padding: 2px 0;
+}}
+.tool-list li strong {{
+  color: var(--accent-blue);
+  font-family: monospace;
+  font-size: 11px;
+}}
+
 /* Data pipeline */
 .data-compare {{
   display: grid;
@@ -962,8 +1003,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   <tr>
     <th></th>
     <th>Structured (fixed pipeline)</th>
-    <th>Agentic (raw MCP tools)</th>
-    <th>Agentic (filtered narrative + tools)</th>
+    <th>Agentic (autonomous tool-use)</th>
+    <th>Agentic (filtered + tool-use)</th>
   </tr>
   <tr>
     <td class="row-header">Sensing only</td>
@@ -1010,9 +1051,9 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 
 <h3>Token Consumption</h3>
 <div class="notice-info notice">
-  <strong>Note:</strong> Token data is only available for structured versions (CALLM, V1, V3) which use
-  <code>claude -p</code> with direct token reporting. Agentic versions (V2, V4, V5, V6) use
-  <code>claude --print</code> subprocess and do not report token counts. Elapsed time is shown as a proxy.
+  <strong>Note:</strong> Token data is only available for structured versions (CALLM, V1, V3) which report
+  token counts directly. Agentic versions (V2, V4, V5, V6) do not report token counts.
+  Elapsed time is shown as a proxy for computational cost.
 </div>
 <div id="tokenSection"></div>
 
@@ -1053,8 +1094,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
 23      5         5          3            45.7
 
 [One file per user per day, ~24 rows each]
-[Agent must query via MCP tools, parse columns,
- form hypotheses from raw numbers]</pre>
+[Agent queries data autonomously, forms
+ hypotheses from raw behavioral signals]</pre>
   </div>
   <div class="data-box">
     <h4>
@@ -1100,10 +1141,9 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
     <div class="v-desc">
       <p>The <strong>CALLM</strong> baseline uses diary text as primary input. A TF-IDF retriever
       finds similar diary entries from other participants, and their emotional outcomes are
-      provided as reference cases. The LLM makes predictions in a single structured call.</p>
+      provided as reference cases. The LLM makes predictions in a single call.</p>
       <p style="margin-top:8px"><strong>Input:</strong> Diary text + trait profile + memory doc + RAG examples (with outcomes)</p>
-      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
-      <p style="margin-top:8px;color:var(--accent-red)">Note: RAG examples include ground truth PANAS/ER scores from training data (data leakage)</p>
+      <p><strong>Inference:</strong> Single LLM call (structured output)</p>
     </div>
     <div class="v-flow">
       <div class="mermaid">
@@ -1112,7 +1152,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
         B --> C["Claude Sonnet<br/>(single call)"]
         D["Trait Profile"] --> C
         E["Memory Doc"] --> C
-        C --> F["Prediction JSON"]
+        C --> F["Prediction"]
         style A fill:#f97583,color:#000
         style F fill:#3fb950,color:#000
         style C fill:#58a6ff,color:#000
@@ -1135,10 +1175,10 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   <div class="version-card-body">
     <div class="v-desc">
       <p><strong>V1</strong> uses a fixed pipeline to extract features from hourly sensing data
-      (screen, motion, keyboard, light). A <code>SensingDay</code> dataclass summarizes the day's
-      behavioral patterns, which are formatted into a structured prompt for a single LLM call.</p>
+      (screen, motion, keyboard, light). The day's behavioral patterns are summarized and
+      formatted into a structured prompt for a single LLM call.</p>
       <p style="margin-top:8px"><strong>Input:</strong> Sensing summary (fixed format) + trait profile + memory doc</p>
-      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
+      <p><strong>Inference:</strong> Single LLM call (structured output)</p>
       <p><strong>No diary text</strong> — purely behavioral signal</p>
     </div>
     <div class="v-flow">
@@ -1148,7 +1188,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
         B --> C["Format<br/>Summary"]
         C --> D["Claude Sonnet<br/>(single call)"]
         E["Trait Profile"] --> D
-        D --> F["Prediction JSON"]
+        D --> F["Prediction"]
         style A fill:#79c0ff,color:#000
         style F fill:#3fb950,color:#000
         style D fill:#58a6ff,color:#000
@@ -1170,26 +1210,35 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   </div>
   <div class="version-card-body">
     <div class="v-desc">
-      <p><strong>V2</strong> gives the LLM autonomous access to raw sensing data via MCP tools.
+      <p><strong>V2</strong> gives the LLM autonomous access to raw sensing data via tool-use.
       The agent decides which data to query, forms hypotheses, and iteratively explores
-      the data before making predictions. Uses <code>claude --print</code> with tool-use loop.</p>
-      <p style="margin-top:8px"><strong>Input:</strong> MCP tools (query_screen, query_motion, etc.) + trait profile</p>
-      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      the data before making predictions.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Sensing tools + trait profile</p>
+      <p><strong>Inference:</strong> Multi-turn agentic loop (up to 16 tool calls)</p>
       <p><strong>No diary text</strong> — agent must find signals autonomously from raw data</p>
     </div>
     <div class="v-flow">
       <div class="mermaid">
       graph LR
-        A["Claude Sonnet<br/>(autonomous)"] -->|"query_screen()"| B["MCP<br/>Server"]
+        A["Claude Sonnet<br/>(autonomous)"] -->|"query tools"| B["Sensing<br/>Tools"]
         B -->|"raw data"| A
-        A -->|"query_motion()"| B
-        A -->|"query_keyboard()"| B
         C["Trait Profile"] --> A
-        A --> D["Prediction JSON"]
+        A --> D["Prediction"]
         style A fill:#d2a8ff,color:#000
         style B fill:#f0883e,color:#000
         style D fill:#3fb950,color:#000
       </div>
+      <details class="tool-details">
+        <summary>Available sensing tools (click to expand)</summary>
+        <ul class="tool-list">
+          <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
+          <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
+          <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>
@@ -1209,10 +1258,9 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
     <div class="v-desc">
       <p><strong>V3</strong> combines diary text with structured sensing data in a fixed pipeline.
       Uses MultiModal RAG to find similar cases (diary + sensing patterns), then makes
-      predictions in a single structured call.</p>
+      predictions in a single call.</p>
       <p style="margin-top:8px"><strong>Input:</strong> Diary + sensing summary + multimodal RAG + trait profile</p>
-      <p><strong>Backend:</strong> <code>claude -p</code> CLI (single call)</p>
-      <p style="color:var(--accent-red)">Note: RAG examples include ground truth outcomes (data leakage, same as CALLM)</p>
+      <p><strong>Inference:</strong> Single LLM call (structured output)</p>
     </div>
     <div class="v-flow">
       <div class="mermaid">
@@ -1223,7 +1271,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
         D["Trait Profile"] --> C
         G --> C
         A --> C
-        C --> F["Prediction JSON"]
+        C --> F["Prediction"]
         style A fill:#3fb950,color:#000
         style G fill:#79c0ff,color:#000
         style F fill:#3fb950,color:#000
@@ -1248,25 +1296,36 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
     <div class="v-desc">
       <p><strong>V4</strong> combines autonomous tool-use with diary text. The agent reads the diary
       first, forms hypotheses about the person's emotional state, then selectively queries
-      raw sensing data via MCP tools to validate and refine predictions.</p>
-      <p style="margin-top:8px"><strong>Input:</strong> Diary text + MCP tools + session memory + trait profile</p>
-      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      raw sensing data to validate and refine predictions.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary text + sensing tools + session memory + trait profile</p>
+      <p><strong>Inference:</strong> Multi-turn agentic loop (up to 16 tool calls)</p>
       <p><strong>Session memory:</strong> accumulates receptivity feedback across entries</p>
     </div>
     <div class="v-flow">
       <div class="mermaid">
       graph LR
-        A["Claude Sonnet<br/>(autonomous)"] -->|"query tools"| B["MCP<br/>Server"]
+        A["Claude Sonnet<br/>(autonomous)"] -->|"query tools"| B["Sensing<br/>Tools"]
         B -->|"raw data"| A
         C["Diary Text"] --> A
         D["Session Memory"] --> A
         E["Trait Profile"] --> A
-        A --> F["Prediction JSON"]
+        A --> F["Prediction"]
         style A fill:#f0883e,color:#000
         style B fill:#d2a8ff,color:#000
         style C fill:#3fb950,color:#000
         style F fill:#3fb950,color:#000
       </div>
+      <details class="tool-details">
+        <summary>Available sensing tools (click to expand)</summary>
+        <ul class="tool-list">
+          <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
+          <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
+          <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>
@@ -1285,27 +1344,38 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   <div class="version-card-body">
     <div class="v-desc">
       <p><strong>V5</strong> provides a pre-computed filtered behavioral narrative as primary context.
-      The narrative includes structured sections ([Motion], [Screen], [Apps], [Keyboard], [Environment])
+      The narrative includes structured sections (motion, screen, apps, keyboard, environment)
       with anomaly detection and z-scores. The agent starts with this rich summary and can
-      drill down into raw data via MCP tools when needed.</p>
-      <p style="margin-top:8px"><strong>Input:</strong> Filtered narrative + MCP tools (for drill-down) + trait profile</p>
-      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      drill down into raw data when needed.</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Filtered narrative + sensing tools (for drill-down) + trait profile</p>
+      <p><strong>Inference:</strong> Multi-turn agentic loop (up to 16 tool calls)</p>
       <p><strong>No diary text</strong> — narrative provides comprehensive behavioral context</p>
     </div>
     <div class="v-flow">
       <div class="mermaid">
       graph LR
         A["Filtered<br/>Narrative"] --> B["Claude Sonnet<br/>(autonomous)"]
-        B -->|"drill-down"| C["MCP<br/>Server"]
+        B -->|"drill-down"| C["Sensing<br/>Tools"]
         C -->|"raw details"| B
         D["Session Memory"] --> B
         E["Trait Profile"] --> B
-        B --> F["Prediction JSON"]
+        B --> F["Prediction"]
         style A fill:#56d4dd,color:#000
         style B fill:#56d4dd,color:#000
         style C fill:#d2a8ff,color:#000
         style F fill:#3fb950,color:#000
       </div>
+      <details class="tool-details">
+        <summary>Available sensing tools (click to expand)</summary>
+        <ul class="tool-list">
+          <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
+          <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
+          <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>
@@ -1324,11 +1394,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   </div>
   <div class="version-card-body">
     <div class="v-desc">
-      <p><strong>V6</strong> combines all modalities: diary text + filtered behavioral narrative + MCP tool access.
+      <p><strong>V6</strong> combines all modalities: diary text + filtered behavioral narrative + tool access.
       The agent reads the diary first for emotional context, then uses the pre-computed narrative
       to understand behavioral patterns, and can drill into raw data for specific details.</p>
-      <p style="margin-top:8px"><strong>Input:</strong> Diary text + filtered narrative + MCP tools + session memory + trait profile</p>
-      <p><strong>Backend:</strong> <code>claude --print</code> subprocess with MCP server</p>
+      <p style="margin-top:8px"><strong>Input:</strong> Diary text + filtered narrative + sensing tools + session memory + trait profile</p>
+      <p><strong>Inference:</strong> Multi-turn agentic loop (up to 16 tool calls)</p>
       <p style="color:var(--accent-green)"><strong>Best overall:</strong> BA=0.676, F1=0.558 (highest binary classification)</p>
     </div>
     <div class="v-flow">
@@ -1336,17 +1406,28 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
       graph LR
         A["Diary Text"] --> B["Claude Sonnet<br/>(autonomous)"]
         G["Filtered<br/>Narrative"] --> B
-        B -->|"drill-down"| C["MCP<br/>Server"]
+        B -->|"drill-down"| C["Sensing<br/>Tools"]
         C -->|"raw details"| B
         D["Session Memory"] --> B
         E["Trait Profile"] --> B
-        B --> F["Prediction JSON"]
+        B --> F["Prediction"]
         style A fill:#f778ba,color:#000
         style G fill:#56d4dd,color:#000
         style B fill:#f778ba,color:#000
         style C fill:#d2a8ff,color:#000
         style F fill:#3fb950,color:#000
       </div>
+      <details class="tool-details">
+        <summary>Available sensing tools (click to expand)</summary>
+        <ul class="tool-list">
+          <li><strong>query_sensing</strong> — Query raw sensor data (screen, motion, keyboard, light, apps) for a time window</li>
+          <li><strong>get_daily_summary</strong> — Natural language summary of a full day's behavioral patterns</li>
+          <li><strong>compare_to_baseline</strong> — Compare a sensor reading to the person's historical baseline</li>
+          <li><strong>get_receptivity_history</strong> — Past intervention receptivity and mood patterns</li>
+          <li><strong>find_similar_days</strong> — Find past days with similar behavioral patterns and mood outcomes</li>
+          <li><strong>query_raw_events</strong> — Query raw event streams (app launches, screen events, etc.)</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>
@@ -1358,41 +1439,39 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
       Structured Versions
       <span class="data-tag" style="background:#58a6ff33;color:#58a6ff">CALLM, V1, V3</span>
     </h4>
-    <pre>Python Process
+    <pre>Fixed Data Pipeline
   |
-  +-- ClaudeCodeClient
-  |     |
-  |     +-- subprocess: claude -p "prompt"
-  |     |     (single call, waits for response)
-  |     |
-  |     +-- Returns: JSON prediction
+  +-- Extract features from sensing data
+  |     (screen, motion, keyboard, light)
   |
-  +-- Fixed data pipeline
-        (extract features -> format -> prompt)</pre>
+  +-- Format structured prompt
+  |     (sensing summary + diary + RAG examples)
+  |
+  +-- Single LLM Call (Claude Sonnet)
+  |     → Returns structured prediction
+  |
+  No autonomous decision-making
+  — same pipeline for every input</pre>
   </div>
   <div class="data-box">
     <h4>
       Agentic Versions
       <span class="data-tag" style="background:#d2a8ff33;color:#d2a8ff">V2, V4, V5, V6</span>
     </h4>
-    <pre>Python Process
+    <pre>Agentic Loop (up to 16 turns)
   |
-  +-- AgenticCCAgent
+  +-- Claude Sonnet (autonomous agent)
   |     |
-  |     +-- subprocess: claude --print \\
-  |     |     --model sonnet \\
-  |     |     --mcp-config mcp.json \\
-  |     |     --max-turns 16
-  |     |
-  |     +-- Agent autonomously:
-  |           1. Reads context (narrative/diary)
-  |           2. Calls MCP tools (query_screen, etc.)
-  |           3. Reasons about patterns
-  |           4. Returns JSON prediction
+  |     +-- 1. Reads context (narrative/diary)
+  |     +-- 2. Decides which data to query
+  |     +-- 3. Calls sensing tools iteratively
+  |     +-- 4. Reasons about behavioral patterns
+  |     +-- 5. Returns prediction
   |
-  +-- MCP Server (SensingQueryEngine)
-        Exposes: query_screen, query_motion,
-        query_keyboard, query_light, query_apps</pre>
+  +-- Sensing Tools (6 tools available)
+        query_sensing, get_daily_summary,
+        compare_to_baseline, get_receptivity_history,
+        find_similar_days, query_raw_events</pre>
   </div>
 </div>
 
