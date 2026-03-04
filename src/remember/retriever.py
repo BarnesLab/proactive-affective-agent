@@ -130,17 +130,8 @@ class TFIDFRetriever:
         for i, r in enumerate(results[:max_examples], 1):
             lines.append(f"Case {i} (similarity: {r['similarity']:.2f}):")
             lines.append(f"  Diary: {r['text']}")
-            outcomes = []
-            if r.get("PANAS_Pos") is not None:
-                outcomes.append(f"PA={r['PANAS_Pos']:.0f}")
-            if r.get("PANAS_Neg") is not None:
-                outcomes.append(f"NA={r['PANAS_Neg']:.0f}")
-            if r.get("ER_desire") is not None:
-                outcomes.append(f"ER_desire={r['ER_desire']:.0f}")
-            if r.get("INT_availability") is not None:
-                outcomes.append(f"Avail={r['INT_availability']}")
-            if outcomes:
-                lines.append(f"  Outcomes: {', '.join(outcomes)}")
+            # NOTE: Ground truth outcomes (PANAS_Pos/Neg, ER_desire, INT_availability)
+            # are intentionally excluded to prevent data leakage from training set.
             lines.append("")
 
         return "\n".join(lines)
@@ -253,17 +244,7 @@ class MultiModalRetriever(TFIDFRetriever):
             if sensing:
                 lines.append(f"  Sensing: {sensing}")
 
-            outcomes = []
-            if r.get("PANAS_Pos") is not None:
-                outcomes.append(f"PA={r['PANAS_Pos']:.0f}")
-            if r.get("PANAS_Neg") is not None:
-                outcomes.append(f"NA={r['PANAS_Neg']:.0f}")
-            if r.get("ER_desire") is not None:
-                outcomes.append(f"ER_desire={r['ER_desire']:.0f}")
-            if r.get("INT_availability") is not None:
-                outcomes.append(f"Avail={r['INT_availability']}")
-            if outcomes:
-                lines.append(f"  Outcomes: {', '.join(outcomes)}")
+            # NOTE: Ground truth outcomes excluded to prevent data leakage.
             lines.append("")
 
         return "\n".join(lines)
