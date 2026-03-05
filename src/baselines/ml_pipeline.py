@@ -116,12 +116,12 @@ class MLBaseline:
         elif name == "svm":
             if task == "regression":
                 return LinearSVR(
-                    max_iter=10000, random_state=42,
+                    max_iter=2000, random_state=42,
                     dual=False, loss="squared_epsilon_insensitive",
                 )
             else:
                 return LinearSVC(
-                    max_iter=10000, class_weight="balanced", random_state=42,
+                    max_iter=2000, class_weight="balanced", random_state=42,
                     dual=False, loss="squared_hinge",
                 )
         else:
