@@ -115,11 +115,14 @@ class MLBaseline:
             return RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])
         elif name == "svm":
             if task == "regression":
-                return LinearSVR(max_iter=10000, random_state=42, dual=False)
+                return LinearSVR(
+                    max_iter=10000, random_state=42,
+                    dual=False, loss="squared_epsilon_insensitive",
+                )
             else:
                 return LinearSVC(
                     max_iter=10000, class_weight="balanced", random_state=42,
-                    dual=False,
+                    dual=False, loss="squared_hinge",
                 )
         else:
             raise ValueError(f"Unknown model: {name}")
