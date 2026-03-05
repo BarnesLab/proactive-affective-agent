@@ -135,6 +135,7 @@ class TitanOrchestrator:
         env_parts.extend([
             "export OMP_NUM_THREADS=8",
             "export MKL_NUM_THREADS=8",
+            f"export PYTHONPATH={TITAN_PROJECT}",
         ])
         env_prefix = " && ".join(env_parts)
 
@@ -214,7 +215,7 @@ class TitanOrchestrator:
         """Run ML baselines (RF, XGB, SVM, Ridge, LogReg) — all 5 folds, CPU."""
         logger.info("=== Running ML baselines (CPU) ===")
         cmd = (
-            "PYTHONPATH=. python3 scripts/run_ml_baselines.py "
+            "python3 scripts/run_ml_baselines.py "
             "--features parquet "
             "--models rf,xgboost,logistic,ridge,svm "
             "--n-jobs 8"
@@ -230,7 +231,7 @@ class TitanOrchestrator:
         """Verify/re-run MLP baseline — GPU."""
         logger.info("=== Verifying MLP baseline (GPU) ===")
         cmd = (
-            "PYTHONPATH=. python3 scripts/run_dl_baselines.py "
+            "python3 scripts/run_dl_baselines.py "
             "--pipelines dl"
         )
         result = self.run_job(cmd, job_type="gpu", timeout=5400)
@@ -244,7 +245,7 @@ class TitanOrchestrator:
         """Run LSTM baseline — GPU."""
         logger.info("=== Running LSTM baseline (GPU) ===")
         cmd = (
-            "PYTHONPATH=. python3 scripts/run_dl_baselines.py "
+            "python3 scripts/run_dl_baselines.py "
             "--pipelines lstm"
         )
         result = self.run_job(cmd, job_type="gpu", timeout=7200)
@@ -258,7 +259,7 @@ class TitanOrchestrator:
         """Run combined baseline — CPU+GPU."""
         logger.info("=== Running combined baseline ===")
         cmd = (
-            "PYTHONPATH=. python3 scripts/run_dl_baselines.py "
+            "python3 scripts/run_dl_baselines.py "
             "--pipelines combined"
         )
         result = self.run_job(cmd, job_type="gpu", timeout=5400)
