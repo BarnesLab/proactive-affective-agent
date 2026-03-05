@@ -49,7 +49,7 @@ class MLBaseline:
     """
 
     # K candidates expressed as fractions of n_features (evaluated at fit time)
-    K_FRACTIONS = [0.25, 0.5, 0.75, 1.0]
+    K_FRACTIONS = [0.5, 1.0]
 
     def __init__(
         self,
@@ -167,20 +167,18 @@ class MLBaseline:
         """
         if self.model_name == "rf":
             return {
-                "model__n_estimators": [100, 300],
-                "model__max_depth": [5, 10, None],
-                "model__min_samples_leaf": [1, 5],
+                "model__n_estimators": [200],
+                "model__max_depth": [10, None],
             }
         elif self.model_name == "xgboost":
             return {
-                "model__n_estimators": [100, 300],
-                "model__max_depth": [3, 6, 10],
-                "model__learning_rate": [0.01, 0.1],
-                "model__subsample": [0.8, 1.0],
+                "model__n_estimators": [200],
+                "model__max_depth": [6],
+                "model__learning_rate": [0.1],
             }
         elif self.model_name == "logistic":
             return {
-                "model__C": [0.01, 0.1, 1.0, 10.0],
+                "model__C": [0.1, 1.0, 10.0],
             }
         elif self.model_name == "svm":
             return {
