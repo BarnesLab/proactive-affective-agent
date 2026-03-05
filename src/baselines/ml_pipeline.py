@@ -19,7 +19,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.svm import SVC, SVR
+from sklearn.svm import LinearSVC, LinearSVR
 from sklearn.metrics import (
     balanced_accuracy_score,
     f1_score,
@@ -115,9 +115,12 @@ class MLBaseline:
             return RidgeCV(alphas=[0.1, 1.0, 10.0, 100.0, 1000.0])
         elif name == "svm":
             if task == "regression":
-                return SVR(kernel="rbf")
+                return LinearSVR(max_iter=10000, random_state=42, dual=False)
             else:
-                return SVC(kernel="rbf", class_weight="balanced", random_state=42)
+                return LinearSVC(
+                    max_iter=10000, class_weight="balanced", random_state=42,
+                    dual=False,
+                )
         else:
             raise ValueError(f"Unknown model: {name}")
 
@@ -182,8 +185,7 @@ class MLBaseline:
             }
         elif self.model_name == "svm":
             return {
-                "model__C": [0.1, 1.0, 10.0],
-                "model__gamma": ["scale"],
+                "model__C": [0.01, 0.1, 1.0, 10.0],
             }
         # ridge (RidgeCV) — alpha is tuned internally
         return {}
