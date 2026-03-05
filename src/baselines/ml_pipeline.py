@@ -376,7 +376,7 @@ class MLBaselinePipeline:
                 )
 
         # --- Classification targets ---
-        clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic")]
+        clf_models = [m for m in self.model_names if m in ("rf", "xgboost", "logistic", "svm")]
         binary_targets = BINARY_STATE_TARGETS + ["INT_availability"]
         for target in binary_targets:
             y_tr = y_bin_train[target].values
