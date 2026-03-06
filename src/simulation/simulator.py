@@ -274,6 +274,7 @@ class PilotSimulator:
         self._retriever: TFIDFRetriever | None = None
         self._mm_retriever: MultiModalRetriever | None = None
         self._processed_dir: Path | None = None  # data/processed/ for V2/V4 CC agents
+        self._peer_db_path: str | None = None  # Pre-built peer database for cross-user search
 
     def setup(self) -> None:
         """Load and prepare all data for the pilot."""
@@ -319,6 +320,9 @@ class PilotSimulator:
             self._filtered_data_dir = None
             logger.warning(f"Filtered data dir not found: {filtered_dir}. V5/V6 will not be available.")
 
+        # Build peer database (training EMA + filtered sensing features) for cross-user search
+        self._peer_db_path = self._build_peer_database(filtered_dir)
+
         # Determine pilot users
         if self.pilot_user_ids is None:
             # Auto-select top 5 by EMA count
@@ -334,6 +338,70 @@ class PilotSimulator:
         logger.info(f"Prepared data for {len(self._users_data)} pilot users")
         for ud in self._users_data:
             logger.info(f"  User {ud['study_id']}: {len(ud['ema_entries'])} EMA entries")
+
+    def _build_peer_database(self, filtered_dir: Path | None) -> str | None:
+        """Build a peer database merging training EMA (with ground truth) and filtered sensing features.
+
+        Returns path to the saved parquet file, or None if building fails.
+        """
+        if self._train_df is None or self._train_df.empty:
+            logger.warning("No training data for peer database")
+            return None
+
+        peer_db_path = self.output_dir / "peer_database.parquet"
+
+        # If already built in a previous run, reuse it
+        if peer_db_path.exists():
+            logger.info(f"Peer database already exists: {peer_db_path}")
+            return str(peer_db_path)
+
+        train = self._train_df.copy()
+
+        # Merge with filtered sensing data (by Study_ID + date_local)
+        if filtered_dir is not None and filtered_dir.exists():
+            import glob as glob_mod
+            filtered_files = sorted(glob_mod.glob(str(filtered_dir / "*_daily_filtered.parquet")))
+            if filtered_files:
+                all_filtered = []
+                for fp in filtered_files:
+                    pid = Path(fp).stem.split("_")[0]
+                    try:
+                        study_id = int(pid)
+                    except ValueError:
+                        continue
+                    df = pd.read_parquet(fp)
+                    df["Study_ID"] = study_id
+                    df["date_local"] = df["date_local"].astype(str)
+                    all_filtered.append(df)
+
+                if all_filtered:
+                    filtered_all = pd.concat(all_filtered, ignore_index=True)
+                    # Ensure date_local is string for merge
+                    train["date_local"] = train["date_local"].astype(str)
+                    # Merge sensing features onto training EMA
+                    sensing_cols = [
+                        "Study_ID", "date_local",
+                        "screen_total_min", "screen_n_sessions",
+                        "motion_stationary_min", "motion_walking_min",
+                        "motion_automotive_min", "motion_tracked_hours",
+                        "app_total_min", "app_social_min", "app_comm_min",
+                        "app_entertainment_min",
+                        "keyboard_n_sessions", "keyboard_total_chars",
+                        "light_mean_lux_raw",
+                    ]
+                    available = [c for c in sensing_cols if c in filtered_all.columns]
+                    train = train.merge(
+                        filtered_all[available].drop_duplicates(subset=["Study_ID", "date_local"]),
+                        on=["Study_ID", "date_local"],
+                        how="left",
+                    )
+                    n_with_sensing = train[train["screen_total_min"].notna()].shape[0]
+                    logger.info(f"Peer DB: merged sensing for {n_with_sensing}/{len(train)} entries")
+
+        # Save
+        train.to_parquet(peer_db_path, index=False)
+        logger.info(f"Built peer database: {len(train)} entries -> {peer_db_path}")
+        return str(peer_db_path)
 
     def run_version(self, version: str) -> dict[str, Any]:
         """Run the pilot for a single version (callm/v1/v2).
@@ -393,6 +461,7 @@ class PilotSimulator:
                 filtered_data_dir=self._filtered_data_dir if version in ("v5", "v6") else None,
                 agentic_model=self.agentic_model,
                 agentic_max_turns=self.agentic_max_turns,
+                peer_db_path=self._peer_db_path,
             )
 
             # Initialize per-user session memory for agentic agents (V2/V4/V5/V6)

@@ -130,8 +130,16 @@ class TFIDFRetriever:
         for i, r in enumerate(results[:max_examples], 1):
             lines.append(f"Case {i} (similarity: {r['similarity']:.2f}):")
             lines.append(f"  Diary: {r['text']}")
-            # NOTE: Ground truth outcomes (PANAS_Pos/Neg, ER_desire, INT_availability)
-            # are intentionally excluded to prevent data leakage from training set.
+            # Include ground truth outcomes from training set as reference
+            outcome_parts = []
+            if r.get("PANAS_Pos") is not None and pd.notna(r["PANAS_Pos"]):
+                outcome_parts.append(f"PA={r['PANAS_Pos']:.1f}")
+            if r.get("PANAS_Neg") is not None and pd.notna(r["PANAS_Neg"]):
+                outcome_parts.append(f"NA={r['PANAS_Neg']:.1f}")
+            if r.get("ER_desire") is not None and pd.notna(r["ER_desire"]):
+                outcome_parts.append(f"ER={r['ER_desire']:.1f}")
+            if outcome_parts:
+                lines.append(f"  Outcomes: {', '.join(outcome_parts)}")
             lines.append("")
 
         return "\n".join(lines)
@@ -244,7 +252,16 @@ class MultiModalRetriever(TFIDFRetriever):
             if sensing:
                 lines.append(f"  Sensing: {sensing}")
 
-            # NOTE: Ground truth outcomes excluded to prevent data leakage.
+            # Include ground truth outcomes from training set as reference
+            outcome_parts = []
+            if r.get("PANAS_Pos") is not None and pd.notna(r["PANAS_Pos"]):
+                outcome_parts.append(f"PA={r['PANAS_Pos']:.1f}")
+            if r.get("PANAS_Neg") is not None and pd.notna(r["PANAS_Neg"]):
+                outcome_parts.append(f"NA={r['PANAS_Neg']:.1f}")
+            if r.get("ER_desire") is not None and pd.notna(r["ER_desire"]):
+                outcome_parts.append(f"ER={r['ER_desire']:.1f}")
+            if outcome_parts:
+                lines.append(f"  Outcomes: {', '.join(outcome_parts)}")
             lines.append("")
 
         return "\n".join(lines)

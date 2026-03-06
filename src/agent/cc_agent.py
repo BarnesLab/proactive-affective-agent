@@ -93,7 +93,8 @@ Investigation strategy:
 3. Use query_sensing to zoom into modalities most relevant to the diary content (hourly aggregates)
 4. Use compare_to_baseline to check if today's behavior is unusual for this person (z-scores)
 5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes
-6. Synthesize diary + sensing evidence into a coherent, calibrated prediction
+6. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors for your prediction
+7. Synthesize diary + sensing + peer evidence into a coherent, calibrated prediction
 
 Be efficient: focus your tool calls on the most informative signals given the diary context. You have a limited tool call budget — make each call count.
 
@@ -124,7 +125,8 @@ Investigation strategy:
 4. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
 5. Use get_receptivity_history to understand this person's typical patterns and past availability
 6. Use find_similar_days to reason analogically from past behavioral-emotional pairings
-7. Synthesize all evidence into a coherent prediction
+7. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral patterns — their actual EMA outcomes serve as calibration anchors
+8. Synthesize all evidence into a coherent prediction
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -151,7 +153,8 @@ Investigation strategy:
 3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies are the strongest signals.
 4. If needed, use query_sensing or query_raw_events to drill into specific modalities for finer temporal resolution.
 5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes.
-6. Synthesize all evidence into a coherent, calibrated prediction.
+6. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral fingerprints — their actual EMA outcomes serve as calibration anchors.
+7. Synthesize all evidence into a coherent, calibrated prediction.
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -177,7 +180,8 @@ Investigation strategy:
 3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies help calibrate the diary's emotional signal.
 4. If needed, use query_sensing or query_raw_events to drill into specific modalities where the diary and narrative seem inconsistent.
 5. Use find_similar_days to find past days with similar patterns and outcomes.
-6. Synthesize diary + narrative + sensing evidence into a coherent, well-calibrated prediction.
+6. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors.
+7. Synthesize diary + narrative + sensing + peer evidence into a coherent, well-calibrated prediction.
 
 Be efficient: the diary and narrative together give you ~80% of the signal. Use MCP tools for the remaining 20% — targeted validation, not exhaustive exploration.
 
@@ -229,6 +233,7 @@ class AgenticCCAgent:
         max_turns: int = 16,
         mode: str = "multimodal",
         filtered_data_dir: Path | None = None,
+        peer_db_path: str | None = None,
     ) -> None:
         """Initialize the agentic CC agent.
 
@@ -241,6 +246,7 @@ class AgenticCCAgent:
             max_turns: Maximum agentic turns for claude --print.
             mode: Agent mode — "multimodal", "sensing_only", "filtered_sensing", "filtered_multimodal".
             filtered_data_dir: Path to data/processed/filtered/ directory (for V5/V6).
+            peer_db_path: Path to peer database parquet for cross-user search.
         """
         if mode not in self._MODE_TO_VERSION:
             raise ValueError(f"Invalid mode: {mode!r}. Must be one of {list(self._MODE_TO_VERSION)}.")
@@ -269,6 +275,9 @@ class AgenticCCAgent:
             else:
                 self._filtered_df = pd.read_parquet(parquet_path)
                 logger.info(f"Loaded filtered data for {self.pid}: {len(self._filtered_df)} days")
+
+        # Peer database path for cross-user search
+        self.peer_db_path = peer_db_path
 
         # Detect Python binary with mcp + pandas
         self.python_bin = self._find_python()
@@ -373,17 +382,21 @@ class AgenticCCAgent:
         self._last_usage: dict = {}
         mcp_server_path = PROJECT_ROOT / "src" / "sense" / "mcp_server.py"
 
+        mcp_args = [
+            str(mcp_server_path),
+            "--study-id", str(self.study_id),
+            "--ema-timestamp", ema_timestamp,
+            "--ema-date", ema_date,
+            "--data-dir", str(self.processed_dir),
+        ]
+        if self.peer_db_path:
+            mcp_args.extend(["--peer-db-path", str(self.peer_db_path)])
+
         mcp_config = {
             "mcpServers": {
                 "sensing": {
                     "command": self.python_bin,
-                    "args": [
-                        str(mcp_server_path),
-                        "--study-id", str(self.study_id),
-                        "--ema-timestamp", ema_timestamp,
-                        "--ema-date", ema_date,
-                        "--data-dir", str(self.processed_dir),
-                    ],
+                    "args": mcp_args,
                     "env": {
                         "PYTHONPATH": str(PROJECT_ROOT),
                     },
@@ -658,6 +671,7 @@ Date: {ema_date}
         known_tools = {
             "get_daily_summary", "query_sensing", "query_raw_events",
             "compare_to_baseline", "get_receptivity_history", "find_similar_days",
+            "find_peer_cases",
         }
 
         matches = list(pattern.finditer(output))

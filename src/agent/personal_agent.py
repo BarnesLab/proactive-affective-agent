@@ -46,6 +46,7 @@ class PersonalAgent:
         filtered_data_dir: Path | None = None,
         agentic_model: str = "sonnet",
         agentic_max_turns: int = 16,
+        peer_db_path: str | None = None,
         # Legacy params (ignored, kept for backward compat)
         query_engine=None,
         agentic_soft_limit: int = 8,
@@ -60,7 +61,7 @@ class PersonalAgent:
 
         # Initialize workflow
         if version == "v1":
-            self._v1 = StructuredWorkflow(llm_client)
+            self._v1 = StructuredWorkflow(llm_client, peer_db_path=peer_db_path, study_id=study_id)
         elif version in ("v2", "v4", "v5", "v6"):
             # Agentic agents via claude --print (free, Max subscription)
             if processed_dir is None:
@@ -91,6 +92,7 @@ class PersonalAgent:
                 max_turns=agentic_max_turns,
                 mode=mode,
                 filtered_data_dir=filtered_data_dir,
+                peer_db_path=peer_db_path,
             )
         elif version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None

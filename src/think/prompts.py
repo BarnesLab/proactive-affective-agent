@@ -85,17 +85,18 @@ You are predicting the emotional state of a cancer survivor based on their diary
 ## Current Diary Entry{f' ({date_str})' if date_str else ''}
 "{emotion_driver}"
 
-## Similar Cases from Other Participants
-These are diary entries from other participants with similar emotional expressions,
-along with their actual emotional outcomes. Use these as reference:
+## Similar Cases from Other Participants (with ground truth outcomes)
+These are diary entries from other cancer survivors with similar emotional expressions,
+along with their actual EMA outcomes (PA=Positive Affect 0-30, NA=Negative Affect 0-30,
+ER=Emotion Regulation desire 0-10). Use these as calibration reference:
 
 {rag_examples}
 
 ## Task
-Based on the diary entry, similar cases, and this user's history, predict their
+Based on the diary entry, similar cases with outcomes, and this user's history, predict their
 current emotional state. Consider:
 - What emotions does the diary text express?
-- How do similar cases typically score?
+- How do similar cases with similar diary entries actually score? Use their outcomes as anchors.
 - What is this user's typical baseline?
 
 {OUTPUT_FORMAT}"""
@@ -118,14 +119,18 @@ def v1_prompt(
     memory_doc: str,
     trait_profile: str,
     date_str: str = "",
+    peer_reference: str = "",
 ) -> str:
     """Build the V1 structured prompt (sensing-based, single LLM call).
 
     The V1 approach:
     1. Receives pre-formatted sensing data summary
     2. Considers memory document for longitudinal context
-    3. Follows step-by-step reasoning to predict
+    3. Uses peer reference cases from training population as calibration
+    4. Follows step-by-step reasoning to predict
     """
+    peer_section = f"\n{peer_reference}\n" if peer_reference else ""
+
     return f"""## User Profile
 {trait_profile}
 
@@ -134,7 +139,7 @@ def v1_prompt(
 
 ## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
 {sensing_summary}
-
+{peer_section}
 ## Instructions
 Analyze the sensing data step by step:
 
@@ -142,7 +147,8 @@ Analyze the sensing data step by step:
 2. **Mobility & Activity**: What do GPS, motion, and screen data reveal about activity level?
 3. **Social Signals**: What do typing patterns and app usage suggest about social engagement?
 4. **Pattern Integration**: How do these signals combine? Are there concerning patterns?
-5. **User Context**: Given this user's history and traits, what would you predict?
+5. **Peer Comparison**: How do other participants with similar behavioral patterns score? Use their outcomes as calibration anchors.
+6. **User Context**: Given this user's history and traits, what would you predict?
 
 Based on your analysis, provide your predictions as JSON.
 {OUTPUT_FORMAT}"""
@@ -276,9 +282,10 @@ def v3_prompt(
 ## Today's Passive Sensing Data{f' ({date_str})' if date_str else ''}
 {sensing_summary}
 
-## Similar Cases from Other Participants (diary + sensing)
-These are diary entries from other participants with similar emotional expressions,
-along with their sensing data and actual emotional outcomes:
+## Similar Cases from Other Participants (diary + sensing + ground truth)
+These are diary entries from other cancer survivors with similar emotional expressions,
+along with their sensing data and actual EMA outcomes (PA=Positive Affect 0-30,
+NA=Negative Affect 0-30, ER=Emotion Regulation desire 0-10). Use outcomes as calibration:
 
 {rag_examples}
 
