@@ -69,7 +69,8 @@ class StructuredWorkflow:
             means = data.mean(axis=0)
             stds = data.std(axis=0)
             stds[stds == 0] = 1.0
-            self._peer_sensing_matrix = (data - means) / stds
+            normed = (data - means) / stds
+            self._peer_sensing_matrix = np.nan_to_num(normed, nan=0.0, posinf=0.0, neginf=0.0)
             self._peer_means = means
             self._peer_stds = stds
 
@@ -107,8 +108,14 @@ class StructuredWorkflow:
             dtype=np.float64,
         )
 
+        # Skip if vector is all zeros (no sensing data)
+        if np.allclose(vector, 0):
+            return ""
+
         # Normalize using peer stats
         norm_vec = ((vector - self._peer_means) / self._peer_stds).reshape(1, -1)
+        # Replace any NaN/inf from normalization
+        norm_vec = np.nan_to_num(norm_vec, nan=0.0, posinf=0.0, neginf=0.0)
 
         from sklearn.metrics.pairwise import cosine_similarity
         sims = cosine_similarity(norm_vec, self._peer_sensing_matrix).flatten()
