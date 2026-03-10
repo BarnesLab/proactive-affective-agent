@@ -89,12 +89,13 @@ The data you can see: everything BEFORE the EMA timestamp. You cannot see the EM
 
 Investigation strategy:
 1. Analyze the diary entry first — extract emotional signals, themes, and form initial hypotheses
-2. Call get_daily_summary to see overall behavioral patterns for today and recent days
-3. Use query_sensing to zoom into modalities most relevant to the diary content (hourly aggregates)
-4. Use compare_to_baseline to check if today's behavior is unusual for this person (z-scores)
-5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes
-6. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors for your prediction
-7. Synthesize diary + sensing + peer evidence into a coherent, calibrated prediction
+2. Call get_behavioral_timeline to reconstruct the day chronologically and infer within-day behavioral/affective shifts
+3. Call get_daily_summary to see overall behavioral patterns for today and recent days
+4. Use query_sensing to zoom into modalities most relevant to the diary content (hourly aggregates)
+5. Use compare_to_baseline to check if today's behavior is unusual for this person (z-scores)
+6. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes
+7. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors for your prediction
+8. Synthesize diary + sensing + peer evidence into a coherent, calibrated prediction
 
 Be efficient: focus your tool calls on the most informative signals given the diary context. You have a limited tool call budget — make each call count.
 
@@ -114,19 +115,20 @@ You have access to MCP tools that let you query their behavioral data (motion, l
 The data you can see: everything BEFORE the EMA timestamp. You cannot see the EMA response itself — that is what you are predicting.
 
 Investigation strategy:
-1. Start with get_daily_summary to orient yourself on today and recent days
-2. Use query_sensing to zoom into specific modalities that seem informative (hourly aggregates)
-3. Use query_raw_events to drill into raw event streams when you need fine-grained detail:
+1. Start with get_behavioral_timeline to reconstruct the day chronologically before the EMA
+2. Use get_daily_summary to orient yourself on today and recent days
+3. Use query_sensing to zoom into specific modalities that seem informative (hourly aggregates)
+4. Use query_raw_events to drill into raw event streams when you need fine-grained detail:
    - screen: exact lock/unlock times (infer wake-up time, phone checking frequency)
    - app: which specific apps were used, for how long (social media? messaging?)
    - motion: exact activity transition timestamps (when did she leave home?)
    - keyboard: what was typed, in which app (communication content)
    - music: which songs/artists played (mood signal from genre)
-4. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
-5. Use get_receptivity_history to understand this person's typical patterns and past availability
-6. Use find_similar_days to reason analogically from past behavioral-emotional pairings
-7. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral patterns — their actual EMA outcomes serve as calibration anchors
-8. Synthesize all evidence into a coherent prediction
+5. Use compare_to_baseline to identify anomalies (z-scores reveal what is unusual)
+6. Use get_receptivity_history to understand this person's typical patterns and past availability
+7. Use find_similar_days to reason analogically from past behavioral-emotional pairings
+8. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral patterns — their actual EMA outcomes serve as calibration anchors
+9. Synthesize all evidence into a coherent prediction
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -149,12 +151,13 @@ You also have access to MCP tools that let you query the raw behavioral data for
 
 Investigation strategy:
 1. Read the behavioral narrative carefully. Extract key signals: activity level, social engagement, sleep/wake patterns, screen habits, environmental context.
-2. Form hypotheses about their emotional state based on these behavioral patterns.
-3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies are the strongest signals.
-4. If needed, use query_sensing or query_raw_events to drill into specific modalities for finer temporal resolution.
-5. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes.
-6. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral fingerprints — their actual EMA outcomes serve as calibration anchors.
-7. Synthesize all evidence into a coherent, calibrated prediction.
+2. Call get_behavioral_timeline to infer how their behavioral and affective cues shifted across the day.
+3. Form hypotheses about their emotional state based on these behavioral patterns.
+4. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies are the strongest signals.
+5. If needed, use query_sensing or query_raw_events to drill into specific modalities for finer temporal resolution.
+6. Use find_similar_days to find past days with similar behavioral patterns and their emotional outcomes.
+7. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral fingerprints — their actual EMA outcomes serve as calibration anchors.
+8. Synthesize all evidence into a coherent, calibrated prediction.
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -177,11 +180,12 @@ You also have access to MCP tools that let you query the raw behavioral data for
 Investigation strategy:
 1. FIRST: Analyze the diary entry. Identify emotional themes, concerns, stressors, positive events, social context, and coping language. Form initial hypotheses.
 2. THEN: Read the behavioral narrative. Does the behavioral evidence align with the diary? Look for cross-modal consistency or discrepancies.
-3. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies help calibrate the diary's emotional signal.
-4. If needed, use query_sensing or query_raw_events to drill into specific modalities where the diary and narrative seem inconsistent.
-5. Use find_similar_days to find past days with similar patterns and outcomes.
-6. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors.
-7. Synthesize diary + narrative + sensing + peer evidence into a coherent, well-calibrated prediction.
+3. Call get_behavioral_timeline to inspect how behavioral and affective cues evolved across the day.
+4. Use compare_to_baseline to check if today's behavior deviates from their personal norm — anomalies help calibrate the diary's emotional signal.
+5. If needed, use query_sensing or query_raw_events to drill into specific modalities where the diary and narrative seem inconsistent.
+6. Use find_similar_days to find past days with similar patterns and outcomes.
+7. Use find_peer_cases (search_mode="text") to find OTHER participants with similar diary entries — their actual EMA outcomes serve as calibration anchors.
+8. Synthesize diary + narrative + sensing + peer evidence into a coherent, well-calibrated prediction.
 
 Be efficient: the diary and narrative together give you ~80% of the signal. Use MCP tools for the remaining 20% — targeted validation, not exhaustive exploration.
 
@@ -319,9 +323,31 @@ class AgenticCCAgent:
         tag = f"[{self._version.upper()}]"
         logger.info(f"{tag} User {self.study_id} | {ema_date} {ema_slot} | launching claude --print ({self.mode})")
 
-        output = self._run_claude(ema_timestamp, ema_date, prompt, system_prompt)
+        # Retry loop: if parsing fails, re-run claude (never produce fallback)
+        import time as _time
+        _MAX_PARSE_RETRIES = 5
+        for _parse_attempt in range(1, _MAX_PARSE_RETRIES + 1):
+            output = self._run_claude(ema_timestamp, ema_date, prompt, system_prompt)
+            prediction = self._parse_prediction(output)
+            if not prediction.get("_parse_error"):
+                break
+            if _parse_attempt < _MAX_PARSE_RETRIES:
+                logger.warning(
+                    f"{tag} Parse failed (attempt {_parse_attempt}/{_MAX_PARSE_RETRIES}), "
+                    f"re-running claude in 30s. Output: {output[:200]}"
+                )
+                _time.sleep(30)
+            else:
+                logger.error(
+                    f"{tag} Parse failed after {_MAX_PARSE_RETRIES} attempts. "
+                    f"Last output: {output[:500]}"
+                )
+                # Still don't fallback — raise so the entry can be retried later
+                raise RuntimeError(
+                    f"Unparseable response after {_MAX_PARSE_RETRIES} attempts for "
+                    f"user {self.study_id} {ema_date} {ema_slot}"
+                )
 
-        prediction = self._parse_prediction(output)
         prediction["_reasoning"] = output
         prediction["_raw_output"] = output
         prediction["_raw_output_length"] = len(output)
@@ -362,6 +388,7 @@ class AgenticCCAgent:
     # Retry constants
     _TRANSIENT_RETRIES = 3
     _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
+    _PATIENT_WAIT = 300  # 5 minutes — slow retry after fast retries exhausted
     _HOURLY_WAIT = 1800  # 30 minutes
     _HOURLY_MAX_RETRIES = 12  # up to 6 hours total
     _TIMEOUT_RETRIES = 3
@@ -429,10 +456,14 @@ class AgenticCCAgent:
         env = {k: v for k, v in os.environ.items() if k not in _blocked}
         env["PYTHONPATH"] = str(PROJECT_ROOT)
 
+        import time
+
         transient_attempts = 0
         hourly_attempts = 0
         timeout_attempts = 0
+        patient_attempts = 0
         _notified_hourly = False
+        _notified_patient = False
 
         try:
             while True:
@@ -447,11 +478,16 @@ class AgenticCCAgent:
                     )
 
                     if result.returncode == 0:
-                        return self._unwrap_json_output(result.stdout.strip(), tag)
+                        output = self._unwrap_json_output(result.stdout.strip(), tag)
+                        if output:
+                            return output
+                        # Empty output on success — treat as transient
+                        logger.warning(f"{tag} Empty output on success, treating as transient")
 
-                    # Non-zero exit — classify the error
-                    limit_type = classify_error(result.stderr, result.returncode)
-                    stderr_preview = result.stderr[:300] if result.stderr else "(empty)"
+                    # Non-zero exit or empty output — classify the error
+                    stderr_text = result.stderr if result.returncode != 0 else ""
+                    limit_type = classify_error(stderr_text, result.returncode)
+                    stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
                     if limit_type == RateLimitType.WEEKLY:
                         msg = (
@@ -467,59 +503,70 @@ class AgenticCCAgent:
 
                     if limit_type == RateLimitType.HOURLY:
                         hourly_attempts += 1
-                        if hourly_attempts > self._HOURLY_MAX_RETRIES:
-                            msg = (
-                                f"[proactive-affective-agent] Rate limit: exhausted all retries\n"
-                                f"Version: {self._version.upper()}, User: {self.study_id}\n"
-                                f"Waited {self._HOURLY_WAIT * self._HOURLY_MAX_RETRIES / 3600:.1f}h total. Stopping."
-                            )
-                            send_telegram(msg)
-                            raise RateLimitError(
-                                f"Hourly rate limit: exhausted {self._HOURLY_MAX_RETRIES} retries",
-                                RateLimitType.HOURLY,
-                            )
+                        self._log_rate_limit_event("hourly")
                         if not _notified_hourly:
                             send_telegram(
                                 f"[proactive-affective-agent] Rate limit hit — waiting 30min\n"
                                 f"Version: {self._version.upper()}, User: {self.study_id}\n"
-                                f"Will retry up to {self._HOURLY_MAX_RETRIES} times."
+                                f"Will keep retrying (no fallback)."
                             )
                             _notified_hourly = True
                         logger.warning(
-                            f"{tag} Hourly rate limit (attempt {hourly_attempts}/{self._HOURLY_MAX_RETRIES}). "
+                            f"{tag} Hourly rate limit (attempt {hourly_attempts}). "
                             f"Waiting {self._HOURLY_WAIT}s..."
                         )
-                        import time
                         time.sleep(self._HOURLY_WAIT)
                         continue
 
-                    # Transient error
+                    # Transient error — fast retries first, then patient retry
                     transient_attempts += 1
-                    if transient_attempts > self._TRANSIENT_RETRIES:
-                        logger.error(f"{tag} Transient error after {self._TRANSIENT_RETRIES} retries: {stderr_preview}")
-                        return ""
-                    wait = self._TRANSIENT_BACKOFF[min(transient_attempts - 1, len(self._TRANSIENT_BACKOFF) - 1)]
-                    logger.warning(f"{tag} Transient error (attempt {transient_attempts}), retrying in {wait}s: {stderr_preview}")
-                    import time
-                    time.sleep(wait)
+                    if transient_attempts <= self._TRANSIENT_RETRIES:
+                        wait = self._TRANSIENT_BACKOFF[min(transient_attempts - 1, len(self._TRANSIENT_BACKOFF) - 1)]
+                        logger.warning(f"{tag} Transient error (attempt {transient_attempts}), retrying in {wait}s: {stderr_preview}")
+                        time.sleep(wait)
+                        continue
+
+                    # Fast retries exhausted — switch to patient retry (likely rate limit)
+                    patient_attempts += 1
+                    self._log_rate_limit_event("patient_retry")
+                    if not _notified_patient:
+                        send_telegram(
+                            f"[proactive-affective-agent] Rate limit (patient mode)\n"
+                            f"Version: {self._version.upper()}, User: {self.study_id}\n"
+                            f"Waiting {self._PATIENT_WAIT}s between retries. No fallback."
+                        )
+                        _notified_patient = True
+                    logger.warning(
+                        f"{tag} Patient retry #{patient_attempts}, waiting {self._PATIENT_WAIT}s: {stderr_preview}"
+                    )
+                    time.sleep(self._PATIENT_WAIT)
+                    # Reset transient counter for next round of fast retries
+                    transient_attempts = 0
                     continue
 
                 except subprocess.TimeoutExpired:
                     timeout_attempts += 1
-                    if timeout_attempts > self._TIMEOUT_RETRIES:
-                        logger.error(f"{tag} Timed out after {self._TIMEOUT_RETRIES} retries")
-                        return ""
-                    wait = self._TIMEOUT_BACKOFF[min(timeout_attempts - 1, len(self._TIMEOUT_BACKOFF) - 1)]
-                    logger.warning(f"{tag} Timeout (attempt {timeout_attempts}), retrying in {wait}s")
-                    import time
-                    time.sleep(wait)
+                    if timeout_attempts <= self._TIMEOUT_RETRIES:
+                        wait = self._TIMEOUT_BACKOFF[min(timeout_attempts - 1, len(self._TIMEOUT_BACKOFF) - 1)]
+                        logger.warning(f"{tag} Timeout (attempt {timeout_attempts}), retrying in {wait}s")
+                        time.sleep(wait)
+                        continue
+                    # Timeout retries exhausted — patient retry
+                    patient_attempts += 1
+                    self._log_rate_limit_event("timeout_patient")
+                    logger.warning(f"{tag} Timeout → patient retry #{patient_attempts}, waiting {self._PATIENT_WAIT}s")
+                    time.sleep(self._PATIENT_WAIT)
+                    timeout_attempts = 0
                     continue
 
         except RateLimitError:
             raise
+        except KeyboardInterrupt:
+            raise
         except Exception as exc:
-            logger.error(f"{tag} subprocess error: {exc}")
-            return ""
+            # Unexpected error — still don't fallback, raise to caller
+            logger.error(f"{tag} Unexpected subprocess error: {exc}")
+            raise
         finally:
             Path(mcp_config_path).unlink(missing_ok=True)
 
@@ -604,26 +651,30 @@ class AgenticCCAgent:
         if self.mode == "multimodal":
             task_instruction = (
                 "1. FIRST: Analyze the diary entry above. What emotional themes, stressors, or positive signals does it reveal?\n"
-                "2. THEN: Use sensing MCP tools to validate and calibrate your hypotheses.\n"
-                "3. FINALLY: Synthesize diary + sensing evidence into a prediction in the required JSON format."
+                "2. THEN: Call get_behavioral_timeline to reconstruct the day and infer within-day shifts.\n"
+                "3. Use sensing MCP tools to validate and calibrate your hypotheses.\n"
+                "4. FINALLY: Synthesize diary + sensing evidence into a prediction in the required JSON format."
             )
         elif self.mode == "filtered_sensing":
             task_instruction = (
                 "1. FIRST: Analyze the daily behavioral narrative above. Extract key signals about activity, social engagement, screen habits, and environmental context.\n"
-                "2. THEN: Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
-                "3. OPTIONALLY: Use query_sensing or query_raw_events if you need finer temporal detail (hourly patterns, exact timestamps).\n"
-                "4. FINALLY: Synthesize narrative + tool evidence into a prediction in the required JSON format."
+                "2. THEN: Call get_behavioral_timeline to inspect within-day state changes.\n"
+                "3. Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
+                "4. OPTIONALLY: Use query_sensing or query_raw_events if you need finer temporal detail (hourly patterns, exact timestamps).\n"
+                "5. FINALLY: Synthesize narrative + tool evidence into a prediction in the required JSON format."
             )
         elif self.mode == "filtered_multimodal":
             task_instruction = (
                 "1. FIRST: Analyze the diary entry above. What emotional themes, stressors, or positive signals does it reveal?\n"
                 "2. THEN: Read the daily behavioral narrative. Does the behavior align with the diary? Look for cross-modal consistency.\n"
-                "3. Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
-                "4. OPTIONALLY: Drill into raw data with MCP tools where diary and narrative seem inconsistent.\n"
-                "5. FINALLY: Synthesize diary + narrative + sensing evidence into a prediction in the required JSON format."
+                "3. Call get_behavioral_timeline to inspect within-day state changes.\n"
+                "4. Use compare_to_baseline to check if today's behavior is unusual for this person.\n"
+                "5. OPTIONALLY: Drill into raw data with MCP tools where diary and narrative seem inconsistent.\n"
+                "6. FINALLY: Synthesize diary + narrative + sensing evidence into a prediction in the required JSON format."
             )
         else:  # sensing_only
             task_instruction = (
+                "Start by calling get_behavioral_timeline to reconstruct the day before the EMA.\n"
                 "Investigate the sensing data using the available MCP tools to understand this person's behavioral state.\n"
                 "Use the session memory above to calibrate against this person's known receptivity and behavioral patterns.\n"
                 "Then predict their emotional state in the required JSON format."
@@ -632,9 +683,13 @@ class AgenticCCAgent:
         # For V5/V6, start with compare_to_baseline instead of get_daily_summary
         # since the narrative already provides the daily overview
         if self.mode in ("filtered_sensing", "filtered_multimodal"):
-            start_hint = f"Start by calling compare_to_baseline for key features, then use find_similar_days to look for analogous past days."
+            start_hint = (
+                f"Start by calling get_behavioral_timeline for {ema_date}, then "
+                f"compare_to_baseline for key features, then use find_similar_days "
+                f"to look for analogous past days."
+            )
         else:
-            start_hint = f"Start by calling get_daily_summary for {ema_date}."
+            start_hint = f"Start by calling get_behavioral_timeline for {ema_date}, then get_daily_summary."
 
         return f"""You are investigating participant {self.pid}'s behavioral data to predict their emotional state.
 
@@ -669,7 +724,7 @@ Date: {ema_date}
         )
 
         known_tools = {
-            "get_daily_summary", "query_sensing", "query_raw_events",
+            "get_daily_summary", "get_behavioral_timeline", "query_sensing", "query_raw_events",
             "compare_to_baseline", "get_receptivity_history", "find_similar_days",
             "find_peer_cases",
         }
@@ -706,20 +761,40 @@ Date: {ema_date}
 
         return tool_calls
 
+    def _log_rate_limit_event(self, event_type: str) -> None:
+        """Log a rate limit event to a shared file for the queue runner."""
+        import datetime
+        rate_limit_log = PROJECT_ROOT / "outputs" / "pilot_v2" / ".rate_limit_events.jsonl"
+        try:
+            rate_limit_log.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "version": self._version,
+                "user_id": self.study_id,
+                "event_type": event_type,
+            }
+            with open(rate_limit_log, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass  # Best-effort logging
+
     def _parse_prediction(self, text: str) -> dict[str, Any]:
+        """Parse prediction. Returns dict with _parse_error=True if parsing fails.
+
+        NOTE: No fallback here — caller (predict()) handles retries.
+        """
         from src.think.parser import parse_prediction as _parse
         result = _parse(text)
 
         if result.get("_parse_error"):
             tag = f"[{self._version.upper()}]"
             logger.warning(f"{tag} Failed to parse prediction: {text[:300]}")
-            result = self._fallback_prediction()
-            result["_parse_error"] = True
             result["_raw_response"] = text[:500]
 
         return result
 
     def _fallback_prediction(self) -> dict[str, Any]:
+        """Legacy fallback — kept for old scripts. NOT used by predict() anymore."""
         from src.utils.mappings import BINARY_STATE_TARGETS
         pred: dict[str, Any] = {
             "PANAS_Pos": 15.0,
