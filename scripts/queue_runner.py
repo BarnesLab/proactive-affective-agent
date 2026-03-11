@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Dynamic queue runner for pilot_v2 agentic versions.
+"""Dynamic queue runner for pilot_v2 all versions.
 
 - 5 parallel workers
 - No fallbacks (cc_agent waits on rate limits indefinitely)
 - Auto-detects incomplete/fallback tasks from checkpoints
 - Runs until all tasks complete
-- Stops if 24 consecutive hours with no rate limit events
+- Supports all 7 versions (CALLM, v1-v6) and configurable user lists
 
 Usage:
     python scripts/queue_runner.py                 # Run all incomplete tasks
@@ -34,8 +34,9 @@ CHECKPOINT_DIR = PILOT_DIR / "checkpoints"
 RATE_LIMIT_LOG = PILOT_DIR / ".rate_limit_events.jsonl"
 LOG_DIR = PILOT_DIR / "queue_logs"
 
-AGENTIC_VERSIONS = ["v2", "v4", "v5", "v6"]
-USERS = [43, 258, 338, 399, 403]
+ALL_VERSIONS = ["CALLM", "v1", "v2", "v3", "v4", "v5", "v6"]
+AGENTIC_VERSIONS = {"v2", "v4", "v5", "v6"}  # set for fast lookup
+USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,7 +74,7 @@ def scan_tasks() -> list[tuple[str, int, int, str]]:
     Returns: list of (version, user_id, remaining_entries, reason)
     """
     tasks = []
-    for ver in AGENTIC_VERSIONS:
+    for ver in ALL_VERSIONS:
         for uid in USERS:
             total = get_user_total_entries(uid)
             if total == 0:
@@ -98,8 +99,8 @@ def scan_tasks() -> list[tuple[str, int, int, str]]:
 
             if remaining > 0:
                 tasks.append((ver, uid, remaining, "incomplete"))
-            else:
-                # Fully complete — check for fallbacks
+            elif ver in AGENTIC_VERSIONS:
+                # Fully complete agentic version — check for fallbacks
                 preds = data.get("predictions", [])
                 n_fallback = sum(
                     1 for p in preds
