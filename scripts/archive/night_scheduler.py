@@ -479,6 +479,9 @@ def main():
                         help="Skip idle detection, run immediately")
     args = parser.parse_args()
 
+    # Ensure log dir exists before setting up file handler
+    (OUTPUT_DIR / "logs").mkdir(parents=True, exist_ok=True)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -488,9 +491,6 @@ def main():
             logging.FileHandler(OUTPUT_DIR / "logs" / "night_scheduler.log"),
         ],
     )
-
-    # Ensure log dir exists
-    (OUTPUT_DIR / "logs").mkdir(parents=True, exist_ok=True)
 
     scheduler = NightScheduler(
         start_hour=args.start_hour,

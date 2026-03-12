@@ -25,8 +25,14 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # Configuration
 # ---------------------------------------------------------------------------
 
-PILOT_USERS = [71, 119, 164, 310, 458]
+PILOT_USERS = [43, 71, 119, 164, 258, 275, 310, 338, 403, 458, 513]
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
+
+# Multiple checkpoint directories (newer takes precedence)
+DEFAULT_CHECKPOINT_DIRS = [
+    "outputs/pilot_v2/checkpoints",
+    "outputs/pilot/checkpoints",
+]
 
 # Targets to show prominently in the summary table
 KEY_CONTINUOUS = ["PANAS_Pos", "PANAS_Neg", "ER_desire"]
@@ -52,12 +58,25 @@ AR_BASELINES = {
 # Data loading
 # ---------------------------------------------------------------------------
 
-def load_checkpoints(version: str, checkpoint_dir: Path) -> tuple[list, list]:
+def find_checkpoint(version: str, uid: int, checkpoint_dirs: list[Path]) -> Path | None:
+    """Find checkpoint file across multiple dirs, trying case variants for CALLM."""
+    names = [f"{version}_user{uid}_checkpoint.json"]
+    if version.lower() == "callm":
+        names.append(f"CALLM_user{uid}_checkpoint.json")
+    for cp_dir in checkpoint_dirs:
+        for name in names:
+            f = cp_dir / name
+            if f.exists():
+                return f
+    return None
+
+
+def load_checkpoints(version: str, checkpoint_dirs: list[Path]) -> tuple[list, list]:
     """Load all predictions and ground truths for a version across pilot users."""
     all_preds, all_gts = [], []
     for uid in PILOT_USERS:
-        f = checkpoint_dir / f"{version}_user{uid}_checkpoint.json"
-        if not f.exists():
+        f = find_checkpoint(version, uid, checkpoint_dirs)
+        if f is None:
             continue
         data = json.loads(f.read_text())
         all_preds.extend(data.get("predictions", []))
@@ -146,10 +165,10 @@ def compute_binary_metrics(
 # ---------------------------------------------------------------------------
 
 def evaluate_version(
-    version: str, checkpoint_dir: Path
+    version: str, checkpoint_dirs: list[Path]
 ) -> dict:
     """Compute all metrics for a single version."""
-    preds, gts = load_checkpoints(version, checkpoint_dir)
+    preds, gts = load_checkpoints(version, checkpoint_dirs)
     if not preds:
         return {"n_entries": 0, "available": False}
 
@@ -266,26 +285,31 @@ def print_summary_table(all_results: dict[str, dict]) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Evaluate pilot study results")
     parser.add_argument(
-        "--checkpoint-dir",
-        default="outputs/pilot/checkpoints",
-        help="Directory containing checkpoint JSON files",
+        "--checkpoint-dirs",
+        nargs="+",
+        default=None,
+        help="Checkpoint directories (searched in order, first match wins)",
     )
     parser.add_argument(
         "--output",
-        default="outputs/pilot/evaluation.json",
+        default="outputs/pilot_v2/evaluation.json",
         help="Where to save evaluation results JSON",
     )
     args = parser.parse_args()
 
-    cp_dir = Path(args.checkpoint_dir)
+    if args.checkpoint_dirs:
+        cp_dirs = [Path(d) for d in args.checkpoint_dirs]
+    else:
+        cp_dirs = [Path(d) for d in DEFAULT_CHECKPOINT_DIRS]
     output_path = Path(args.output)
 
-    print(f"Evaluating from: {cp_dir}")
+    print(f"Evaluating from: {[str(d) for d in cp_dirs]}")
+    print(f"Users: {PILOT_USERS} ({len(PILOT_USERS)} participants)")
 
     all_results: dict[str, dict] = {}
     for version in VERSIONS:
         print(f"  {version}...", end=" ", flush=True)
-        r = evaluate_version(version, cp_dir)
+        r = evaluate_version(version, cp_dirs)
         all_results[version] = r
         if r.get("available"):
             n = r["n_entries"]

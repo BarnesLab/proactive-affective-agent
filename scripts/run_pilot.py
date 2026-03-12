@@ -39,11 +39,15 @@ from src.simulation.simulator import PilotSimulator
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run the pilot study: CALLM vs V1 vs V2 vs V3 vs V4"
+        description="Run the pilot study: CALLM vs V1 vs V2 vs V3 vs V4 vs V5 vs V6"
     )
     parser.add_argument(
         "--version", type=str, default="all",
-        help="Which version to run: callm, v1, v2, v3, v4, or all (default: all)"
+        help=(
+            "Which version to run: callm,v1,v2,v3,v4,(v5,v6), "
+            "gpt-callm,gpt-v1,gpt-v2,gpt-v3,gpt-v4,(gpt-v5,gpt-v6), "
+            "or all/gpt-all (default: all)"
+        ),
     )
     parser.add_argument(
         "--users", type=str, default=None,
@@ -59,7 +63,7 @@ def main():
     )
     parser.add_argument(
         "--model", type=str, default="sonnet",
-        help="Claude model to use (default: sonnet)"
+        help="Model name (Claude alias for Claude versions, OpenAI model for gpt-* versions)"
     )
     parser.add_argument(
         "--delay", type=float, default=2.0,
@@ -89,7 +93,9 @@ def main():
 
     # Parse versions
     if args.version == "all":
-        versions = ["callm", "v1", "v2", "v3", "v4"]
+        versions = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
+    elif args.version == "gpt-all":
+        versions = ["gpt-callm", "gpt-v1", "gpt-v2", "gpt-v3", "gpt-v4", "gpt-v5", "gpt-v6"]
     else:
         versions = [v.strip() for v in args.version.split(",")]
 
