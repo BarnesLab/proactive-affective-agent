@@ -1020,6 +1020,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
     <div class="nav-tab active" onclick="switchPage('overview')">Overview</div>
     <div class="nav-tab" onclick="switchPage('methodology')">Methodology</div>
     <div class="nav-tab" onclick="switchPage('analysis')">Per-User Analysis</div>
+    <div class="nav-tab" onclick="switchPage('learning')">Learning Curve</div>
   </div>
   <div class="header-stats" id="headerStats"></div>
 </div>
@@ -1551,6 +1552,65 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helv
   </div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- LEARNING CURVE PAGE -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-learning" style="padding:24px 32px;">
+  <h2 style="margin-bottom:4px;">Learning Curve — Rolling Balanced Accuracy Over Time</h2>
+  <p style="color:var(--text-muted);margin-bottom:16px;font-size:13px;">
+    Do agentic versions improve as they learn user patterns via memory? X-axis = per-user entry index
+    (aligned across users). Rolling BA computed within each window, pooling all users at each index.
+    Click legend items to show/hide versions.
+  </p>
+
+  <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label style="color:var(--text-muted);font-size:12px;">User</label>
+      <select id="lcUser" onchange="renderLearningCurve()" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;">
+        <option value="all" selected>All Users (aggregated)</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label style="color:var(--text-muted);font-size:12px;">Metric</label>
+      <select id="lcMetric" onchange="renderLearningCurve()" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;">
+        <optgroup label="Balanced Accuracy">
+          <option value="mean_ba" selected>Mean BA (all binary states)</option>
+          <option value="ba_happy">BA — Happy</option>
+          <option value="ba_PA">BA — Positive Affect</option>
+          <option value="ba_NA">BA — Negative Affect</option>
+          <option value="ba_sad">BA — Sad</option>
+          <option value="ba_worried">BA — Worried</option>
+          <option value="ba_INT_availability">BA — INT Availability</option>
+          <option value="ba_ER_desire">BA — ER Desire (≥5)</option>
+        </optgroup>
+        <optgroup label="Continuous (Rolling MAE)">
+          <option value="mae_PANAS_Pos">MAE — PANAS Positive</option>
+          <option value="mae_PANAS_Neg">MAE — PANAS Negative</option>
+          <option value="mae_ER_desire">MAE — ER Desire</option>
+        </optgroup>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label style="color:var(--text-muted);font-size:12px;">Window</label>
+      <input type="range" id="lcWindow" min="3" max="30" value="10" oninput="document.getElementById('lcWindowVal').textContent=this.value;renderLearningCurve()" style="width:100px;">
+      <span id="lcWindowVal" style="color:var(--text-primary);font-size:12px;min-width:20px;">10</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label style="color:var(--text-muted);font-size:12px;">Max X</label>
+      <input type="number" id="lcMaxX" value="60" min="10" max="200" step="5" onchange="renderLearningCurve()" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:12px;width:60px;">
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label style="color:var(--text-muted);font-size:12px;">
+        <input type="checkbox" id="lcShowAR" onchange="renderLearningCurve()" checked> AR baseline (BA=0.658)
+      </label>
+    </div>
+  </div>
+
+  <div style="position:relative;height:calc(100vh - 220px);width:100%;">
+    <canvas id="learningChart"></canvas>
+  </div>
+</div>
+
 <script>
 // ── Data ─────────────────────────────────────────────────────────────────
 const DATA = {data_json};
@@ -1575,16 +1635,19 @@ let currentPage = 'overview';
 function switchPage(page) {{
   currentPage = page;
   document.querySelectorAll('.nav-tab').forEach((t, i) => {{
-    const pages = ['overview', 'methodology', 'analysis'];
+    const pages = ['overview', 'methodology', 'analysis', 'learning'];
     t.classList.toggle('active', pages[i] === page);
   }});
   document.getElementById('page-overview').classList.toggle('active', page === 'overview');
   document.getElementById('page-methodology').classList.toggle('active', page === 'methodology');
   document.getElementById('page-analysis').classList.toggle('active', page === 'analysis');
+  document.getElementById('page-learning').classList.toggle('active', page === 'learning');
 
-  // Re-init mermaid when methodology page shown
   if (page === 'methodology') {{
     setTimeout(() => mermaid.run(), 100);
+  }}
+  if (page === 'learning') {{
+    setTimeout(() => renderLearningCurve(), 100);
   }}
 }}
 
@@ -2373,6 +2436,264 @@ function errBadge(pred, gt) {{
   return `<span style="font-size:9px;color:${{color}}">+/-${{err}}</span>`;
 }}
 
+// ── Learning Curve ───────────────────────────────────────────────────────
+let learningChart = null;
+const BINARY_STATE_KEYS = ['happy', 'PA', 'NA', 'sad', 'worried'];
+const BINARY_STATE_FULL = [...BINARY_STATE_KEYS.map(s => 'Individual_level_' + s + '_State'), 'INT_availability'];
+const AR_BASELINE_BA = 0.658;
+
+function initLearningCurve() {{
+  const sel = document.getElementById('lcUser');
+  if (!sel) return;
+  USERS.forEach(uid => {{
+    const opt = document.createElement('option');
+    opt.value = uid;
+    opt.textContent = `User ${{uid}} (${{(DATA[uid] || []).length}} entries)`;
+    sel.appendChild(opt);
+  }});
+}}
+
+// Balanced accuracy: (TPR + TNR) / 2
+function computeBA(pairs) {{
+  let tp = 0, fn = 0, tn = 0, fp = 0;
+  pairs.forEach(({{gt, pred}}) => {{
+    if (gt && pred) tp++;
+    else if (gt && !pred) fn++;
+    else if (!gt && pred) fp++;
+    else tn++;
+  }});
+  if (tp + fn === 0 && tn + fp === 0) return null;
+  if (tp + fn === 0) return tn / (tn + fp);  // no positive class
+  if (tn + fp === 0) return tp / (tp + fn);  // no negative class
+  return (tp / (tp + fn) + tn / (tn + fp)) / 2;
+}}
+
+function computeLearningCurve(uid, metric, windowSize, maxX) {{
+  const isBA = metric === 'mean_ba' || metric.startsWith('ba_');
+  const isMAE = metric.startsWith('mae_');
+  const allUserIds = uid === 'all' ? USERS : [Number(uid)];
+
+  // Organize data by per-user entry index (aligned across users)
+  // versionByIdx[v][entryIdx] = [{{gt: {{}}, pred: {{}} }}, ...] (one per user at that index)
+  const versionByIdx = {{}};
+  VERSIONS.forEach(v => {{ versionByIdx[v] = {{}}; }});
+
+  allUserIds.forEach(u => {{
+    const entries = DATA[u] || [];
+    const vSeq = {{}};
+    VERSIONS.forEach(v => {{ vSeq[v] = 0; }});
+
+    entries.forEach(e => {{
+      VERSIONS.forEach(v => {{
+        if (!e.versions[v]?.prediction) return;
+        const idx = vSeq[v];
+        vSeq[v]++;
+        if (idx > maxX) return;
+        if (!versionByIdx[v][idx]) versionByIdx[v][idx] = [];
+        versionByIdx[v][idx].push({{
+          gt: e.ground_truth || {{}},
+          pred: e.versions[v].prediction,
+        }});
+      }});
+    }});
+  }});
+
+  const series = {{}};
+
+  VERSIONS.forEach(v => {{
+    const rolling = [];
+    for (let i = 0; i <= maxX; i++) {{
+      // Expanding window for early entries, then fixed rolling window
+      const winStart = Math.max(0, i - windowSize + 1);
+      if (isBA) {{
+        if (metric === 'mean_ba') {{
+          // Mean BA across all binary states in this window
+          const stateBAs = [];
+          BINARY_STATE_FULL.forEach(key => {{
+            const pairs = [];
+            for (let j = winStart; j <= i; j++) {{
+              (versionByIdx[v][j] || []).forEach(({{gt, pred}}) => {{
+                const gv = gt[key]; const pv = pred[key];
+                if (gv != null && pv != null) pairs.push({{gt: !!gv, pred: !!pv}});
+              }});
+            }}
+            if (pairs.length >= 2) {{
+              const ba = computeBA(pairs);
+              if (ba !== null) stateBAs.push(ba);
+            }}
+          }});
+          if (stateBAs.length >= 2) {{
+            rolling.push({{ x: i, y: stateBAs.reduce((s, v) => s + v, 0) / stateBAs.length }});
+          }}
+        }} else {{
+          // Single binary state BA
+          const rawKey = metric.replace('ba_', '');
+          const isERDesire = rawKey === 'ER_desire';
+          const stateKey = (rawKey === 'INT_availability' || isERDesire)
+            ? rawKey
+            : 'Individual_level_' + rawKey + '_State';
+          const pairs = [];
+          for (let j = winStart; j <= i; j++) {{
+            (versionByIdx[v][j] || []).forEach(({{gt, pred}}) => {{
+              const gv = gt[stateKey]; const pv = pred[stateKey];
+              if (gv == null || pv == null) return;
+              if (isERDesire) {{
+                pairs.push({{gt: Number(gv) >= 5, pred: Number(pv) >= 5}});
+              }} else {{
+                pairs.push({{gt: !!gv, pred: !!pv}});
+              }}
+            }});
+          }}
+          if (pairs.length >= 2) {{
+            const ba = computeBA(pairs);
+            if (ba !== null) rolling.push({{ x: i, y: ba }});
+          }}
+        }}
+      }} else if (isMAE) {{
+        // Continuous rolling MAE
+        const contKey = metric.replace('mae_', '');
+        const errors = [];
+        for (let j = winStart; j <= i; j++) {{
+          (versionByIdx[v][j] || []).forEach(({{gt, pred}}) => {{
+            const gv = gt[contKey]; const pv = pred[contKey];
+            if (gv != null && pv != null) errors.push(Math.abs(gv - pv));
+          }});
+        }}
+        if (errors.length >= 2) {{
+          rolling.push({{ x: i, y: errors.reduce((s, v) => s + v, 0) / errors.length }});
+        }}
+      }}
+    }}
+    series[v] = rolling;
+  }});
+
+  return {{ series, isBA }};
+}}
+
+function renderLearningCurve() {{
+  const canvas = document.getElementById('learningChart');
+  if (!canvas) return;
+
+  // Preserve legend hidden state before destroying
+  const hiddenState = {{}};
+  if (learningChart) {{
+    learningChart.data.datasets.forEach((ds, i) => {{
+      const meta = learningChart.getDatasetMeta(i);
+      if (meta.hidden) hiddenState[ds.label] = true;
+    }});
+    learningChart.destroy();
+    learningChart = null;
+  }}
+
+  const uid = document.getElementById('lcUser').value;
+  const metric = document.getElementById('lcMetric').value;
+  const windowSize = parseInt(document.getElementById('lcWindow').value) || 10;
+  const maxX = parseInt(document.getElementById('lcMaxX').value) || 60;
+  const showAR = document.getElementById('lcShowAR').checked;
+  const isBA = metric === 'mean_ba' || metric.startsWith('ba_');
+
+  const {{ series }} = computeLearningCurve(uid, metric, windowSize, maxX);
+
+  const datasets = [];
+
+  VERSIONS.forEach(v => {{
+    const pts = series[v];
+    if (!pts || pts.length === 0) return;
+    datasets.push({{
+      label: VERSION_LABELS[v],
+      data: pts,
+      borderColor: VERSION_COLORS[v],
+      backgroundColor: VERSION_COLORS[v] + '33',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    }});
+  }});
+
+  // AR baseline horizontal line
+  if (showAR && isBA) {{
+    datasets.push({{
+      label: 'AR baseline',
+      data: [{{ x: 0, y: AR_BASELINE_BA }}, {{ x: maxX, y: AR_BASELINE_BA }}],
+      borderColor: '#f0f6fc55',
+      borderWidth: 1.5,
+      borderDash: [8, 4],
+      pointRadius: 0,
+      fill: false,
+    }});
+  }}
+
+  const yLabel = isBA ? 'Rolling Balanced Accuracy' : 'Rolling MAE';
+
+  learningChart = new Chart(canvas, {{
+    type: 'line',
+    data: {{ datasets }},
+    options: {{
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {{ mode: 'index', intersect: false }},
+      plugins: {{
+        legend: {{
+          labels: {{
+            color: '#8b949e',
+            font: {{ size: 12 }},
+            boxWidth: 14,
+          }},
+        }},
+        tooltip: {{
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#f0f6fc',
+          bodyColor: '#c9d1d9',
+          bodyFont: {{ size: 11 }},
+          callbacks: {{
+            title: items => `Entry index #${{items[0].parsed.x}}`,
+            label: item => {{
+              if (item.dataset.label === 'AR baseline') return 'AR baseline: ' + (AR_BASELINE_BA * 100).toFixed(1) + '%';
+              const val = item.parsed.y;
+              return `${{item.dataset.label}}: ${{isBA ? (val * 100).toFixed(1) + '%' : val.toFixed(2)}}`;
+            }}
+          }},
+        }},
+      }},
+      scales: {{
+        x: {{
+          type: 'linear',
+          min: 0,
+          max: maxX,
+          title: {{ display: true, text: 'Per-user entry index (chronological)', color: '#8b949e', font: {{ size: 11 }} }},
+          ticks: {{ color: '#8b949e', font: {{ size: 10 }} }},
+          grid: {{ color: '#21262d' }},
+        }},
+        y: {{
+          title: {{ display: true, text: yLabel, color: '#8b949e', font: {{ size: 11 }} }},
+          ticks: {{
+            color: '#8b949e',
+            font: {{ size: 10 }},
+            callback: val => isBA ? (val * 100).toFixed(0) + '%' : val.toFixed(1),
+          }},
+          grid: {{ color: '#21262d' }},
+          ...(isBA ? {{ suggestedMin: 0.4, suggestedMax: 0.85 }} : {{}}),
+        }}
+      }}
+    }}
+  }});
+
+  // Restore legend hidden state
+  if (Object.keys(hiddenState).length > 0) {{
+    learningChart.data.datasets.forEach((ds, i) => {{
+      if (hiddenState[ds.label]) {{
+        learningChart.getDatasetMeta(i).hidden = true;
+      }}
+    }});
+    learningChart.update('none');
+  }}
+}}
+
+initLearningCurve();
 init();
 </script>
 </body>
