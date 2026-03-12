@@ -19,8 +19,14 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PILOT_DIR = PROJECT_ROOT / "outputs" / "pilot"
+# Search pilot_v2 first (primary), then pilot (legacy)
+PILOT_DIRS = [
+    PROJECT_ROOT / "outputs" / "pilot_v2",
+    PROJECT_ROOT / "outputs" / "pilot",
+]
+PILOT_DIR = PILOT_DIRS[0]  # default for output paths
 
+PILOT_USERS = {43, 71, 119, 164, 258, 275, 310, 338, 362, 399, 403, 437, 458, 513}
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 VERSION_LABELS = {
     "callm": "CALLM",
@@ -54,18 +60,32 @@ RESPONSE_TRUNCATE = 5000
 def load_all_records() -> dict:
     """Load all JSONL records, group by user_id, merge across versions.
 
+    Scans PILOT_DIRS in order; pilot_v2 records take precedence over pilot.
     Returns dict: {user_id: {entry_idx: {date, slot, ground_truth, versions: {ver: record}}}}
     """
     users = {}
-    files = sorted(PILOT_DIR.glob("*_records.jsonl"))
+    # Collect files from all pilot dirs; dedup by (version_lower, uid) — first dir wins
+    seen_keys = set()
+    files = []
+    for pdir in PILOT_DIRS:
+        for f in sorted(pdir.glob("*_records.jsonl")):
+            m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", f.name, re.IGNORECASE)
+            if not m:
+                continue
+            key = (m.group(1).lower(), m.group(2))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                files.append(f)
     total = 0
 
     for fpath in files:
-        m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name)
+        m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name, re.IGNORECASE)
         if not m:
             continue
-        version = m.group(1)
+        version = m.group(1).lower()
         user_id = int(m.group(2))
+        if user_id not in PILOT_USERS:
+            continue
 
         if user_id not in users:
             users[user_id] = {}
@@ -145,15 +165,31 @@ def load_v5v6_checkpoints(users: dict) -> dict:
     """Load V5/V6 checkpoint data and merge into users dict.
 
     V5/V6 only have checkpoint files (no JSONL records), so we
-    convert them to the same record format.
+    convert them to the same record format. Scans all PILOT_DIRS.
     """
-    pilot_users = [71, 119, 164, 310, 458]
+    # Collect all user IDs from all checkpoint dirs
+    all_uids = set()
+    for pdir in PILOT_DIRS:
+        cp_dir = pdir / "checkpoints"
+        if cp_dir.exists():
+            for f in cp_dir.glob("v[56]_user*_checkpoint.json"):
+                m = re.match(r"v[56]_user(\d+)_checkpoint\.json", f.name)
+                if m:
+                    uid = int(m.group(1))
+                    if uid in PILOT_USERS:
+                        all_uids.add(uid)
     added = 0
 
     for ver in ["v5", "v6"]:
-        for uid in pilot_users:
-            cp_path = PILOT_DIR / "checkpoints" / f"{ver}_user{uid}_checkpoint.json"
-            if not cp_path.exists():
+        for uid in sorted(all_uids):
+            # Find checkpoint across dirs (first match wins)
+            cp_path = None
+            for pdir in PILOT_DIRS:
+                candidate = pdir / "checkpoints" / f"{ver}_user{uid}_checkpoint.json"
+                if candidate.exists():
+                    cp_path = candidate
+                    break
+            if cp_path is None:
                 continue
 
             data = json.loads(cp_path.read_text())
@@ -244,36 +280,39 @@ def load_v5v6_checkpoints(users: dict) -> dict:
 
 
 def load_evaluation() -> dict:
-    """Load evaluation.json for aggregate metrics."""
-    eval_path = PILOT_DIR / "evaluation.json"
-    if eval_path.exists():
-        return json.loads(eval_path.read_text())
+    """Load evaluation.json for aggregate metrics (check all dirs)."""
+    for pdir in PILOT_DIRS:
+        eval_path = pdir / "evaluation.json"
+        if eval_path.exists():
+            return json.loads(eval_path.read_text())
     return {}
 
 
 def load_token_stats() -> dict:
-    """Load token stats from trace files."""
-    traces_dir = PILOT_DIR / "traces"
+    """Load token stats from trace files (all dirs)."""
     stats = {}
-    if not traces_dir.exists():
-        return stats
 
-    for f in traces_dir.glob("*.json"):
-        parts = f.stem.split("_")
-        ver = parts[0]
-        try:
-            data = json.loads(f.read_text())
-            inp = data.get("_input_tokens", 0) or 0
-            out = data.get("_output_tokens", 0) or 0
-            if inp > 0:
-                if ver not in stats:
-                    stats[ver] = {"input": 0, "output": 0, "count": 0, "calls": 0}
-                stats[ver]["input"] += inp
-                stats[ver]["output"] += out
-                stats[ver]["count"] += 1
-                stats[ver]["calls"] += data.get("_llm_calls", 1) or 1
-        except Exception:
-            pass
+    for pdir in PILOT_DIRS:
+        traces_dir = pdir / "traces"
+        if not traces_dir.exists():
+            continue
+
+        for f in traces_dir.glob("*.json"):
+            parts = f.stem.split("_")
+            ver = parts[0]
+            try:
+                data = json.loads(f.read_text())
+                inp = data.get("_input_tokens", 0) or 0
+                out = data.get("_output_tokens", 0) or 0
+                if inp > 0:
+                    if ver not in stats:
+                        stats[ver] = {"input": 0, "output": 0, "count": 0, "calls": 0}
+                    stats[ver]["input"] += inp
+                    stats[ver]["output"] += out
+                    stats[ver]["count"] += 1
+                    stats[ver]["calls"] += data.get("_llm_calls", 1) or 1
+            except Exception:
+                pass
 
     return stats
 
@@ -282,12 +321,23 @@ def load_elapsed_stats() -> dict:
     """Load elapsed time stats from JSONL records and V5/V6 results files."""
     stats = {}
 
-    # From JSONL records (CALLM, V1-V4)
-    for fpath in sorted(PILOT_DIR.glob("*_records.jsonl")):
-        m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name)
+    # From JSONL records (CALLM, V1-V4) across all dirs
+    all_record_files = []
+    seen_keys = set()
+    for pdir in PILOT_DIRS:
+        for f in sorted(pdir.glob("*_records.jsonl")):
+            m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", f.name, re.IGNORECASE)
+            if not m:
+                continue
+            key = (m.group(1).lower(), m.group(2))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                all_record_files.append(f)
+    for fpath in all_record_files:
+        m = re.match(r"^(\w+)_user(\d+)_records\.jsonl$", fpath.name, re.IGNORECASE)
         if not m:
             continue
-        ver = m.group(1)
+        ver = m.group(1).lower()
         if ver not in stats:
             stats[ver] = {"total": 0, "count": 0, "max": 0}
 
