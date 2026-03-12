@@ -202,37 +202,26 @@ def load_v5v6_checkpoints(users: dict) -> dict:
 
             for i, (pred, gt) in enumerate(zip(preds, gts)):
                 meta = metadata[i] if i < len(metadata) else {}
-                ts = meta.get("timestamp_local", "")
-                date_str = ts.split(" ")[0] if ts else ""
-                # Determine slot from timestamp
-                slot = "unknown"
-                if ts:
-                    try:
-                        hour = int(ts.split(" ")[1].split(":")[0])
-                        if hour < 12:
-                            slot = "morning"
-                        elif hour < 17:
-                            slot = "afternoon"
-                        else:
-                            slot = "evening"
-                    except (IndexError, ValueError):
-                        pass
 
-                # Find matching entry_idx or create new
-                entry_idx = None
-                for idx, entry in users[uid].items():
-                    if entry.get("timestamp", "").startswith(ts[:16] if ts else "NONE"):
-                        entry_idx = idx
-                        break
-                    if entry.get("date") == date_str and entry.get("slot") == slot:
-                        # Check if this entry already has this version
-                        if ver not in entry.get("versions", {}):
-                            entry_idx = idx
-                            break
+                # Match by entry_idx from metadata (pilot_v2) or loop index
+                entry_idx = meta.get("entry_idx", i)
 
-                if entry_idx is None:
-                    # Create new entry
-                    entry_idx = max(users[uid].keys(), default=-1) + 1
+                if entry_idx not in users[uid]:
+                    # Entry not yet created by JSONL records — create it
+                    ts = meta.get("timestamp_local", "")
+                    date_str = meta.get("date", "") or (ts.split(" ")[0] if ts else "")
+                    slot = "unknown"
+                    if ts:
+                        try:
+                            hour = int(ts.split(" ")[1].split(":")[0])
+                            if hour < 12:
+                                slot = "morning"
+                            elif hour < 17:
+                                slot = "afternoon"
+                            else:
+                                slot = "evening"
+                        except (IndexError, ValueError):
+                            pass
                     users[uid][entry_idx] = {
                         "date": date_str,
                         "timestamp": ts,
