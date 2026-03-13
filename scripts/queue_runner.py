@@ -36,7 +36,8 @@ LOG_DIR = PILOT_DIR / "queue_logs"
 
 ALL_VERSIONS = ["CALLM", "v1", "v2", "v3", "v4", "v5", "v6"]
 AGENTIC_VERSIONS = {"v2", "v4", "v5", "v6"}  # set for fast lookup
-USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437]
+# pilot_v2 (original 10) + pilot_v1 users with 3+ versions (5 new)
+USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437, 24, 119, 164, 310, 458]
 
 logging.basicConfig(
     level=logging.INFO,
