@@ -34,8 +34,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 DEFAULT_MODEL = "gpt-5.1-codex-mini"
 
-# Match Claude pilot_v2 users exactly
-USERS = [43, 71, 258, 275, 338, 362, 399, 403, 437, 513]
+# Match all Claude users with 3+ versions completed (pilot_v2 + pilot v1)
+# pilot_v2 (7ver): 43, 71, 258, 275, 338, 362, 399, 403, 437, 513
+# pilot_v1 (3-5ver): 24, 119, 164, 310, 458
+USERS = [43, 71, 258, 275, 338, 362, 399, 403, 437, 513, 24, 119, 164, 310, 458]
 ALL_VERSIONS = ["gpt-callm", "gpt-v1", "gpt-v2", "gpt-v3", "gpt-v4", "gpt-v5", "gpt-v6"]
 
 logging.basicConfig(
