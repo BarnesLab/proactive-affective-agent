@@ -134,29 +134,31 @@ Smartphone-based passive sensing has emerged as a scalable approach to mental he
 
 The GLOBEM benchmark~\cite{xu2023globem} systematized evaluation of longitudinal behavior modeling across multiple sensing datasets, revealing that cross-dataset generalization remains a major challenge. Most approaches use traditional ML models (random forests, XGBoost, logistic regression) on hand-crafted daily aggregate features, achieving moderate performance on binary classification tasks (balanced accuracy typically 0.55--0.65 for depression detection). Deep learning approaches, including LSTMs and transformers, have shown marginal improvements on individual datasets but often fail to generalize~\cite{adler2024sensing}.
 
+Recent work has emphasized the importance of \emph{personalization} and \emph{temporal dynamics}. Pedrelli et al.~\cite{pedrelli2024temporal} showed in a large longitudinal study ($n$=1,013) that the temporal scale and person-specificity of sensor-symptom associations matter significantly for prediction. Nickels et al.~\cite{nickels2025personalized} demonstrated that personalized models consistently outperform population-level models for predicting negative affect in individuals with serious mental illness, using year-long multimodal mobile phenotyping. Foundation models for wearable data are also emerging: NormWear~\cite{luo2025normwear} pre-trained on 14,943 hours of multimodal physiological signals and achieved zero-shot transfer across mental health and well-being tasks.
+
 A persistent limitation of this literature is the \emph{feature engineering bottleneck}: sensor data is reduced to fixed statistical summaries (daily means, counts, durations) that discard temporal dynamics and contextual information. Our work addresses this by using LLM agents that can query raw hourly sensor data and reason about temporal patterns, anomalies, and cross-modal consistency.
 
 \subsection{Just-in-Time Adaptive Interventions}
 
-JITAIs deliver interventions at moments of both need and opportunity~\cite{nahum2018jitai}. The micro-randomized trial (MRT) design~\cite{klasnja2015mrt} provides a principled framework for evaluating JITAI components, and has been applied to physical activity (HeartSteps), smoking cessation (Sense2Stop~\cite{battalio2021sense2stop}), and stress management. A critical component of any JITAI is the \emph{decision rule}: when should the system intervene?
+JITAIs deliver interventions at moments of both need and opportunity~\cite{nahum2018jitai}. The most recent comprehensive review by Nahum-Shani and Murphy~\cite{nahumshani2026jitai_review} surveys the current state and future directions of JITAI design. The micro-randomized trial (MRT) design~\cite{klasnja2015mrt} provides a principled framework for evaluating JITAI components, and has been applied to physical activity (HeartSteps), smoking cessation (Sense2Stop~\cite{battalio2021sense2stop}), and stress management. Digital interventions for cancer patients and survivors have also shown promise in recent meta-analyses~\cite{digital_cancer_mh2025}. A critical component of any JITAI is the \emph{decision rule}: when should the system intervene?
 
-Receptivity to intervention has been studied as a distinct construct. Mishra et al.~\cite{mishra2021receptivity} found that contextual factors (time, location, activity) predict notification engagement in the natural environment. Kunzler et al.~\cite{kunzler2019receptivity} conducted a systematic exploration of ``state-of-receptivity,'' finding that time of day, social context, and current activity are key moderators. However, most receptivity prediction work focuses on \emph{notification engagement} (did the user open the notification?) rather than the more nuanced question we address: \emph{does the user want emotional support and are they available to engage with it?}
+Receptivity to intervention has been studied as a distinct construct. Mishra et al.~\cite{mishra2021receptivity} found that contextual factors (time, location, activity) predict notification engagement in the natural environment. Kunzler et al.~\cite{kunzler2019receptivity} conducted a systematic exploration of ``state-of-receptivity,'' finding that time of day, social context, and current activity are key moderators. Recent work has shown that using ML-based receptivity models to trigger EMAs can decrease reported negative affect~\cite{receptivity_affect_ml2024}. However, most receptivity prediction work focuses on \emph{notification engagement} (did the user open the notification?) rather than the more nuanced question we address: \emph{does the user want emotional support and are they available to engage with it?}
 
 Our formulation of \emph{intervention opportunity} as the conjunction of desire and availability is grounded in prior work showing that these constructs are separable and independently informative~\cite{gross2015emotion_regulation}. An individual may desire emotional regulation support but be unavailable (e.g., driving), or be available but have no current need. Predicting both simultaneously enables more precise intervention timing.
 
 \subsection{LLMs for Affective Computing}
 
-The application of large language models to affective computing has accelerated rapidly. Early work by Amin et al.~\cite{amin2023llm_ema} evaluated ChatGPT's zero-shot emotion recognition capabilities, finding competitive performance on standard benchmarks. Yang et al.~\cite{yang2024llm_mental} demonstrated that LLMs can provide interpretable mental health assessments from social media text, with performance approaching specialized classifiers.
+The application of large language models to affective computing has accelerated rapidly. A recent comprehensive survey~\cite{zhang2024affective_llm_survey} covers the landscape of LLM-based affective understanding and generation, while Amin et al.~\cite{amin2025affective_fm} argue that foundation models have fundamentally disrupted affective computing across vision, language, and speech modalities. Early empirical work by Amin et al.~\cite{amin2023llm_ema} evaluated ChatGPT's zero-shot emotion recognition capabilities, finding competitive performance on standard benchmarks. Yang et al.~\cite{yang2024llm_mental} demonstrated that LLMs can provide interpretable mental health assessments from social media text, with performance approaching specialized classifiers.
 
-More relevant to our work, Xu et al.~\cite{xu2024mentalllm} introduced Mental-LLM, which fine-tunes language models on mental health prediction tasks using online text data, achieving state-of-the-art results on depression and stress detection. Kim et al.~\cite{kim2024health_llm} proposed Health-LLM, which uses LLMs to reason about wearable sensor data for health prediction, demonstrating that natural language descriptions of sensor patterns enable LLMs to make clinically meaningful predictions. Zhang et al.~\cite{zhang2024llm_sensing} further explored ``penetrative AI''---making LLMs comprehend physical world data including sensor streams.
+More relevant to our work, Xu et al.~\cite{xu2024mentalllm} introduced Mental-LLM, which fine-tunes language models on mental health prediction tasks using online text data, achieving state-of-the-art results on depression and stress detection. Kim et al.~\cite{kim2024health_llm} proposed Health-LLM, which uses LLMs to reason about wearable sensor data for health prediction, demonstrating that natural language descriptions of sensor patterns enable LLMs to make clinically meaningful predictions. Sprint et al.~\cite{sprint2025cogprog} developed CogProg, using LLMs to forecast in-the-moment EMA responses (stress, fatigue, mental sharpness)---the task most similar to ours. Xu et al.~\cite{xu2025lens} proposed LENS, which synthesizes multimodal sensing data into natural language narratives for mental health assessment by aligning sensor representations with LLM embeddings.
 
-Our work extends this line by introducing \emph{agentic} LLM reasoning for affective computing: rather than receiving all sensor data as a pre-formatted text prompt, the agent autonomously decides which data to examine using tool-use, enabling selective investigation of the most informative signals.
+Most directly relevant, Zhang et al.~\cite{zhang2024llm_affect_sensing} presented the first work using LLMs (Gemini 1.5 Pro) for affective state prediction from smartphone sensor features via zero-shot and few-shot prompting, evaluated on $\sim$150 university students. Our work extends this line in three key ways: (1) we use \emph{agentic} tool-use rather than pre-formatted prompts, enabling selective investigation; (2) we evaluate on a clinical population (cancer survivors) with 8 sensing modalities at hourly resolution; and (3) we systematically compare agentic vs.\ structured approaches through a factorial design.
 
 \subsection{Agentic AI and Tool-Use}
 
-The agentic AI paradigm---where LLMs autonomously use tools to complete tasks---has emerged as a major research direction. Yao et al.~\cite{yao2023react} introduced ReAct, which interleaves reasoning and acting in language models, enabling multi-step problem solving. Schick et al.~\cite{schick2024toolformer} demonstrated that language models can learn to use external tools (calculators, search engines, APIs) to augment their capabilities. Park et al.~\cite{park2023generative} created generative agents that simulate human behavior through tool-augmented reasoning and persistent memory.
+The agentic AI paradigm---where LLMs autonomously use tools to complete tasks---has emerged as a major research direction. A comprehensive survey by Wang et al.~\cite{wang2024agent_survey} proposed a unified framework for LLM-based autonomous agents comprising profile, memory, planning, and action modules. Yao et al.~\cite{yao2023react} introduced ReAct, which interleaves reasoning and acting in language models, enabling multi-step problem solving. Schick et al.~\cite{schick2024toolformer} demonstrated that language models can learn to use external tools (calculators, search engines, APIs) to augment their capabilities. Park et al.~\cite{park2023generative} created generative agents that simulate human behavior through tool-augmented reasoning and persistent memory.
 
-The Model Context Protocol (MCP)~\cite{anthropic2024mcp} provides a standardized interface for connecting LLMs to external data sources and tools, enabling modular tool integration. We leverage MCP to expose 8 sensing query tools to our agentic agents, allowing them to autonomously investigate behavioral data through a structured API.
+The Model Context Protocol (MCP)~\cite{anthropic2024mcp} provides a standardized interface for connecting LLMs to external data sources and tools, enabling modular tool integration. We leverage MCP to expose 8 sensing query tools to our agentic agents, allowing them to autonomously investigate behavioral data through a structured API. In the health domain, Merrill et al.~\cite{merrill2025phia} introduced PHIA, an LLM agent that uses multi-step reasoning with code generation to analyze wearable health data, achieving 84\% accuracy on numerical health questions---validating the agentic paradigm for health data analysis.
 
 Retrieval-augmented generation (RAG)~\cite{lewis2020rag} has proven effective for grounding LLM outputs in factual evidence. In our system, cross-user RAG serves a distinct purpose: rather than retrieving factual knowledge, we retrieve \emph{calibration anchors}---similar cases from other participants with known outcomes---to help the agent calibrate its predictions against population-level data.
 
@@ -168,17 +170,20 @@ Existing work has established that (1) passive sensing correlates with mental he
 \caption{Positioning of our work relative to prior approaches for affect prediction from passive data.}
 \label{tab:positioning}
 \small
-\begin{tabular}{lccccc}
+\begin{tabular}{lcccccc}
 \toprule
-\textbf{Approach} & \textbf{Passive} & \textbf{LLM} & \textbf{Agentic} & \textbf{Diary} & \textbf{RAG} \\
+\textbf{Approach} & \textbf{Passive} & \textbf{LLM} & \textbf{Agentic} & \textbf{Diary} & \textbf{RAG} & \textbf{Clinical} \\
 \midrule
-Traditional ML~\cite{xu2023globem} & \checkmark & & & & \\
-CALLM~\cite{wang2026callm} & & \checkmark & & \checkmark & \checkmark \\
-Health-LLM~\cite{kim2024health_llm} & \checkmark & \checkmark & & & \\
-Mental-LLM~\cite{xu2024mentalllm} & & \checkmark & & \checkmark & \\
-\textbf{\sysshort{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark$^*$ & \checkmark \\
+Traditional ML~\cite{xu2023globem} & \checkmark & & & & & \\
+CALLM~\cite{wang2026callm} & & \checkmark & & \checkmark & \checkmark & \checkmark \\
+Health-LLM~\cite{kim2024health_llm} & \checkmark & \checkmark & & & & \\
+Mental-LLM~\cite{xu2024mentalllm} & & \checkmark & & \checkmark & & \\
+Zhang et al.~\cite{zhang2024llm_affect_sensing} & \checkmark & \checkmark & & & & \\
+PHIA~\cite{merrill2025phia} & \checkmark & \checkmark & \checkmark & & & \\
+LENS~\cite{xu2025lens} & \checkmark & \checkmark & & & & \\
+\textbf{\sysshort{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark$^*$ & \checkmark & \checkmark \\
 \bottomrule
-\multicolumn{6}{l}{\small $^*$Diary is optional; sensing-only versions (V1/V2) operate without it.}
+\multicolumn{7}{l}{\small $^*$Diary is optional; sensing-only versions (V1/V2) operate without it.}
 \end{tabular}
 \end{table}
 
