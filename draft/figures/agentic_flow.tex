@@ -1,0 +1,57 @@
+% Agentic Investigation Flow Figure
+% Shows the multi-turn reasoning loop for V4/V6
+\begin{figure}[t]
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=0.8cm,
+    stepbox/.style={rectangle, draw=black!60, fill=blue!6, rounded corners=3pt, minimum width=6.5cm, minimum height=0.7cm, font=\small, align=left, text width=6.2cm},
+    toolcall/.style={rectangle, draw=green!60!black, fill=green!8, rounded corners=3pt, minimum width=6.5cm, minimum height=0.7cm, font=\small\ttfamily, align=left, text width=6.2cm},
+    belief/.style={rectangle, draw=orange!60!black, fill=orange!8, rounded corners=3pt, minimum width=6.5cm, minimum height=0.6cm, font=\small\itshape, align=left, text width=6.2cm},
+    resultbox/.style={rectangle, draw=red!60!black, fill=red!8, rounded corners=3pt, minimum width=6.5cm, minimum height=0.7cm, font=\small\bfseries, align=left, text width=6.2cm},
+    looplabel/.style={font=\scriptsize\bfseries, text=black!50},
+]
+
+% Step 1: Diary analysis
+\node[stepbox] (s1) at (0, 0) {\textbf{1. Diary Analysis} --- ``Pain is really bad today. Can barely focus.''};
+\node[belief, below=0.3cm of s1] (b1) {Hypothesis: elevated NA, possible low availability};
+
+% Step 2: Timeline
+\node[toolcall, below=0.5cm of b1] (t2) {get\_behavioral\_timeline(date)};
+\node[belief, below=0.3cm of t2] (b2) {100\% stationary, 3.4h screen --- confirms low energy};
+
+% Step 3: Baseline comparison
+\node[toolcall, below=0.5cm of b2] (t3) {compare\_to\_baseline(gps\_home\_pct, 14d)};
+\node[belief, below=0.3cm of t3] (b3) {z=+2.8 (97th pctile) --- extreme anomaly, not routine};
+
+% Step 4: Peer cases
+\node[toolcall, below=0.5cm of b3] (t4) {find\_peer\_cases(``pain bad focus'', mode=text)};
+\node[belief, below=0.3cm of t4] (b4) {3 matches: mean NA=5.2, ER=5.8 --- calibration anchor};
+
+% Step 5: Similar days
+\node[toolcall, below=0.5cm of b4] (t5) {find\_similar\_days(top\_k=3)};
+\node[belief, below=0.3cm of t5] (b5) {Past similar day: NA=5, ER=6 --- convergent evidence};
+
+% Final prediction
+\node[resultbox, below=0.6cm of b5] (pred) {Prediction: NA=5, ER\_desire=5, NA\_State=True, avail=Yes};
+
+% Arrows
+\foreach \a/\b in {s1/b1, b1/t2, t2/b2, b2/t3, t3/b3, b3/t4, t4/b4, b4/t5, t5/b5, b5/pred} {
+    \draw[->, thick, black!40] (\a.south) -- (\b.north);
+}
+
+% Loop annotations
+\node[looplabel, left=0.3cm of t2] {Tool call};
+\node[looplabel, left=0.3cm of b2] {Belief update};
+
+% Brace for multi-turn loop
+\draw[decorate, decoration={brace, amplitude=5pt, mirror}, thick, black!30]
+    ([xshift=-0.5cm]t2.north west) -- ([xshift=-0.5cm]b5.south west)
+    node[midway, left=8pt, font=\scriptsize, text=black!50, align=center, rotate=90] {Multi-turn\\investigation loop};
+
+\end{tikzpicture}
+}
+\caption{Example agentic investigation trace (V4, Participant 071). The agent analyzes the diary entry, forms a hypothesis, then autonomously queries sensing tools to validate and calibrate. Each tool call updates the agent's belief state. The investigation converges after 5 tool calls with cross-validated evidence from behavioral data, peer cases, and historical patterns.}
+\label{fig:agentic_flow}
+\end{figure}

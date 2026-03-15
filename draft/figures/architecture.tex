@@ -1,0 +1,109 @@
+% System Architecture Figure — standalone compilable
+% Include in main.tex via \input{figures/architecture}
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.2cm and 1.8cm,
+    % Style definitions
+    databox/.style={rectangle, draw=black!60, fill=blue!8, rounded corners=3pt, minimum width=2.2cm, minimum height=0.8cm, font=\small, align=center, text=black!80},
+    agentbox/.style={rectangle, draw=black!70, fill=orange!12, rounded corners=3pt, minimum width=2.6cm, minimum height=1cm, font=\small\bfseries, align=center},
+    toolbox/.style={rectangle, draw=black!50, fill=green!8, rounded corners=3pt, minimum width=2cm, minimum height=0.7cm, font=\scriptsize, align=center},
+    outputbox/.style={rectangle, draw=black!60, fill=red!8, rounded corners=3pt, minimum width=2.4cm, minimum height=0.8cm, font=\small, align=center},
+    ragbox/.style={rectangle, draw=black!50, fill=purple!10, rounded corners=3pt, minimum width=2.2cm, minimum height=0.8cm, font=\small, align=center},
+    membox/.style={rectangle, draw=black!50, fill=yellow!12, rounded corners=3pt, minimum width=2cm, minimum height=0.7cm, font=\small, align=center},
+    groupbox/.style={rectangle, draw=black!40, dashed, rounded corners=5pt, inner sep=8pt},
+    arrowlabel/.style={font=\scriptsize, text=black!70},
+    dimbox/.style={rectangle, draw=black!30, fill=gray!5, rounded corners=2pt, minimum width=1.8cm, minimum height=0.6cm, font=\scriptsize\itshape, align=center},
+]
+
+% === LEFT: Input Data ===
+\node[databox] (ema) at (0, 0) {EMA Timestamp\\$t$};
+\node[databox, below=0.6cm of ema] (diary) {Diary Text\\$d_{u,t}$};
+\node[databox, below=0.6cm of diary] (sensing) {Sensing Data\\$\mathbf{S}_{u,<t}$};
+\node[databox, below=0.6cm of sensing] (profile) {User Profile\\$\mathbf{p}_u$};
+
+% Group box around inputs
+\node[groupbox, fit=(ema)(diary)(sensing)(profile), label={[font=\small\bfseries,text=black!70]above:Input Data}] (inputgroup) {};
+
+% === CENTER: 2x2 Agent Design ===
+% Structured column
+\node[agentbox, fill=blue!15] (v1) at (6.5, 1) {V1\\Structured\\Sensing-Only};
+\node[agentbox, fill=blue!15] (v3) at (6.5, -1) {V3\\Structured\\Multimodal};
+
+% Agentic column
+\node[agentbox, fill=orange!18] (v2) at (10, 1) {V2\\Agentic\\Sensing-Only};
+\node[agentbox, fill=orange!18] (v4) at (10, -1) {V4/V6\\Agentic\\Multimodal};
+
+% CALLM baseline
+\node[agentbox, fill=red!12] (callm) at (8.25, -3.2) {CALLM\\Diary + RAG\\(Baseline)};
+
+% Dimension labels
+\node[dimbox] at (6.5, 2.3) {Structured\\(fixed pipeline)};
+\node[dimbox] at (10, 2.3) {Agentic\\(tool-use)};
+\node[dimbox, rotate=90, anchor=center] at (4.8, 1) {Sensing};
+\node[dimbox, rotate=90, anchor=center] at (4.8, -1) {Multimodal};
+
+% Group box around 2x2
+\node[groupbox, fit=(v1)(v2)(v3)(v4), inner sep=12pt, label={[font=\small\bfseries,text=black!70]above:{2$\times$2 Agent Design}}] (designgroup) {};
+
+% === BOTTOM-RIGHT: MCP Tools ===
+\node[toolbox] (tool1) at (13.5, 1.8) {\texttt{daily\_summary}};
+\node[toolbox] (tool2) at (13.5, 1.0) {\texttt{behavioral\_timeline}};
+\node[toolbox] (tool3) at (13.5, 0.2) {\texttt{query\_sensing}};
+\node[toolbox] (tool4) at (13.5, -0.6) {\texttt{compare\_baseline}};
+\node[toolbox] (tool5) at (16.2, 1.8) {\texttt{similar\_days}};
+\node[toolbox] (tool6) at (16.2, 1.0) {\texttt{peer\_cases}};
+\node[toolbox] (tool7) at (16.2, 0.2) {\texttt{raw\_events}};
+\node[toolbox] (tool8) at (16.2, -0.6) {\texttt{receptivity\_hist}};
+
+\node[groupbox, fit=(tool1)(tool2)(tool3)(tool4)(tool5)(tool6)(tool7)(tool8), inner sep=6pt, label={[font=\small\bfseries,text=black!70]above:MCP Sensing Tools}] (toolgroup) {};
+
+% === BOTTOM: RAG + Memory ===
+\node[ragbox] (textrag) at (13.5, -2.5) {Text RAG\\TF-IDF\\(15,984 entries)};
+\node[ragbox] (sensrag) at (16.2, -2.5) {Sensing RAG\\Cosine Sim.\\(daily vectors)};
+\node[membox] (memory) at (14.85, -3.8) {Session Memory\\(per-user, 6K chars)};
+
+\node[groupbox, fit=(textrag)(sensrag)(memory), inner sep=6pt, label={[font=\small\bfseries,text=black!70]above:Cross-User RAG \& Memory}] (raggroup) {};
+
+% === RIGHT: Output ===
+\node[outputbox] (output) at (8.25, -5.5) {Prediction $\hat{\mathbf{y}}_{u,t}$\\PA, NA, $\text{ER}_\text{desire}$,\\$\text{INT}_\text{avail}$, 12 states};
+
+% === ARROWS ===
+% Input to agents
+\draw[->, thick, black!50] (inputgroup.east) -- ++(0.8,0) |- (v1.west);
+\draw[->, thick, black!50] (inputgroup.east) -- ++(0.8,0) |- (v3.west);
+\draw[->, thick, black!50] (inputgroup.east) -- ++(0.8,0) |- (v2.west);
+\draw[->, thick, black!50] (inputgroup.east) -- ++(0.8,0) |- (v4.west);
+\draw[->, thick, black!50] (inputgroup.east) -- ++(0.8,0) |- (callm.west);
+
+% Agentic agents to tools (bidirectional)
+\draw[<->, thick, green!50!black] (v2.east) -- (toolgroup.west |- v2);
+\draw[<->, thick, green!50!black] (v4.east) -- (toolgroup.west |- v4);
+
+% Structured agents get pre-formatted (one-way)
+\draw[->, dashed, blue!50!black] (sensing.east) -- ++(2.2,0) node[arrowlabel, above, midway] {pre-formatted} |- (v1.south west);
+\draw[->, dashed, blue!50!black] (sensing.east) -- ++(2.2,0) |- (v3.south west);
+
+% RAG connections
+\draw[->, thick, purple!50!black] (textrag.west) -| (callm.east);
+\draw[->, thick, purple!50!black] (textrag.north) -- ++(0, 0.4) -| (v3.south);
+\draw[->, thick, purple!50!black] (sensrag.north) -- ++(0, 0.8) -| ([xshift=3mm]v4.south);
+
+% Memory connections
+\draw[<->, thick, yellow!60!black] (memory.west) -| ([xshift=-3mm]v2.south);
+\draw[<->, thick, yellow!60!black] (memory.east) -| ([xshift=3mm]v4.south east);
+
+% Agents to output
+\draw[->, thick, black!60] (v1.south) -- ++(0,-0.4) -| (output.north west);
+\draw[->, thick, black!60] (v3.south) -- ++(0,-0.3) -| ([xshift=-5mm]output.north);
+\draw[->, thick, black!60] (callm.south) -- (output.north);
+\draw[->, thick, black!60] (v2.south) -- ++(0,-0.3) -| ([xshift=5mm]output.north);
+\draw[->, thick, black!60] (v4.south) -- ++(0,-0.4) -| (output.north east);
+
+\end{tikzpicture}
+}
+\caption{System architecture of the \sys{}. Input data (left) flows into a 2$\times$2 factorial design: \emph{structured} agents (V1, V3) receive pre-formatted sensing summaries in a single prompt, while \emph{agentic} agents (V2, V4/V6) autonomously query an MCP sensing server through tool-use. Cross-user RAG provides calibration anchors from 15,984 training entries. Agentic agents maintain per-user session memory across predictions. All variants produce the same structured prediction output.}
+\label{fig:architecture}
+\end{figure*}
