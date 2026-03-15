@@ -40,7 +40,7 @@ The key research question: does **agentic investigation** (autonomous tool-use q
 | **Sensing-only** | V1 | **V2** |
 | **Multimodal** (diary + sensing) | V3 | **V4** ← key contribution |
 
-Plus: CALLM (diary+RAG reactive baseline, CHI 2025), ML baselines (RF/XGBoost/LogReg/Ridge).
+Plus: CALLM (diary+RAG reactive baseline, CHI 2025), ML baselines (RF/XGBoost/LogReg), AR autocorrelation baseline.
 
 ### Model Taxonomy
 
@@ -52,6 +52,8 @@ Plus: CALLM (diary+RAG reactive baseline, CHI 2025), ML baselines (RF/XGBoost/Lo
 | **V2** | ❌ | ✅ | Autonomous tool-use | Detective loop, sensing only |
 | **V3** | ✅ | ✅ | Multimodal RAG | Diary + hourly sensing context |
 | **V4** | ✅ | ✅ | Autonomous tool-use | **Key contribution** |
+| **V5** | ❌ | ✅ (filtered) | Agentic + data quality | V2 + filtered sensing |
+| **V6** | ✅ | ✅ (filtered) | Agentic + data quality | V4 + filtered sensing |
 
 ### Agentic Investigation Loop (V2, V4)
 
@@ -169,15 +171,33 @@ data/processed/hourly/                 (output, ~2 GB Parquet)
 
 ---
 
-## Pilot Results
+## Pilot Results (11 users, 956 entries/version)
 
-| Metric | ML | CALLM | V1 | V2 | V3 | V4 |
-|--------|----|-------|----|----|----|----|
-| Mean MAE ↓ | *pending* | **~1.16** | ~high | *pending* | *pending* | *pending* |
-| Mean BA ↑ | *pending* | **~0.63** | ~0.52 | *pending* | *pending* | *pending* |
-| Mean F1 ↑ | *pending* | **~0.44** | ~0.19 | *pending* | *pending* | *pending* |
+### LLM Agent Versions
 
-CALLM (diary+RAG) currently dominates sensing-only approaches. Full BUCS evaluation pending (Phase 1 heavy modalities + V2/V3/V4 experiments).
+| Metric | CALLM | V1 | V2 | V3 | V4 | V5 | **V6** |
+|--------|-------|----|----|----|----|----|----|
+| Mean MAE ↓ | 3.661 | 5.502 | 4.881 | 3.947 | 4.353 | 4.878 | **4.220** |
+| Mean BA ↑ | 0.624 | 0.523 | 0.601 | 0.638 | 0.673 | 0.602 | **0.675** |
+| Mean F1 ↑ | 0.611 | 0.465 | 0.594 | 0.632 | 0.667 | 0.596 | **0.669** |
+
+AR autocorrelation baseline: Mean BA = 0.658. V4 and V6 both exceed this ceiling.
+
+### ML/DL Baselines (sensing-only, 5-fold CV)
+
+| Model | Mean MAE | Mean BA | Mean F1 |
+|-------|----------|---------|---------|
+| RF | 5.923 | 0.501 | 0.365 |
+| XGBoost | 9.374 | 0.502 | 0.391 |
+| MiniLM (text) | 3.898 | 0.629 | 0.588 |
+| Combined (RF) | 3.935 | 0.620 | 0.568 |
+
+### Key Findings
+- **Multimodal agentic (V4/V6) beats AR baseline** — agentic tool-use on sensing+diary surpasses autocorrelation ceiling
+- **Agentic > Structured** — V2 > V1, V4 > V3 across BA and F1
+- **Multimodal > Sensing-only** — diary context provides substantial lift
+- **Sensing-only ML near chance** — traditional ML on sensor features alone (BA ~0.50) far below LLM agents
+- **LLM agents outperform text baselines** — V4/V6 (BA 0.67) > MiniLM (BA 0.63) despite MiniLM having diary access
 
 ---
 
@@ -208,10 +228,10 @@ python scripts/offline/process_gps.py
 ```
 src/
 ├── agent/
-│   ├── personal_agent.py         # PersonalAgent dispatcher (CALLM/V1-V4)
+│   ├── personal_agent.py         # PersonalAgent dispatcher (CALLM/V1-V6)
 │   ├── structured.py             # V1: sensing-only, fixed pipeline
 │   ├── structured_full.py        # V3: multimodal (diary+sensing), fixed pipeline
-│   └── cc_agent.py               # V2/V4: agentic agent via claude --print + MCP server
+│   └── cc_agent.py               # V2/V4/V5/V6: agentic agent via claude --print + MCP
 ├── sense/
 │   ├── query_tools.py         # SensingQueryEngine + SENSING_TOOLS (SDK format)
 │   └── features.py            # HourlyFeatureLoader and feature extractors
@@ -228,24 +248,23 @@ scripts/
 ├── offline/                   # Phase 0/1 batch processors (run once)
 │   ├── run_phase0.sh          # Roster + home locations
 │   ├── run_phase1.sh          # Light modality batch
-│   ├── build_participant_roster.py
-│   ├── compute_home_locations.py
 │   ├── process_motion.py      # iOS MotionActivity + Android ActivityTransition/MOTION
 │   ├── process_screen_app.py  # iOS ScreenOnTime + Android APPUSAGE
 │   ├── process_keyinput.py    # FleksyKeyInput → typed words, sentiment
 │   ├── process_mus.py         # MUS → listening hours
 │   ├── process_light.py       # LIGHT → ambient lux (Android only)
 │   ├── process_accel.py       # Accelerometer → actigraphy (heavy)
-│   ├── process_gps.py         # GPS → mobility features (heavy)
-│   └── utils.py               # Shared timezone/epoch helpers
-├── run_pilot.py               # LLM experiment runner (V2/V4-structured)
-├── run_agentic_pilot.py       # Agentic evaluation runner (V2/V4-agentic, tool-use loop)
-├── run_ml_baselines.py        # ML baselines
-└── run_parallel.sh            # Parallel experiment launcher
+│   └── process_gps.py         # GPS → mobility features (heavy)
+├── run_pilot.py               # LLM experiment runner (all versions)
+├── queue_runner.py            # Parallel queue (5 workers, auto-resume)
+├── evaluate_pilot.py          # Compute MAE/BA/F1 from checkpoints
+├── results_dashboard.py       # Live results dashboard (auto-refresh, reads checkpoints)
+├── generate_dashboard.py      # Static HTML dashboard generator
+├── build_filtered_data.py     # Build filtered datasets for V5/V6
+└── run_ml_baselines_new.py    # ML/DL/text baselines
 
 docs/
 ├── design.md                  # System design document
-├── PROGRESS.md                # Auto-updated progress tracker
 └── advisor-sync-architecture.html  # Architecture overview for advisor meetings
 ```
 
@@ -253,32 +272,44 @@ docs/
 
 ## Running Experiments
 
-### V2, V4 — Agentic (tool-use loop)
+### Queue Runner (recommended)
 
 ```bash
-# Dry run — test tool-use loop without LLM calls
-python scripts/run_agentic_pilot.py --users 71 --dry-run
+# Preview what needs running
+python3 scripts/queue_runner.py --dry-run
 
-# Single user evaluation
-python scripts/run_agentic_pilot.py --users 71 --model claude-opus-4-6
+# Run with 5 workers (default)
+python3 scripts/queue_runner.py
 
-# Multiple users (diary-present EMA entries only, for CALLM comparison)
-python scripts/run_agentic_pilot.py --users 71,164,119 --model claude-sonnet-4-6
+# Run with fewer workers if rate-limited
+python3 scripts/queue_runner.py --workers 3
 ```
 
-### V1, V3 — Structured LLM Versions
+### Individual Versions
 
 ```bash
-python scripts/run_pilot.py --version all --users 71,164,119,458,310 --dry-run
-python scripts/run_pilot.py --version v3 --users 71,164,119,458,310
-bash scripts/run_parallel.sh   # all versions in parallel
+# All versions for specific users
+python3 scripts/run_pilot.py --version all --users 71,164,119 --model sonnet
+
+# Single version
+python3 scripts/run_pilot.py --version v3 --users 71,164,119 --model sonnet
+```
+
+### Evaluation & Dashboard
+
+```bash
+# Compute metrics from checkpoints
+PYTHONPATH=. python3 scripts/evaluate_pilot.py
+
+# Live results dashboard (auto-refreshes, reads checkpoints on each load)
+python3 scripts/results_dashboard.py
+# → http://localhost:8877
 ```
 
 ### ML Baselines
 
 ```bash
-python scripts/run_ml_baselines.py
-python scripts/run_ml_baselines.py --models rf,xgboost
+python3 scripts/run_ml_baselines_new.py
 ```
 
 ---
@@ -293,4 +324,4 @@ Design doc (Google Docs): https://docs.google.com/document/d/1BJ8P81Zcy3fKQYyQXN
 
 Architecture overview (advisor sync HTML): https://barneslab.github.io/proactive-affective-agent/docs/advisor-sync-architecture.html
 
-Progress & next steps: `docs/PROGRESS.md`
+Progress & next steps: `PROGRESS.md`
