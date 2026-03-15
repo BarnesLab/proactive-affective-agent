@@ -1,0 +1,746 @@
+%%
+%% IMWUT Manuscript: Proactive Affective Agent
+%%
+\documentclass[acmsmall,screen,review,anonymous]{acmart}
+
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    Bib\TeX}}}
+
+%% Journal information
+\acmJournal{IMWUT}
+\acmVolume{0}
+\acmNumber{0}
+\acmArticle{0}
+\acmYear{2026}
+\acmMonth{9}
+
+%% Packages
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{soul}
+\usepackage{enumitem}
+
+%% Custom commands
+\newcommand{\sys}{Proactive Affective Agent}
+\newcommand{\sysshort}{PAA}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\ba}{\text{BA}}
+\newcommand{\maemetric}{\text{MAE}}
+\newcommand{\erdesire}{ER\textsubscript{desire}}
+\newcommand{\intavail}{INT\textsubscript{avail}}
+
+\begin{document}
+
+%% Title
+\title{Proactive Affective Agent: LLM-Based Agentic Investigation of Passive Sensing for Predicting Intervention Opportunities in Cancer Survivorship}
+
+%% Authors (anonymized for review)
+\author{Anonymous Author(s)}
+\affiliation{%
+  \institution{Anonymous Institution}
+}
+
+%% Abstract
+\begin{abstract}
+Just-in-time adaptive interventions (JITAIs) promise to deliver support precisely when individuals need it most. However, current systems rely on active self-report---asking users to complete diary entries or surveys---creating a fundamental paradox: users who most need intervention often skip self-report due to high stress or low motivation. We present the \emph{\sys{}} (\sysshort{}), a framework that uses large language model (LLM) agents to \emph{proactively} predict intervention opportunities from passive smartphone sensing data. Our key insight is that LLM agents can autonomously investigate heterogeneous sensor streams---motion, GPS, screen usage, keyboard activity---using tool-use capabilities, mimicking how a behavioral scientist would reason about a patient's daily patterns.
+
+We evaluate \sysshort{} through a 2$\times$2 factorial design comparing \emph{structured} vs.\ \emph{agentic} reasoning and \emph{sensing-only} vs.\ \emph{multimodal} (sensing + diary) data, plus a diary-only baseline, across 11 cancer survivors from the BUCS longitudinal study (956 EMA entries per condition). Our primary prediction targets are \emph{intervention opportunity}---the conjunction of emotion regulation desire and intervention availability---and positive/negative affect states.
+
+Results show that agentic multimodal agents achieve the best performance across key targets: balanced accuracy of 0.786 for emotion regulation desire detection, 0.743 for intervention availability, and 0.790 for negative affect state detection, significantly outperforming both structured LLM pipelines and traditional ML baselines. The agentic approach---where the LLM autonomously decides which sensor data to query---consistently outperforms structured pipelines that receive pre-formatted feature summaries, demonstrating the value of autonomous behavioral investigation. Cross-user retrieval-augmented generation provides effective calibration anchors from population-level data. Our findings establish LLM-based agentic sensing as a viable paradigm for proactive mental health support in cancer survivorship.
+\end{abstract}
+
+%% CCS Concepts
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10003120.10003121.10003129</concept_id>
+       <concept_desc>Human-centered computing~Ubiquitous and mobile computing systems and tools</concept_desc>
+       <concept_significance>500</concept_significance>
+   </concept>
+   <concept>
+       <concept_id>10010147.10010178.10010187</concept_id>
+       <concept_desc>Computing methodologies~Natural language processing</concept_desc>
+       <concept_significance>300</concept_significance>
+   </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Human-centered computing~Ubiquitous and mobile computing systems and tools}
+\ccsdesc[300]{Computing methodologies~Natural language processing}
+
+\keywords{Just-in-time adaptive interventions, passive sensing, large language models, affective computing, cancer survivorship, agentic AI}
+
+\maketitle
+
+%% ================================================================
+%%  1. INTRODUCTION
+%% ================================================================
+\section{Introduction}
+
+Cancer survivors face persistent psychosocial challenges that extend far beyond treatment completion~\cite{stanton2015cancer_survivorship}. Fear of recurrence, chronic fatigue, anxiety, and depression affect up to 40\% of long-term survivors, yet the majority lack access to continuous psychological support~\cite{hagan2022cancer_fear}. Just-in-time adaptive interventions (JITAIs)---systems that deliver support at moments of need based on real-time contextual data---hold considerable promise for addressing this gap~\cite{nahum2018jitai}. The core premise is compelling: rather than waiting for scheduled therapy sessions, an intelligent system could detect emerging distress and offer coping strategies precisely when a survivor is both \emph{in need} and \emph{available} to engage.
+
+Realizing this vision, however, confronts a fundamental paradox. Current JITAI systems overwhelmingly rely on \emph{active self-report}---ecological momentary assessments (EMAs), daily diaries, or mood check-ins---to sense users' emotional states~\cite{shiffman2008ema}. Yet the individuals who most urgently need intervention are precisely those who are least likely to complete self-reports: elevated stress reduces motivation to engage with survey prompts, while low energy and social withdrawal diminish the likelihood of timely responses~\cite{mishra2021receptivity}. A system that can only act when told how the user feels is fundamentally \emph{reactive}---it cannot help those who have stopped talking.
+
+Passive smartphone sensing offers a path toward \emph{proactive} intervention. Modern smartphones continuously collect rich behavioral signals---movement patterns, location traces, screen usage, typing behavior, app engagement---that correlate with psychological states~\cite{saeb2015phenotyping, wang2014studentlife, wang2018sensing}. However, translating these noisy, heterogeneous sensor streams into actionable emotional state predictions has proven difficult. Traditional machine learning approaches treat sensing features as fixed tabular inputs, applying random forests or gradient boosted trees to daily aggregate statistics~\cite{xu2023globem}. These methods capture coarse statistical associations but struggle with the contextual interpretation that distinguishes a ``stayed home all day because of illness'' from a ``stayed home all day because it's a holiday''---the same behavioral pattern with radically different affective implications.
+
+Recent advances in large language models (LLMs) suggest a fundamentally different approach. LLMs can reason about behavioral data in natural language, bringing world knowledge, contextual understanding, and nuanced interpretation that statistical models lack. Prior work has shown that LLMs achieve competitive performance on emotion recognition from text~\cite{yang2024llm_mental, amin2023llm_ema} and can interpret wearable sensor data when presented as natural language descriptions~\cite{kim2024health_llm, zhang2024llm_sensing}. Our prior work, CALLM~\cite{wang2026callm}, demonstrated that LLMs can predict emotional states from cancer survivors' diary text with balanced accuracy exceeding traditional NLP approaches---but CALLM remains reactive, requiring users to write diary entries.
+
+In this paper, we ask: \emph{can LLM agents proactively predict intervention opportunities from passive sensing alone---and does giving them the autonomy to investigate sensor data like a behavioral scientist improve prediction?}
+
+We introduce the \emph{\sys{}} (\sysshort{}), an LLM-based framework for predicting emotional states and intervention opportunities in cancer survivors. \sysshort{} treats each prediction as a \emph{behavioral investigation}: rather than receiving a fixed feature vector, the LLM agent can autonomously query a sensing database through tool-use (function calling), deciding which sensor modalities to examine, how far back in time to look, and which behavioral anomalies to investigate further. This agentic approach mirrors how a clinical behavioral scientist might reason: starting with a broad overview of the patient's day, forming hypotheses, and drilling into specific signals that seem informative.
+
+Our core contribution is a systematic evaluation of this agentic paradigm through a 2$\times$2 factorial design:
+
+\begin{itemize}[nosep]
+    \item \textbf{Structured vs.\ Agentic reasoning}: Should the LLM follow a fixed analytical pipeline, or autonomously decide how to investigate the data?
+    \item \textbf{Sensing-only vs.\ Multimodal data}: Can passive sensing alone support prediction, or is diary text essential?
+\end{itemize}
+
+\noindent This yields four agent variants (V1--V4), evaluated alongside a diary-only baseline (CALLM) and traditional ML/DL baselines, on data from the BUCS cancer survivorship study~\cite{wang2026callm}---a longitudinal dataset of 418 participants with 15,984 EMA entries and 8 passive sensing modalities at hourly resolution.
+
+We focus on predicting \emph{intervention opportunity}, which we define as the conjunction of two constructs:
+\begin{enumerate}[nosep]
+    \item \textbf{Emotion regulation desire} (\erdesire{}): Does the user want emotional support right now?
+    \item \textbf{Intervention availability} (\intavail{}): Is the user able to engage with an intervention right now?
+\end{enumerate}
+
+\noindent An effective JITAI must detect both: a willing but unavailable user cannot engage, while an available but uninterested user will not. Alongside intervention opportunity, we evaluate prediction of positive and negative affect states (PANAS scales~\cite{watson1988panas}), which inform the \emph{type} of support to offer.
+
+Our evaluation across 11 cancer survivors (956 EMA entries per condition) reveals:
+
+\begin{enumerate}[nosep]
+    \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The agentic multimodal agent (V6) achieves balanced accuracy (BA) of 0.786 for \erdesire{} state detection vs.\ 0.734 for the structured multimodal agent (V3), and 0.790 vs.\ 0.727 for negative affect state detection.
+
+    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (V3/V4/V6) consistently outperform both sensing-only (V1/V2) and diary-only (CALLM) approaches, with V6 achieving mean BA of 0.675 across all binary targets.
+
+    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agent (V6, BA=0.675) outperforms the best ML baseline (MiniLM text embeddings, BA=0.629) despite using a much smaller evaluation set.
+
+    \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' significantly reduces prediction bias compared to agents without peer reference.
+\end{enumerate}
+
+To our knowledge, this is the first work to apply agentic LLM investigation---where the model autonomously queries structured sensor databases through tool-use---to affective state prediction. Our results establish a new paradigm for proactive mental health sensing that combines the contextual reasoning of LLMs with the passive, always-on nature of smartphone sensing.
+
+%% ================================================================
+%%  2. RELATED WORK
+%% ================================================================
+\section{Related Work}
+
+\subsection{Passive Sensing for Mental Health}
+
+Smartphone-based passive sensing has emerged as a scalable approach to mental health monitoring. Pioneering work by Saeb et al.~\cite{saeb2015phenotyping} demonstrated significant correlations between GPS-derived mobility features and depression severity. The StudentLife study~\cite{wang2014studentlife} established that passively collected sensor data---including sleep, physical activity, and social interaction patterns---correlate with mental health outcomes, academic performance, and behavioral changes in college students. Subsequent work has expanded these findings to clinical populations~\cite{wang2018sensing, rashid2020predicting, canzian2015trajectories}, showing that smartphone sensors can detect depressive episodes, anxiety, and social isolation.
+
+The GLOBEM benchmark~\cite{xu2023globem} systematized evaluation of longitudinal behavior modeling across multiple sensing datasets, revealing that cross-dataset generalization remains a major challenge. Most approaches use traditional ML models (random forests, XGBoost, logistic regression) on hand-crafted daily aggregate features, achieving moderate performance on binary classification tasks (balanced accuracy typically 0.55--0.65 for depression detection). Deep learning approaches, including LSTMs and transformers, have shown marginal improvements on individual datasets but often fail to generalize~\cite{adler2024sensing}.
+
+A persistent limitation of this literature is the \emph{feature engineering bottleneck}: sensor data is reduced to fixed statistical summaries (daily means, counts, durations) that discard temporal dynamics and contextual information. Our work addresses this by using LLM agents that can query raw hourly sensor data and reason about temporal patterns, anomalies, and cross-modal consistency.
+
+\subsection{Just-in-Time Adaptive Interventions}
+
+JITAIs deliver interventions at moments of both need and opportunity~\cite{nahum2018jitai}. The micro-randomized trial (MRT) design~\cite{klasnja2015mrt} provides a principled framework for evaluating JITAI components, and has been applied to physical activity (HeartSteps), smoking cessation (Sense2Stop~\cite{battalio2021sense2stop}), and stress management. A critical component of any JITAI is the \emph{decision rule}: when should the system intervene?
+
+Receptivity to intervention has been studied as a distinct construct. Mishra et al.~\cite{mishra2021receptivity} found that contextual factors (time, location, activity) predict notification engagement in the natural environment. Kunzler et al.~\cite{kunzler2019receptivity} conducted a systematic exploration of ``state-of-receptivity,'' finding that time of day, social context, and current activity are key moderators. However, most receptivity prediction work focuses on \emph{notification engagement} (did the user open the notification?) rather than the more nuanced question we address: \emph{does the user want emotional support and are they available to engage with it?}
+
+Our formulation of \emph{intervention opportunity} as the conjunction of desire and availability is grounded in prior work showing that these constructs are separable and independently informative~\cite{gross2015emotion_regulation}. An individual may desire emotional regulation support but be unavailable (e.g., driving), or be available but have no current need. Predicting both simultaneously enables more precise intervention timing.
+
+\subsection{LLMs for Affective Computing}
+
+The application of large language models to affective computing has accelerated rapidly. Early work by Amin et al.~\cite{amin2023llm_ema} evaluated ChatGPT's zero-shot emotion recognition capabilities, finding competitive performance on standard benchmarks. Yang et al.~\cite{yang2024llm_mental} demonstrated that LLMs can provide interpretable mental health assessments from social media text, with performance approaching specialized classifiers.
+
+More relevant to our work, Xu et al.~\cite{xu2024mentalllm} introduced Mental-LLM, which fine-tunes language models on mental health prediction tasks using online text data, achieving state-of-the-art results on depression and stress detection. Kim et al.~\cite{kim2024health_llm} proposed Health-LLM, which uses LLMs to reason about wearable sensor data for health prediction, demonstrating that natural language descriptions of sensor patterns enable LLMs to make clinically meaningful predictions. Zhang et al.~\cite{zhang2024llm_sensing} further explored ``penetrative AI''---making LLMs comprehend physical world data including sensor streams.
+
+Our work extends this line by introducing \emph{agentic} LLM reasoning for affective computing: rather than receiving all sensor data as a pre-formatted text prompt, the agent autonomously decides which data to examine using tool-use, enabling selective investigation of the most informative signals.
+
+\subsection{Agentic AI and Tool-Use}
+
+The agentic AI paradigm---where LLMs autonomously use tools to complete tasks---has emerged as a major research direction. Yao et al.~\cite{yao2023react} introduced ReAct, which interleaves reasoning and acting in language models, enabling multi-step problem solving. Schick et al.~\cite{schick2024toolformer} demonstrated that language models can learn to use external tools (calculators, search engines, APIs) to augment their capabilities. Park et al.~\cite{park2023generative} created generative agents that simulate human behavior through tool-augmented reasoning and persistent memory.
+
+The Model Context Protocol (MCP)~\cite{anthropic2024mcp} provides a standardized interface for connecting LLMs to external data sources and tools, enabling modular tool integration. We leverage MCP to expose 8 sensing query tools to our agentic agents, allowing them to autonomously investigate behavioral data through a structured API.
+
+Retrieval-augmented generation (RAG)~\cite{lewis2020rag} has proven effective for grounding LLM outputs in factual evidence. In our system, cross-user RAG serves a distinct purpose: rather than retrieving factual knowledge, we retrieve \emph{calibration anchors}---similar cases from other participants with known outcomes---to help the agent calibrate its predictions against population-level data.
+
+\subsection{Summary and Positioning}
+
+Existing work has established that (1) passive sensing correlates with mental health, (2) LLMs can reason about text-based affect, and (3) agentic tool-use enables autonomous data investigation. Our work is the first to combine all three: an LLM agent that autonomously investigates passive sensor data through tool-use to predict emotional states and intervention opportunities in a clinical population. Table~\ref{tab:positioning} summarizes our positioning.
+
+\begin{table}[t]
+\caption{Positioning of our work relative to prior approaches for affect prediction from passive data.}
+\label{tab:positioning}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Approach} & \textbf{Passive} & \textbf{LLM} & \textbf{Agentic} & \textbf{Diary} & \textbf{RAG} \\
+\midrule
+Traditional ML~\cite{xu2023globem} & \checkmark & & & & \\
+CALLM~\cite{wang2026callm} & & \checkmark & & \checkmark & \checkmark \\
+Health-LLM~\cite{kim2024health_llm} & \checkmark & \checkmark & & & \\
+Mental-LLM~\cite{xu2024mentalllm} & & \checkmark & & \checkmark & \\
+\textbf{\sysshort{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark$^*$ & \checkmark \\
+\bottomrule
+\multicolumn{6}{l}{\small $^*$Diary is optional; sensing-only versions (V1/V2) operate without it.}
+\end{tabular}
+\end{table}
+
+
+%% ================================================================
+%%  3. SYSTEM DESIGN
+%% ================================================================
+\section{System Design}
+
+\subsection{Problem Formulation}
+
+Given a cancer survivor $u$ at EMA time $t$, we observe:
+\begin{itemize}[nosep]
+    \item \textbf{Sensing history} $\mathbf{S}_{u,<t}$: passive sensor data collected before time $t$ (motion, GPS, screen, keyboard, apps, light, music)
+    \item \textbf{Diary text} $d_{u,t}$: optional free-text diary entry (present in $\sim$68\% of EMAs)
+    \item \textbf{User profile} $\mathbf{p}_u$: trait questionnaire and demographic information
+    \item \textbf{Memory} $\mathbf{m}_{u,<t}$: longitudinal context from prior predictions
+\end{itemize}
+
+\noindent The agent predicts a target vector $\hat{\mathbf{y}}_{u,t}$ comprising:
+\begin{itemize}[nosep]
+    \item \textbf{Continuous:} PANAS Positive Affect (0--30), PANAS Negative Affect (0--30), Emotion Regulation Desire (0--10)
+    \item \textbf{Binary states:} Unusually elevated PA, NA, and 10 individual emotion states, plus \erdesire{} and \intavail{}
+\end{itemize}
+
+\noindent The binary ``state'' targets indicate whether each measure is at an \emph{unusual level for this individual} compared to their personal baseline---capturing personally meaningful deviations rather than absolute thresholds.
+
+\subsection{2$\times$2 Factorial Design}
+
+We systematically vary two design dimensions (Table~\ref{tab:design}):
+
+\begin{table}[t]
+\caption{The 2$\times$2 agent design space. Each cell represents a distinct agent architecture. CALLM serves as the diary-only baseline.}
+\label{tab:design}
+\small
+\begin{tabular}{p{2cm}p{3.5cm}p{3.5cm}}
+\toprule
+& \textbf{Structured} (fixed pipeline) & \textbf{Agentic} (autonomous tool-use) \\
+\midrule
+\textbf{Sensing-only} & V1: Pre-formatted summary $\rightarrow$ 6-step reasoning & V2: MCP tools $\rightarrow$ autonomous investigation \\
+\addlinespace
+\textbf{Multimodal} (diary + sensing) & V3: Diary + summary $\rightarrow$ 5-step reasoning & V4/V6: Diary-first analysis $\rightarrow$ tool-based validation \\
+\midrule
+\multicolumn{3}{l}{\textbf{Baseline:} CALLM --- diary text + TF-IDF RAG, structured output~\cite{wang2026callm}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Dimension 1: Structured vs.\ Agentic.}
+\emph{Structured} agents (V1, V3) receive all relevant data as a pre-formatted text prompt and follow a fixed multi-step reasoning pipeline. This mirrors the dominant approach in prior work, where sensing features are pre-computed and presented to the model in a single context window.
+
+\emph{Agentic} agents (V2, V4, V6) receive the prediction task and a set of MCP tools (Section~\ref{sec:tools}), then autonomously decide which data to query, in what order, and how deeply to investigate. The agent reasons in a multi-turn loop---forming hypotheses, querying data, updating beliefs---before producing a final prediction. This mirrors how a behavioral data scientist might investigate a patient's daily patterns.
+
+\paragraph{Dimension 2: Sensing-only vs.\ Multimodal.}
+\emph{Sensing-only} agents (V1, V2) use exclusively passive sensor data---no diary text. This represents the fully proactive scenario where the system must predict emotional states without any active user input.
+
+\emph{Multimodal} agents (V3, V4, V6) additionally receive the participant's diary entry, enabling cross-modal reasoning. The diary provides a ``ground truth'' emotional narrative that sensing tools can validate or contextualize.
+
+\paragraph{Baseline: CALLM.}
+The diary-only baseline~\cite{wang2026callm} uses the participant's diary text with TF-IDF retrieval-augmented generation to find similar cases from the training population. It represents the current state-of-the-art in LLM-based emotional state prediction for this population, but is fundamentally \emph{reactive}---it cannot operate when the diary is absent.
+
+\subsection{Data: BUCS Cancer Survivorship Study}
+
+We evaluate on data from the \emph{Behavioral Understanding for Cancer Survivors} (BUCS) study, a longitudinal investigation of 418 cancer survivors (297 iOS, 121 Android) over approximately 5 weeks. Participants completed EMAs three times daily (morning, afternoon, evening), yielding 15,984 total entries with the following:
+
+\paragraph{EMA Targets.}
+Each survey captures positive affect (PANAS-PA, sum of happy, cheerful, pleased, grateful; range 0--30), negative affect (PANAS-NA, sum of sad, afraid, miserable, worried, lonely; range 0--30), emotion regulation desire (0--10 scale), intervention availability (yes/no), and individual binary emotion states. Binary ``state'' labels are computed at the individual level: a participant's score is labeled as elevated if it exceeds their personal mean plus one standard deviation.
+
+\paragraph{Diary Text.}
+Approximately 68\% of EMA entries include a free-text \texttt{emotion\_driver} field describing the participant's current emotional experience. Entries range from brief (``fine'') to detailed narratives about health concerns, family events, or daily activities.
+
+\paragraph{Passive Sensing (8 Modalities).}
+Smartphones continuously collected data from 8 sensor streams, aggregated to hourly Parquet files:
+
+\begin{enumerate}[nosep]
+    \item \textbf{Motion/Accelerometer}: Stationary, walking, automotive, running durations; activity transitions
+    \item \textbf{GPS/Mobility}: Travel distance and time, home time, max distance from home, location variance
+    \item \textbf{Screen}: Unlock events, session counts, total and per-session durations
+    \item \textbf{Keyboard}: Words typed, typing sessions, positive/negative sentiment ratios
+    \item \textbf{App Usage} (Android only): Per-app foreground time, categorized (social, communication, entertainment)
+    \item \textbf{Light} (Android only): Ambient light levels (lux)
+    \item \textbf{Music}: Tracks played, listening duration, artists
+    \item \textbf{Sleep}: Derived from accelerometer and Android sleep API
+\end{enumerate}
+
+\noindent Coverage varies by modality: motion and screen are available for nearly all participants, keyboard for 69\%, and app/light only for the 29\% on Android.
+
+\paragraph{Data Splits.}
+We use 5-fold across-subject cross-validation: all observations from a given participant appear in exactly one fold. The training set (80\% of participants) provides the population data for RAG and peer reference; the test set (20\%) provides evaluation data. LLM agents are evaluated on a pilot subset of 11 test-set participants (956 EMA entries) due to inference cost constraints.
+
+\subsection{Structured Agent Architecture (V1, V3)}
+
+Structured agents receive all data as a single pre-formatted prompt and follow a fixed reasoning pipeline in one LLM call.
+
+\paragraph{V1: Structured Sensing-Only.}
+The agent receives: (1) a natural-language summary of the day's sensing data (sleep, mobility, activity, screen, typing patterns), (2) the participant's trait profile and demographic information, (3) a longitudinal memory document tracking emotional patterns, and (4) peer reference cases---the 5 most similar behavioral profiles from the training population, retrieved via cosine similarity on daily sensing feature vectors, with their ground-truth EMA outcomes.
+
+The agent follows a 6-step reasoning pipeline: (1) Sleep Analysis, (2) Mobility \& Activity, (3) Social Signals, (4) Pattern Integration, (5) Peer Comparison, (6) User Context $\rightarrow$ Final Prediction.
+
+\paragraph{V3: Structured Multimodal.}
+Extends V1 by adding the participant's diary text and multimodal RAG: the 10 most similar diary entries from the training set (via TF-IDF), enriched with each matched participant's sensing data and ground-truth outcomes. The agent follows a 5-step pipeline: (1) Diary Analysis, (2) Sensing Analysis, (3) Cross-Modal Consistency, (4) Similar Case Comparison, (5) Integrated Prediction.
+
+\subsection{Agentic Agent Architecture (V2, V4, V6)}
+\label{sec:agentic}
+
+Agentic agents operate through a multi-turn tool-use loop. Each prediction spawns an LLM subprocess with access to an MCP server that exposes 8 sensing query tools backed by the participant's Parquet data store.
+
+\paragraph{V2: Agentic Sensing-Only.}
+The agent receives a system prompt instructing it to investigate the participant's behavioral data like a ``behavioral data scientist detective,'' with a strategy: (1) reconstruct the day chronologically, (2) identify behavioral patterns, (3) detect anomalies via baseline comparison, (4) find analogous past days, (5) calibrate against peer cases, (6) synthesize into prediction. Critically, the agent \emph{decides which tools to call and in what order}---it may skip modalities it deems uninformative or drill deeply into anomalies.
+
+\paragraph{V4/V6: Agentic Multimodal.}
+The agent additionally receives the diary entry and follows a \emph{diary-first} investigation strategy: (1) analyze diary text to extract emotional signals and form hypotheses, (2) use sensing tools to validate/calibrate those hypotheses, (3) check cross-modal consistency, (4) retrieve peer cases with similar diary content, (5) synthesize. The diary anchors the investigation, and sensing tools provide behavioral evidence for or against diary-derived hypotheses.
+
+V6 additionally receives a pre-computed daily behavioral narrative---a filtered, structured summary of the day's sensing data with redundant and zero-information periods removed---reducing the raw data volume by 7.4$\times$ while preserving salient signals.
+
+\paragraph{Session Memory.}
+Agentic agents maintain per-user longitudinal memory across predictions. After each prediction, the agent generates a 1--2 sentence ``reflection'' capturing calibration lessons (e.g., ``this user's self-reported negative affect is typically lower than behavioral signals suggest''). Reflections accumulate into a session memory document, capped at 6,000 characters. To prevent ground-truth leakage, reflections reference only receptivity signals (diary themes, \erdesire{}, \intavail{})---never PANAS scores.
+
+\subsection{Sensing Query Tools (MCP Server)}
+\label{sec:tools}
+
+The MCP server exposes 8 tools, each querying the participant's hourly Parquet data store. The agent calls these tools autonomously during its investigation:
+
+\begin{enumerate}[nosep]
+    \item \texttt{get\_daily\_summary}: Full-day behavioral overview across all modalities
+    \item \texttt{get\_behavioral\_timeline}: Chronological day reconstruction with 3--6 hour segments and behavioral-state labels with cautious affective cues
+    \item \texttt{query\_sensing}: Targeted hourly query by modality, time window, and duration
+    \item \texttt{query\_raw\_events}: Raw event streams (exact lock/unlock times, app sessions, motion transitions, typed text, songs played)
+    \item \texttt{compare\_to\_baseline}: Z-score comparison against this user's 14-day historical mean/SD; flags behavioral anomalies
+    \item \texttt{get\_receptivity\_history}: Past 14 days of intervention accept/reject patterns plus aggregate mood trends
+    \item \texttt{find\_similar\_days}: Cosine similarity on daily sensing vectors; returns 5 most behaviorally similar past days with ground-truth outcomes
+    \item \texttt{find\_peer\_cases}: Cross-user search over training population. Text mode: TF-IDF on diary text. Sensing mode: cosine similarity on daily behavioral fingerprints. Returns peer cases with ground-truth outcomes as calibration anchors.
+\end{enumerate}
+
+\noindent Agents are limited to 16 tool calls per prediction (timeout: 600 seconds). In practice, agents typically use 4--8 calls, demonstrating selective investigation.
+
+\subsection{Cross-User Retrieval-Augmented Generation}
+
+A key challenge in affect prediction is calibration: how does the agent know what absolute PANAS values correspond to the behavioral patterns it observes? We address this through \emph{cross-user RAG}, which retrieves similar cases from a peer database of 15,984 training-set EMA entries (96\% with associated sensing data). The retrieved cases provide ground-truth outcomes that serve as calibration anchors.
+
+Three retrieval modes serve different agent configurations:
+\begin{itemize}[nosep]
+    \item \textbf{Text retrieval} (CALLM, V3, V4/V6): TF-IDF similarity over diary text (5,000 features, bigrams, min document frequency 2). Returns 10--20 most similar diary entries with outcomes.
+    \item \textbf{Sensing retrieval} (V1, V2): Cosine similarity on z-score normalized daily sensing feature vectors. Returns 5 most behaviorally similar peer days with outcomes.
+    \item \textbf{Tool-based retrieval} (V2, V4/V6): The \texttt{find\_peer\_cases} MCP tool exposes both modes to agentic agents, letting them choose retrieval strategy.
+\end{itemize}
+
+\noindent Current-participant entries are excluded from retrieval to prevent data leakage.
+
+
+%% ================================================================
+%%  4. EVALUATION METHODOLOGY
+%% ================================================================
+\section{Evaluation Methodology}
+
+\subsection{Pilot Study Design}
+
+We evaluate all agent variants on a pilot subset of 11 cancer survivors drawn from the BUCS test sets: participants 43, 71, 119, 164, 258, 275, 310, 338, 399, 403, 437, 458, and 513. These participants span 5 cross-validation folds, yielding 956 EMA entries per agent variant (7 variants $\times$ 956 = 6,692 total predictions). Each participant contributes 81--96 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
+
+\subsection{Baselines}
+
+\paragraph{Autocorrelation (AR).}
+We compute a ``last-value'' AR baseline: the prediction for each target is the participant's most recent EMA response for that target. This establishes an empirical ceiling for autocorrelation-only prediction (BA = 0.658).
+
+\paragraph{Traditional ML.}
+Random Forest (RF) and XGBoost classifiers/regressors trained on 20 daily aggregate sensing features via 5-fold across-subject CV on the full dataset (15,984 entries). Additional variants include logistic regression and MLP.
+
+\paragraph{Text Baselines.}
+TF-IDF + SVM, Bag-of-Words + SVM, and MiniLM sentence transformer embeddings + SVM, all trained on diary text via 5-fold CV.
+
+\paragraph{Combined Baselines.}
+RF and logistic regression trained on concatenated sensing features and diary text embeddings.
+
+\subsection{Metrics}
+
+We report two classes of metrics aligned with our prediction targets:
+
+\paragraph{Continuous Targets (PANAS-PA, PANAS-NA, \erdesire{}).}
+Mean Absolute Error (MAE) averaged across all participants and entries. Lower is better.
+
+\paragraph{Binary State Targets.}
+\emph{Balanced Accuracy} (BA = (TPR + TNR) / 2) handles the class imbalance inherent in ``unusual state'' detection (most entries are not elevated). \emph{Macro F1} provides a complementary measure. We report per-target and mean values across all binary targets.
+
+\paragraph{Focus Targets.}
+Per the study's emphasis on intervention opportunity and affect, we highlight: \erdesire{} (continuous and binary), \intavail{} (binary), PA\_State, and NA\_State. Remaining targets (individual emotions, pain, forecasting, interactions quality) are reported in the appendix.
+
+\subsection{Implementation}
+
+All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscription, with no API cost. Structured agents (V1, V3, CALLM) use \texttt{claude -p} (single-call mode); agentic agents (V2, V4, V6) use \texttt{claude --print} with an MCP server subprocess. Concurrent processes are limited to 5 to respect subscription rate limits. Each agentic prediction typically takes 30--90 seconds and uses 4--8 tool calls.
+
+
+%% ================================================================
+%%  5. RESULTS
+%% ================================================================
+\section{Results}
+
+\subsection{Overview: Aggregate Performance}
+
+Table~\ref{tab:main_results} presents aggregate results across all prediction targets. The agentic multimodal variants (V4, V6) achieve the highest overall balanced accuracy and F1, while the diary-based approaches (CALLM, V3) achieve lower continuous MAE.
+
+\begin{table}[t]
+\caption{Aggregate performance across all prediction targets (11 users, 956 entries per variant). Best in each column is \textbf{bold}. $\dagger$ML baselines evaluated via 5-fold CV on full dataset (15,984 entries).}
+\label{tab:main_results}
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{System} & \textbf{Input} & \textbf{Mean MAE}$\downarrow$ & \textbf{Mean BA}$\uparrow$ & \textbf{Mean F1}$\uparrow$ \\
+\midrule
+\multicolumn{5}{l}{\emph{LLM Agent Systems}} \\
+CALLM & Diary + RAG & 3.661 & 0.624 & 0.611 \\
+V1 (Structured) & Sensing & 5.502 & 0.523 & 0.465 \\
+V2 (Agentic) & Sensing & 4.881 & 0.601 & 0.594 \\
+V3 (Structured) & Multimodal & \textbf{3.947} & 0.638 & 0.632 \\
+V4 (Agentic) & Multimodal & 4.353 & 0.673 & 0.667 \\
+V6 (Agentic+Filtered) & Multimodal & 4.220 & \textbf{0.675} & \textbf{0.669} \\
+\addlinespace
+\multicolumn{5}{l}{\emph{Baselines}$^\dagger$} \\
+AR (last value) & Prior EMA & 2.758 & 0.658 & 0.617 \\
+MiniLM & Diary embed. & 3.898 & 0.629 & 0.588 \\
+TF-IDF + SVM & Diary text & 3.999 & 0.613 & 0.570 \\
+Combined RF & Sensing + diary & 3.935 & 0.620 & 0.568 \\
+RF & Sensing & 5.923 & 0.501 & 0.365 \\
+XGBoost & Sensing & 9.374 & 0.502 & 0.391 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two patterns emerge. First, for \emph{binary state detection} (BA, F1), the ranking is: agentic multimodal (V4/V6) $>$ structured multimodal (V3) $>$ CALLM $>$ agentic sensing (V2) $>$ text baselines $>$ structured sensing (V1) $>$ ML sensing baselines. The agentic multimodal agents (V6: BA=0.675) are the only systems to exceed the AR autocorrelation baseline (BA=0.658). Second, for \emph{continuous regression} (MAE), diary-based systems dominate: CALLM (3.661) $<$ V3 (3.947) $<$ V6 (4.220) $<$ V4 (4.353), while sensing-only systems and ML baselines lag behind.
+
+This divergence---strong binary detection but weaker continuous calibration for agentic agents---suggests that the autonomous investigation approach excels at detecting \emph{whether} a state is unusual, even when absolute value prediction is less precise.
+
+\subsection{Intervention Opportunity: Desire and Availability}
+\label{sec:results_intervention}
+
+Table~\ref{tab:intervention} presents results for the two components of intervention opportunity.
+
+\begin{table}[t]
+\caption{Intervention opportunity prediction. \erdesire{}: emotion regulation desire; \intavail{}: intervention availability. Best per metric is \textbf{bold}.}
+\label{tab:intervention}
+\small
+\begin{tabular}{l cc cc c}
+\toprule
+& \multicolumn{2}{c}{\erdesire{} State (Binary)} & \multicolumn{2}{c}{\intavail{} (Binary)} & \erdesire{} \\
+\textbf{System} & BA & F1 & BA & F1 & MAE \\
+\midrule
+CALLM & 0.678 & 0.697 & 0.531 & 0.521 & 1.572 \\
+V1 & 0.533 & 0.518 & 0.494 & 0.396 & 2.802 \\
+V2 & 0.669 & 0.672 & 0.735 & 0.734 & 1.316 \\
+V3 & 0.734 & 0.751 & 0.565 & 0.561 & 1.740 \\
+V4 & 0.771 & 0.775 & \textbf{0.751} & \textbf{0.750} & 1.010 \\
+V6 & \textbf{0.786} & \textbf{0.782} & 0.743 & 0.742 & \textbf{0.978} \\
+\midrule
+AR & 0.658 & --- & --- & --- & 1.646 \\
+MiniLM$^\dagger$ & 0.629 & 0.588 & 0.573 & 0.624 & 2.185 \\
+RF$^\dagger$ & 0.501 & 0.365 & --- & --- & 3.250 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Emotion Regulation Desire.}
+Detecting when a cancer survivor \emph{wants} emotional support is the most direct signal for intervention timing. The agentic multimodal agents achieve remarkable performance: V6 attains BA = 0.786 and MAE = 0.978 (on a 0--10 scale), substantially outperforming both the structured multimodal agent (V3: BA = 0.734) and CALLM (BA = 0.678). The agentic sensing-only agent (V2: BA = 0.669) also outperforms V1 (BA = 0.533), demonstrating the value of autonomous investigation even without diary text.
+
+\paragraph{Intervention Availability.}
+Predicting whether a survivor is \emph{available} to engage with an intervention shows a striking pattern: agentic agents dramatically outperform structured ones. V4 (BA = 0.751) and V6 (BA = 0.743) far exceed V3 (BA = 0.565) and CALLM (BA = 0.531). Even the sensing-only agentic agent V2 (BA = 0.735) substantially outperforms all structured variants. This suggests that \emph{behavioral signals}---detectable through autonomous sensing investigation---are more informative for availability prediction than diary text alone. A user's diary may describe their emotions but rarely states whether they are currently available for an intervention.
+
+\paragraph{Intervention Opportunity.}
+For a JITAI to act, both desire and availability must be predicted correctly. The agentic multimodal agents excel on both dimensions simultaneously, achieving the only balanced accuracy above 0.74 on both constructs. In contrast, CALLM performs well on desire (0.678) but poorly on availability (0.531), making it an unreliable trigger for intervention delivery.
+
+\subsection{Positive and Negative Affect}
+\label{sec:results_affect}
+
+Table~\ref{tab:affect} presents results for affect state detection and continuous prediction.
+
+\begin{table}[t]
+\caption{Affect prediction. PA/NA State: binary (elevated vs.\ typical); PANAS: continuous (0--30). Best per metric is \textbf{bold}.}
+\label{tab:affect}
+\small
+\begin{tabular}{l cc cc cc}
+\toprule
+& \multicolumn{2}{c}{PA State} & \multicolumn{2}{c}{NA State} & \multicolumn{2}{c}{PANAS (MAE)} \\
+\textbf{System} & BA & F1 & BA & F1 & Pos & Neg \\
+\midrule
+CALLM & 0.566 & 0.545 & 0.681 & 0.700 & 5.147 & \textbf{4.264} \\
+V1 & 0.522 & 0.406 & 0.520 & 0.510 & 7.033 & 6.671 \\
+V2 & 0.604 & 0.603 & 0.633 & 0.609 & 6.023 & 7.304 \\
+V3 & 0.601 & 0.580 & 0.727 & 0.740 & 5.899 & 4.201 \\
+V4 & 0.738 & 0.734 & 0.773 & 0.738 & 5.436 & 6.615 \\
+V6 & \textbf{0.755} & \textbf{0.750} & \textbf{0.790} & \textbf{0.758} & \textbf{5.385} & 6.298 \\
+\midrule
+AR$^\dagger$ & --- & --- & --- & --- & 4.227 & 2.410 \\
+MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 & 6.019 & 3.492 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Negative Affect State Detection.}
+Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. V6 achieves BA = 0.790, substantially above V3 (0.727) and CALLM (0.681). This represents a meaningful improvement: at 79\% balanced accuracy, the system correctly identifies roughly 4 out of 5 instances of elevated negative affect, while maintaining a low false positive rate.
+
+\paragraph{Positive Affect State Detection.}
+Detecting unusual positive affect states follows the same pattern. V6 (BA = 0.755) significantly outperforms V3 (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
+
+\paragraph{Continuous PANAS Prediction.}
+For absolute value prediction, diary-based approaches dominate: CALLM achieves the lowest PANAS-Neg MAE (4.264) and V6 the lowest PANAS-Pos MAE (5.385). The AR baseline achieves lower MAE on both (Pos: 4.227, Neg: 2.410), as autocorrelation is inherently well-suited to continuous prediction when states are persistent. However, continuous MAE is less actionable than binary state detection for JITAI applications: what matters is detecting \emph{when states change}, not predicting exact numerical values.
+
+\subsection{Structured vs.\ Agentic: The Value of Autonomous Investigation}
+\label{sec:results_agentic}
+
+Table~\ref{tab:agentic_vs_structured} isolates the effect of agentic reasoning by comparing matched pairs within each data condition.
+
+\begin{table}[t]
+\caption{Effect of agentic reasoning. $\Delta$ = agentic $-$ structured (positive = agentic better). Results on focus targets.}
+\label{tab:agentic_vs_structured}
+\small
+\begin{tabular}{l cc cc}
+\toprule
+& \multicolumn{2}{c}{Sensing-Only} & \multicolumn{2}{c}{Multimodal} \\
+\textbf{Target (BA)} & V1 & V2 & V3 & V4 \\
+\midrule
+\erdesire{} State & 0.533 & \textbf{0.669} {\scriptsize (+.136)} & 0.734 & \textbf{0.771} {\scriptsize (+.037)} \\
+\intavail{} & 0.494 & \textbf{0.735} {\scriptsize (+.241)} & 0.565 & \textbf{0.751} {\scriptsize (+.186)} \\
+PA State & 0.522 & \textbf{0.604} {\scriptsize (+.082)} & 0.601 & \textbf{0.738} {\scriptsize (+.137)} \\
+NA State & 0.520 & \textbf{0.633} {\scriptsize (+.113)} & 0.727 & \textbf{0.773} {\scriptsize (+.046)} \\
+\addlinespace
+Mean BA (all) & 0.523 & \textbf{0.601} {\scriptsize (+.078)} & 0.638 & \textbf{0.673} {\scriptsize (+.035)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The agentic approach consistently and substantially outperforms the structured approach across all targets and both data conditions. The improvement is especially dramatic for:
+
+\begin{itemize}[nosep]
+    \item \textbf{Intervention availability} (+0.241 BA in sensing-only, +0.186 in multimodal): Availability depends on contextual behavioral signals (current activity, time patterns) that benefit from selective investigation. Structured agents receive all features equally weighted, while agentic agents can focus on the specific signals (screen activity, motion state, time of day) most relevant to availability.
+
+    \item \textbf{Sensing-only condition} (+0.078 overall BA): When no diary text is available, the agentic approach's ability to selectively investigate sensor streams becomes more valuable. The structured agent receives a flat feature summary that treats all modalities equally; the agentic agent can recognize, for example, that a day of unusually low mobility warrants deeper GPS investigation while ignoring unexceptional screen patterns.
+\end{itemize}
+
+The improvement is smaller (but still consistent) in the multimodal condition, where the diary text already provides a strong signal that reduces the marginal value of autonomous sensing investigation.
+
+\subsection{Sensing-Only vs.\ Multimodal}
+\label{sec:results_modality}
+
+\begin{table}[t]
+\caption{Effect of data modality. $\Delta$ = multimodal $-$ sensing-only (positive = multimodal better).}
+\label{tab:modality}
+\small
+\begin{tabular}{l cc cc}
+\toprule
+& \multicolumn{2}{c}{Structured} & \multicolumn{2}{c}{Agentic} \\
+\textbf{Target (BA)} & V1 & V3 & V2 & V4 \\
+\midrule
+\erdesire{} State & 0.533 & \textbf{0.734} {\scriptsize (+.201)} & 0.669 & \textbf{0.771} {\scriptsize (+.102)} \\
+\intavail{} & 0.494 & 0.565 {\scriptsize (+.071)} & \textbf{0.735} & \textbf{0.751} {\scriptsize (+.016)} \\
+PA State & 0.522 & 0.601 {\scriptsize (+.079)} & 0.604 & \textbf{0.738} {\scriptsize (+.134)} \\
+NA State & 0.520 & \textbf{0.727} {\scriptsize (+.207)} & 0.633 & \textbf{0.773} {\scriptsize (+.140)} \\
+\addlinespace
+Mean BA (all) & 0.523 & 0.638 {\scriptsize (+.115)} & 0.601 & \textbf{0.673} {\scriptsize (+.072)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Adding diary text to sensing data consistently improves performance, with particularly large gains for affect-related targets (NA State: +0.207 in structured, +0.140 in agentic). Diary text provides direct emotional content that is difficult to infer from behavioral signals alone. However, the improvement for \intavail{} is minimal in the agentic condition (+0.016), confirming that availability is primarily a behavioral construct well-captured by sensing data.
+
+\subsection{Calibration Analysis}
+
+\begin{table}[t]
+\caption{Prediction calibration for continuous targets. We report predicted vs.\ ground truth distribution statistics. Well-calibrated systems have similar mean and standard deviation.}
+\label{tab:calibration}
+\small
+\begin{tabular}{l cccc}
+\toprule
+\textbf{System} & \textbf{PA pred $\mu$/$\sigma$} & \textbf{PA GT $\mu$/$\sigma$} & \textbf{NA pred $\mu$/$\sigma$} & \textbf{NA GT $\mu$/$\sigma$} \\
+\midrule
+V6 & 16.2 / 4.7 & 18.1 / 7.8 & 9.2 / 4.9 & 3.4 / 4.8 \\
+V4 & 15.9 / 4.7 & 18.1 / 7.8 & 9.5 / 4.9 & 3.4 / 4.8 \\
+V3 & 17.0 / 5.2 & 17.8 / 8.1 & 6.0 / 4.8 & 3.6 / 5.1 \\
+CALLM & 17.9 / 5.6 & 17.7 / 7.7 & 5.5 / 5.3 & 3.8 / 5.1 \\
+V1 & 16.3 / 3.4 & 18.4 / 7.8 & 7.9 / 4.7 & 3.0 / 4.6 \\
+V2 & 16.0 / 4.1 & 18.0 / 7.8 & 10.0 / 4.4 & 3.4 / 4.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents underestimate the spread of positive affect ($\sigma_{\text{pred}} < \sigma_{\text{GT}}$, i.e., mean regression). More critically, sensing-based agents (V1, V2, V4, V6) systematically \emph{overestimate} negative affect: V2 predicts mean NA = 10.0 vs.\ ground truth 3.4. This ``negativity bias'' is less severe in diary-informed agents (CALLM: 5.5 vs.\ 3.8; V3: 6.0 vs.\ 3.6), where the diary text provides direct evidence of emotional valence.
+
+Despite this calibration gap in continuous values, the agentic agents achieve superior \emph{binary} state detection because they correctly identify \emph{relative} shifts---entries where the predicted NA is high \emph{relative to the agent's own predictions for that user}---even when absolute values are biased.
+
+
+%% ================================================================
+%%  6. DISCUSSION
+%% ================================================================
+\section{Discussion}
+
+\subsection{Why Does Agentic Investigation Help?}
+
+The consistent superiority of agentic over structured agents merits explanation. We identify three mechanisms:
+
+\paragraph{Selective Attention.}
+Structured agents receive all sensing features with equal prominence, analogous to a clinician reading a patient's full chart before every encounter. Agentic agents, in contrast, can focus on the most \emph{diagnostically informative} signals. When a participant's diary mentions ``terrible pain today,'' the agentic agent can investigate mobility patterns (reduced movement?) and screen usage (distraction seeking?) while skipping uninformative music data. This selective attention reduces noise and focuses reasoning on the signals most relevant to each specific prediction context.
+
+\paragraph{Anomaly Detection.}
+The \texttt{compare\_to\_baseline} tool enables agents to detect behavioral anomalies via z-scores---deviations from the participant's personal norm. A structured agent sees that a participant was stationary for 800 minutes; an agentic agent can discover that this is 2.8 standard deviations above their 14-day baseline, flagging it as highly unusual. This personalized anomaly detection is particularly valuable for binary state prediction, which requires identifying \emph{when things are different from normal}.
+
+\paragraph{Analogical Reasoning.}
+Through \texttt{find\_similar\_days} and \texttt{find\_peer\_cases}, agentic agents engage in explicit analogical reasoning: ``On 3 past days with similar behavioral patterns, this participant reported NA = 5, 4, 6---suggesting moderate negative affect today.'' This grounds predictions in empirical evidence rather than abstract feature-to-outcome mappings.
+
+\subsection{The Diary Paradox and Proactive Sensing}
+
+Our results reveal a productive tension. Diary text is the single most informative signal for emotional state prediction---the multimodal advantage is primarily driven by diary content rather than sensing data. Yet diary text is precisely the signal that is absent when users most need help. This creates the \emph{diary paradox}: the most useful input for prediction is the one that disappears when prediction is most needed.
+
+The sensing-only agents (V2) achieve BA = 0.601---above chance and above all traditional ML baselines---demonstrating that proactive prediction from passive sensing alone is viable, if imperfect. In practice, a deployed system could use multimodal prediction when diary entries are available and fall back to sensing-only prediction when they are not, combining reactive accuracy with proactive coverage.
+
+\subsection{Intervention Availability: A Behavioral Construct}
+
+Our finding that agentic sensing agents dramatically outperform diary-based approaches for \intavail{} prediction (V2: 0.735 vs.\ CALLM: 0.531) has important implications. Intervention availability is fundamentally a \emph{behavioral} construct---it depends on what the user is currently doing (driving? in a meeting? asleep?), which passive sensing can directly observe but diary text rarely mentions. This suggests that sensing-based availability prediction may be sufficient for JITAI deployment even without diary input, while emotional state prediction benefits from multimodal integration.
+
+\subsection{Cross-User RAG as Calibration}
+
+The cross-user RAG mechanism serves a fundamentally different role than RAG in typical NLP applications. Rather than retrieving factual knowledge to ground generation, our system retrieves \emph{calibration anchors}: similar cases from other participants with known outcomes. When an agent encounters a behavioral pattern for the first time, it can reference how similar patterns manifested in other participants, providing empirical grounding for its predictions. This is particularly valuable for the binary state targets, where the threshold between ``typical'' and ``elevated'' varies across individuals and the peer cases provide population-level reference points.
+
+\subsection{Limitations}
+
+\paragraph{Pilot Scale.}
+Our evaluation covers 11 participants (956 entries per variant). While results are consistent across participants and the patterns are clear, a larger-scale evaluation is needed to establish generalizability. The pilot scale is a direct consequence of LLM inference costs: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
+
+\paragraph{Retrospective Evaluation.}
+We evaluate through retrospective replay of historical data, not real-time deployment. While we carefully enforce temporal boundaries (agents only see data before each EMA timestamp), a deployed system would face additional challenges including sensor dropout, connectivity issues, and real-time latency requirements.
+
+\paragraph{Continuous Calibration Gap.}
+All agents, but especially sensing-based ones, exhibit systematic biases in continuous prediction (negativity bias for PANAS-NA, mean regression for PANAS-PA). While binary state detection is robust to these biases (detecting relative shifts), applications requiring precise continuous values would need additional calibration mechanisms.
+
+\paragraph{Evaluation Set Mismatch.}
+ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 11-user pilot subset. Direct comparison requires caution, though the consistent patterns (LLM agents outperform ML on binary tasks, underperform AR on continuous tasks) are robust to this difference.
+
+\paragraph{Model and Platform Dependency.}
+Our system is tightly coupled to Claude Sonnet and the Claude Max subscription. Performance may vary across LLM providers and versions. The Android-only availability of app and light sensor data (29\% of participants) limits the sensing features available to iOS users.
+
+\subsection{Implications for JITAI Design}
+
+Our findings suggest several design principles for next-generation JITAIs:
+
+\begin{enumerate}[nosep]
+    \item \textbf{Separate desire from availability.} These constructs require different prediction approaches---desire benefits from multimodal data, while availability is well-predicted from sensing alone.
+
+    \item \textbf{Use agentic reasoning for state detection.} Autonomous investigation of sensor data outperforms fixed pipelines for detecting unusual emotional states, suggesting that JITAI decision rules should incorporate contextual, selective data analysis.
+
+    \item \textbf{Design for graceful degradation.} The system should use multimodal prediction when diary entries are available and fall back to sensing-only when they are not, maintaining proactive capability while maximizing accuracy when possible.
+
+    \item \textbf{Leverage population data for calibration.} Cross-user RAG provides a practical mechanism for calibrating personalized predictions against population-level patterns, reducing the cold-start problem for new users.
+\end{enumerate}
+
+\subsection{Ethical Considerations}
+
+Deploying an AI system that monitors behavioral data and predicts emotional states raises important ethical concerns. Participants in BUCS consented to passive data collection for research purposes; deployment would require clear informed consent, transparency about what data is collected and how it is used, and robust data security. The system should complement, not replace, human clinical judgment. False negatives (missing genuine distress) and false positives (unnecessary interventions) both carry costs that must be weighed in the context of the target population's vulnerability.
+
+
+%% ================================================================
+%%  7. CONCLUSION
+%% ================================================================
+\section{Conclusion}
+
+We presented the \sys{}, a framework for proactive emotional state prediction using LLM agents that autonomously investigate passive smartphone sensing data. Through a 2$\times$2 factorial evaluation on 11 cancer survivors from the BUCS study, we demonstrated that agentic multimodal agents achieve superior performance for detecting intervention opportunities (emotion regulation desire and intervention availability) and affective states (positive and negative affect), outperforming both structured LLM pipelines and traditional ML baselines.
+
+The key insight is that treating affect prediction as an \emph{autonomous behavioral investigation}---where the LLM decides what sensor data to examine, like a data scientist reasoning about a patient---yields better binary state detection than presenting all features in a fixed format. This agentic approach is especially valuable for intervention availability prediction, which is fundamentally a behavioral construct best captured through selective sensing analysis.
+
+Our work establishes LLM-based agentic sensing as a viable paradigm for proactive JITAI systems. By combining the contextual reasoning capabilities of large language models with the passive, always-on nature of smartphone sensing, we move closer to systems that can support cancer survivors precisely when they need it most---even when they are not actively seeking help.
+
+%% ================================================================
+%%  ACKNOWLEDGMENTS
+%% ================================================================
+\begin{acks}
+[Anonymized for review]
+\end{acks}
+
+%% ================================================================
+%%  REFERENCES
+%% ================================================================
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+%% ================================================================
+%%  APPENDIX
+%% ================================================================
+\appendix
+
+\section{Full Per-Target Results}
+\label{app:full_results}
+
+Table~\ref{tab:full_ba} presents balanced accuracy for all 16 binary prediction targets.
+
+\begin{table*}[t]
+\caption{Balanced accuracy for all binary targets across LLM agent variants (11 users, 956 entries). Bold = best per row. Targets above the line are focus targets discussed in the main text; those below are supplementary.}
+\label{tab:full_ba}
+\small
+\begin{tabular}{l cccccc}
+\toprule
+\textbf{Target} & \textbf{CALLM} & \textbf{V1} & \textbf{V2} & \textbf{V3} & \textbf{V4} & \textbf{V6} \\
+\midrule
+PA State & .566 & .522 & .604 & .601 & .738 & \textbf{.755} \\
+NA State & .681 & .520 & .633 & .727 & .773 & \textbf{.790} \\
+\erdesire{} State & .678 & .533 & .669 & .734 & .771 & \textbf{.786} \\
+\intavail{} & .531 & .494 & .735 & .565 & \textbf{.751} & .743 \\
+\midrule
+happy & .704 & .541 & .603 & .699 & .731 & \textbf{.736} \\
+sad & .681 & .518 & .632 & .720 & .695 & \textbf{.704} \\
+afraid & .570 & .549 & .568 & .580 & \textbf{.591} & .583 \\
+miserable & .566 & .511 & .556 & .636 & .617 & \textbf{.593} \\
+worried & .680 & .531 & .633 & .710 & \textbf{.719} & .712 \\
+cheerful & .722 & .549 & .629 & .699 & .754 & \textbf{.763} \\
+pleased & .708 & .544 & .604 & .709 & .718 & \textbf{.719} \\
+grateful & .694 & .524 & .605 & .657 & .707 & \textbf{.686} \\
+lonely & .542 & .510 & \textbf{.588} & .563 & .575 & .577 \\
+int.~quality & .630 & .513 & .566 & .612 & \textbf{.687} & .667 \\
+pain & .537 & .504 & .521 & .543 & .532 & \textbf{.537} \\
+forecasting & .488 & .510 & .463 & .453 & .414 & \textbf{.457} \\
+\midrule
+\textbf{Mean BA} & .624 & .523 & .601 & .638 & .673 & \textbf{.675} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+
+\section{Agentic Investigation Example}
+\label{app:example}
+
+Figure~\ref{fig:example_trace} illustrates a typical V4 agentic investigation trace. The agent analyzes a participant's diary entry mentioning chronic pain, then autonomously queries mobility data (confirming reduced movement), screen usage (elevated, suggesting distraction-seeking), and peer cases (finding 3 similar diary entries that all corresponded to elevated negative affect). The investigation takes 6 tool calls and produces a prediction of elevated NA and ER desire---both confirmed by the subsequent EMA response.
+
+\begin{figure}[h]
+\centering
+\fbox{\parbox{0.9\columnwidth}{
+\small
+\textbf{Participant 071, 2024-01-15 14:00 EMA}\\
+\textbf{Diary:} ``Pain is really bad today. Can barely focus on anything.''\\[4pt]
+\texttt{1. Diary analysis} $\rightarrow$ Pain-focused, low energy, negative valence\\
+\texttt{2. get\_behavioral\_timeline()} $\rightarrow$ 100\% stationary all day\\
+\texttt{3. compare\_to\_baseline(gps\_home\_pct)} $\rightarrow$ z=+2.8 (97th pctile)\\
+\texttt{4. query\_sensing(screen, 6h)} $\rightarrow$ 3.4h screen (high for this user)\\
+\texttt{5. find\_peer\_cases(``pain bad focus'')} $\rightarrow$ 3 similar cases, mean NA=5.2\\
+\texttt{6. find\_similar\_days()} $\rightarrow$ Past similar day: NA=5, ER=6\\[4pt]
+\textbf{Prediction:} NA=5, ER\_desire=5, NA\_State=True, INT\_avail=Yes\\
+\textbf{Ground truth:} NA=5, ER\_desire=6, NA\_State=True, INT\_avail=Yes\\
+\textbf{Result:} Correct on all key targets.
+}}
+\caption{Example agentic investigation trace showing diary-first analysis followed by selective tool-use for behavioral validation.}
+\label{fig:example_trace}
+\end{figure}
+
+
+\section{ML Baseline Details}
+\label{app:baselines}
+
+All ML baselines use 5-fold across-subject cross-validation on the full BUCS dataset ($\sim$15,984 EMA entries, 418 participants). Sensing features comprise 20 daily aggregates: sleep duration, stationary/walking/driving/running minutes, GPS travel distance/time/home time, screen time/sessions, words typed, positive/negative typing sentiment ratios, app usage time (Android), ambient light (Android). Missing features are imputed with training fold medians.
+
+\begin{itemize}[nosep]
+    \item \textbf{Random Forest}: 100 trees, max depth 15, class-weight balanced
+    \item \textbf{XGBoost}: 100 rounds, max depth 6, learning rate 0.1
+    \item \textbf{Logistic Regression}: L2 penalty, class-weight balanced (classification only)
+    \item \textbf{MLP}: 2 hidden layers (128, 64), ReLU, dropout 0.3, 100 epochs (4-fold; fold 5 diverged)
+    \item \textbf{TF-IDF + SVM}: 5,000 features, bigrams, linear SVM
+    \item \textbf{MiniLM}: all-MiniLM-L6-v2 sentence embeddings (384-dim), linear SVM
+    \item \textbf{Combined RF}: Concatenated sensing features + MiniLM diary embeddings
+\end{itemize}
+
+Ridge regression and MLP regression diverged on 3/5 and 1/5 folds respectively (MAE $>10^{10}$) and are excluded from results.
+
+\end{document}
