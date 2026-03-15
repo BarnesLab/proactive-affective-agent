@@ -32,3 +32,6 @@ outputs/
 # Logs
 *.log
 test_logs/
+
+# Paper draft (Overleaf only)
+draft/
