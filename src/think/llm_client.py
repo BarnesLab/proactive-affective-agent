@@ -30,6 +30,15 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "configs" / "predi
 class ClaudeCodeClient:
     """Wraps the Claude Code CLI (`claude -p`) for LLM calls."""
 
+    # Retry constants (mirrored from AgenticCCAgent._run_claude)
+    _TRANSIENT_RETRIES = 3
+    _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
+    _PATIENT_WAIT = 300  # 5 minutes — slow retry after fast retries exhausted
+    _HOURLY_WAIT = 1800  # 30 minutes
+    _HOURLY_MAX_RETRIES = 12  # up to 6 hours total
+    _TIMEOUT_RETRIES = 3
+    _TIMEOUT_BACKOFF = [10, 20, 40]
+
     def __init__(
         self,
         model: str = "sonnet",
@@ -55,7 +64,14 @@ class ClaudeCodeClient:
         json_schema: dict | None = None,
         schema_path: Path | None = None,
     ) -> str:
-        """Generate a completion using Claude Code CLI.
+        """Generate a completion using Claude Code CLI with robust retry logic.
+
+        Retry strategy (same as AgenticCCAgent._run_claude):
+        - Transient errors: 3 fast retries with exponential backoff (2s, 4s, 8s)
+        - Patient retry: after fast retries exhausted, wait 5 min and retry
+        - Hourly rate limit: wait 30 min, retry up to 12 times (6h total)
+        - Weekly rate limit: send Telegram alert, raise RateLimitError
+        - Timeout: 3 retries with backoff (10s, 20s, 40s), then patient retry
 
         Args:
             prompt: The user prompt.
@@ -66,6 +82,11 @@ class ClaudeCodeClient:
         Returns:
             Raw text response from Claude.
 
+        Raises:
+            RateLimitError: On weekly rate limit (caller should stop experiment).
+            RuntimeError: On unexpected unrecoverable errors.
+            subprocess.TimeoutExpired: Should not propagate (handled internally).
+
         Side effect:
             Sets self.last_usage with token counts from the most recent call.
         """
@@ -73,22 +94,34 @@ class ClaudeCodeClient:
             self.last_usage = {"input_tokens": 0, "output_tokens": 0}
             return self._dry_run_response(prompt)
 
-        cmd = self._build_command(prompt, system_prompt, json_schema, schema_path)
+        cmd = self._build_command(system_prompt, json_schema, schema_path)
 
-        for attempt in range(1, self.max_retries + 1):
+        # Remove all CLAUDE* env vars to avoid nested session detection
+        env = {k: v for k, v in os.environ.items()
+               if not k.upper().startswith("CLAUDE")}
+
+        transient_attempts = 0
+        hourly_attempts = 0
+        timeout_attempts = 0
+        patient_attempts = 0
+        _notified_hourly = False
+        _notified_patient = False
+
+        while True:
             try:
-                # Rate limiting
+                # Rate limiting between calls
                 if self._call_count > 0:
                     time.sleep(self.delay_between_calls)
 
-                logger.debug(f"LLM call #{self._call_count + 1} (attempt {attempt})")
-
-                # Remove all CLAUDE* env vars to avoid nested session detection
-                env = {k: v for k, v in os.environ.items()
-                       if not k.upper().startswith("CLAUDE")}
+                logger.debug(
+                    f"LLM call #{self._call_count + 1} "
+                    f"(transient={transient_attempts}, hourly={hourly_attempts}, "
+                    f"timeout={timeout_attempts}, patient={patient_attempts})"
+                )
 
                 result = subprocess.run(
                     cmd,
+                    input=prompt,
                     capture_output=True,
                     text=True,
                     timeout=self.timeout,
@@ -97,47 +130,104 @@ class ClaudeCodeClient:
 
                 self._call_count += 1
 
-                if result.returncode != 0:
-                    stderr = result.stderr.strip()
-                    limit_type = classify_error(stderr, result.returncode)
+                if result.returncode == 0:
+                    raw = result.stdout.strip()
+                    output = self._unwrap_cli_response(raw)
+                    if output:
+                        return output
+                    # Empty output on success — treat as transient
+                    logger.warning("Empty output on success, treating as transient")
 
-                    if limit_type == RateLimitType.WEEKLY:
-                        send_telegram(
-                            f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
-                            f"Experiment stopped. Resume after limit resets."
+                # Non-zero exit or empty output — classify the error
+                stderr = result.stderr.strip() if result.returncode != 0 else ""
+                limit_type = classify_error(stderr, result.returncode)
+                stderr_preview = stderr[:300] if stderr else "(empty)"
+
+                if limit_type == RateLimitType.WEEKLY:
+                    send_telegram(
+                        f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
+                        f"Experiment stopped. Resume after limit resets."
+                    )
+                    raise RateLimitError(
+                        f"Weekly rate limit: {stderr_preview}",
+                        RateLimitType.WEEKLY,
+                    )
+
+                if limit_type == RateLimitType.HOURLY:
+                    hourly_attempts += 1
+                    if hourly_attempts > self._HOURLY_MAX_RETRIES:
+                        raise RuntimeError(
+                            f"Hourly rate limit persisted after {hourly_attempts} attempts "
+                            f"({hourly_attempts * self._HOURLY_WAIT / 3600:.1f}h): {stderr_preview}"
                         )
-                        raise RateLimitError(f"Weekly rate limit: {stderr[:200]}")
+                    if not _notified_hourly:
+                        send_telegram(
+                            f"[proactive-affective-agent] Rate limit hit (structured agent) — waiting 30min\n"
+                            f"Will keep retrying (no fallback)."
+                        )
+                        _notified_hourly = True
+                    logger.warning(
+                        f"Hourly rate limit (attempt {hourly_attempts}/{self._HOURLY_MAX_RETRIES}). "
+                        f"Waiting {self._HOURLY_WAIT}s..."
+                    )
+                    time.sleep(self._HOURLY_WAIT)
+                    continue
 
-                    if limit_type == RateLimitType.HOURLY:
-                        logger.warning(f"Hourly rate limit hit (attempt {attempt}). Waiting 30 min...")
-                        if attempt == 1:
-                            send_telegram(
-                                f"[proactive-affective-agent] Rate limit hit (structured agent) — waiting 30min"
-                            )
-                        time.sleep(1800)
-                        continue
-
-                    logger.warning(f"Claude CLI returned code {result.returncode}: {stderr}")
-                    if attempt < self.max_retries:
-                        wait = self.backoff_base ** attempt
-                        logger.info(f"Retrying in {wait}s...")
-                        time.sleep(wait)
-                        continue
-                    raise RuntimeError(f"Claude CLI failed after {self.max_retries} attempts: {stderr}")
-
-                raw = result.stdout.strip()
-                # Claude CLI --output-format json wraps in {"result": "...", ...}
-                return self._unwrap_cli_response(raw)
-
-            except subprocess.TimeoutExpired:
-                logger.warning(f"Claude CLI timed out after {self.timeout}s (attempt {attempt})")
-                if attempt < self.max_retries:
-                    wait = self.backoff_base ** attempt
+                # Transient error — fast retries first, then patient retry
+                transient_attempts += 1
+                if transient_attempts <= self._TRANSIENT_RETRIES:
+                    wait = self._TRANSIENT_BACKOFF[min(transient_attempts - 1, len(self._TRANSIENT_BACKOFF) - 1)]
+                    logger.warning(
+                        f"Transient error (attempt {transient_attempts}/{self._TRANSIENT_RETRIES}), "
+                        f"retrying in {wait}s: {stderr_preview}"
+                    )
                     time.sleep(wait)
                     continue
-                raise
 
-        return ""
+                # Fast retries exhausted — switch to patient retry
+                patient_attempts += 1
+                if not _notified_patient:
+                    send_telegram(
+                        f"[proactive-affective-agent] Rate limit (patient mode, structured agent)\n"
+                        f"Waiting {self._PATIENT_WAIT}s between retries. No fallback."
+                    )
+                    _notified_patient = True
+                logger.warning(
+                    f"Patient retry #{patient_attempts}, waiting {self._PATIENT_WAIT}s: {stderr_preview}"
+                )
+                time.sleep(self._PATIENT_WAIT)
+                # Reset transient counter for next round of fast retries
+                transient_attempts = 0
+                continue
+
+            except subprocess.TimeoutExpired:
+                timeout_attempts += 1
+                if timeout_attempts <= self._TIMEOUT_RETRIES:
+                    wait = self._TIMEOUT_BACKOFF[min(timeout_attempts - 1, len(self._TIMEOUT_BACKOFF) - 1)]
+                    logger.warning(f"Claude CLI timed out (attempt {timeout_attempts}/{self._TIMEOUT_RETRIES}), retrying in {wait}s")
+                    time.sleep(wait)
+                    continue
+                # Timeout retries exhausted — patient retry
+                patient_attempts += 1
+                if not _notified_patient:
+                    send_telegram(
+                        f"[proactive-affective-agent] Timeout → patient mode (structured agent)\n"
+                        f"Waiting {self._PATIENT_WAIT}s between retries. No fallback."
+                    )
+                    _notified_patient = True
+                logger.warning(f"Timeout → patient retry #{patient_attempts}, waiting {self._PATIENT_WAIT}s")
+                time.sleep(self._PATIENT_WAIT)
+                timeout_attempts = 0
+                continue
+
+            except RateLimitError:
+                raise
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                # Unexpected error — don't silently return empty, raise to caller
+                logger.error(f"Unexpected error in generate(): {exc}")
+                raise
 
     def generate_structured(
         self,
@@ -164,14 +254,18 @@ class ClaudeCodeClient:
 
     def _build_command(
         self,
-        prompt: str,
         system_prompt: str | None = None,
         json_schema: dict | None = None,
         schema_path: Path | None = None,
     ) -> list[str]:
-        """Build the `claude` CLI command."""
+        """Build the `claude` CLI command.
+
+        The prompt is NOT included here — it is passed via stdin to
+        subprocess.run(input=prompt) to avoid shell escaping issues with
+        diary text containing quotes, newlines, and special characters.
+        """
         cmd = [
-            "claude", "-p", prompt,
+            "claude", "-p",
             "--output-format", "json",
             "--model", self.model,
             "--no-session-persistence",

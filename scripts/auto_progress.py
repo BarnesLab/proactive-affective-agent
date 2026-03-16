@@ -103,7 +103,7 @@ for adir in glob.glob(os.path.join(base, 'outputs/_archive/pilot_gpt51codexmini*
 running = get_running()
 target_users = plan_40_users(sonnet_done, mini_done, all_users)
 
-print(f"Target 30 users: {target_users}")
+print(f"Target {len(target_users)} users: {target_users}")
 print(f"Currently running: {len(running)} tasks")
 
 # Find gaps
@@ -131,7 +131,7 @@ print(f"\nRunning: {current_running}, Max: {max_parallel}, Available slots: {ava
 
 # USER-FIRST SCHEDULING: maximize fully completed users PER MODEL
 # Each model independently: user is "complete" when all 7 versions done.
-# Sonnet: maximize n/30 complete users. Mini: same, independently.
+# Sonnet: maximize complete users. Mini: same, independently.
 
 def user_first_schedule_per_model(gaps, model_name, target_users):
     """For one model, return tasks sorted: users closest to 7/7 first."""
@@ -146,8 +146,9 @@ def user_first_schedule_per_model(gaps, model_name, target_users):
     )
     
     # Report
+    total = len(target_users)
     complete = [u for u in target_users if u not in user_gaps]
-    print(f"  {model_name}: {len(complete)}/30 users fully complete (7/7)")
+    print(f"  {model_name}: {len(complete)}/{total} users fully complete (7/7)")
     for uid in users_sorted[:5]:
         remaining = len(user_gaps[uid])
         print(f"    User {uid}: {7-remaining}/7 ({remaining} remaining)")
