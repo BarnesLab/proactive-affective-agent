@@ -107,6 +107,34 @@ SENSING_TOOLS: list[dict] = [
         },
     },
     {
+        "name": "get_behavioral_timeline",
+        "description": (
+            "Reconstruct the day as a chronological timeline before the EMA, with "
+            "coarse behavioral-state labels and cautious affective cues for each segment. "
+            "Use this to understand how the person's state evolved over the day."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Date in YYYY-MM-DD format",
+                },
+                "segment_hours": {
+                    "type": "integer",
+                    "description": (
+                        "Width of each timeline segment in hours. Default 3. "
+                        "Smaller values give finer temporal detail. Max 6."
+                    ),
+                    "default": 3,
+                    "minimum": 1,
+                    "maximum": 6,
+                },
+            },
+            "required": ["date"],
+        },
+    },
+    {
         "name": "compare_to_baseline",
         "description": (
             "Compare a current sensor reading to this person's personal historical "
@@ -705,6 +733,56 @@ class SensingQueryEngine:
 
         return "\n\n".join(sections)
 
+    def get_behavioral_timeline(
+        self,
+        study_id: int,
+        date_str: str,
+        ema_timestamp: str | datetime,
+        segment_hours: int = 3,
+    ) -> str:
+        """Return a chronological day timeline with inferred state labels.
+
+        The timeline is truncated at the EMA timestamp when the requested date is
+        the EMA date, preventing future leakage.
+        """
+        target = _parse_date(date_str)
+        if target is None:
+            return f"[Behavioral Timeline: {date_str}]\nInvalid date format. Use YYYY-MM-DD."
+
+        ema_dt = _normalize_ts(ema_timestamp)
+        segment_hours = min(max(int(segment_hours or 3), 1), 6)
+
+        day_start = datetime(target.year, target.month, target.day)
+        day_end = day_start + timedelta(days=1)
+        cutoff = min(day_end, ema_dt) if ema_dt.date() == target else day_end
+
+        header = f"[Behavioral Timeline: {target}]"
+        if cutoff <= day_start:
+            return (
+                f"{header}\n"
+                f"No observable timeline before the EMA cutoff ({ema_dt.strftime('%H:%M')})."
+            )
+
+        lines = [
+            header,
+            (
+                "Interpretation note: behavioral_state is grounded in observed sensor "
+                "patterns; affective_cue is a cautious inference, not ground truth."
+            ),
+            (
+                f"Coverage window: {day_start.strftime('%H:%M')}-{cutoff.strftime('%H:%M')} "
+                f"(segment size {segment_hours}h)"
+            ),
+        ]
+
+        current = day_start
+        while current < cutoff:
+            segment_end = min(current + timedelta(hours=segment_hours), cutoff)
+            lines.append(self._render_timeline_segment(study_id, current, segment_end))
+            current = segment_end
+
+        return "\n".join(lines)
+
     def _summarize_one_day(self, study_id: int, d: date, label: str) -> str:
         day_start = datetime(d.year, d.month, d.day)
         day_end = day_start + timedelta(days=1)
@@ -775,6 +853,112 @@ class SensingQueryEngine:
             lines.append(f"Overall: {'; '.join(overall_parts)}")
 
         return "\n".join(lines)
+
+    def _render_timeline_segment(
+        self,
+        study_id: int,
+        segment_start: datetime,
+        segment_end: datetime,
+    ) -> str:
+        duration_min = max((segment_end - segment_start).total_seconds() / 60.0, 1.0)
+        observed_parts: list[str] = []
+
+        motion_df = self._get_window(study_id, "motion", segment_start, segment_end)
+        gps_df = self._get_window(study_id, "gps", segment_start, segment_end)
+        screen_df = self._get_window(study_id, "screen", segment_start, segment_end)
+        key_df = self._get_window(study_id, "keyboard", segment_start, segment_end)
+        light_df = self._get_window(study_id, "light", segment_start, segment_end)
+
+        if not motion_df.empty:
+            motion_text = self._summarize_motion(motion_df)
+            if motion_text:
+                observed_parts.append(motion_text)
+        if not gps_df.empty:
+            gps_text = self._summarize_gps(gps_df)
+            if gps_text:
+                observed_parts.append(gps_text)
+        if not screen_df.empty:
+            screen_text = self._summarize_screen(screen_df)
+            if screen_text:
+                observed_parts.append(screen_text)
+        if not key_df.empty:
+            key_text = self._summarize_keyboard(key_df)
+            if key_text:
+                observed_parts.append(key_text)
+        if not light_df.empty:
+            lux = self._col_mean(light_df, ["light_mean_lux", "mean_lux", "lux"])
+            if lux is not None:
+                indoor_hint = "low light / likely indoors" if lux < 50 else "brighter environment"
+                observed_parts.append(f"{indoor_hint} ({lux:.0f} lux)")
+
+        walk = self._col_sum(motion_df, ["motion_walking_min", "walking_min"]) or 0.0
+        auto = self._col_sum(motion_df, ["motion_automotive_min", "automotive_min"]) or 0.0
+        stat = self._col_sum(motion_df, ["motion_stationary_min", "stationary_min"]) or 0.0
+        dist = self._col_sum(gps_df, ["gps_distance_km", "distance_km"]) or 0.0
+        home = self._col_sum(gps_df, ["gps_at_home_min", "at_home_min"]) or 0.0
+        screen = self._col_sum(screen_df, ["screen_on_min"]) or 0.0
+        sessions = self._col_sum(screen_df, ["screen_n_sessions", "n_sessions"]) or 0.0
+        chars = self._col_sum(key_df, ["key_chars_typed", "chars_typed", "n_char_day_allapps"]) or 0.0
+        words = self._col_sum(key_df, ["key_words_typed", "words_typed"]) or 0.0
+        neg_prop = self._col_mean(key_df, ["key_prop_neg", "prop_word_neg_day_allapps"])
+        pos_prop = self._col_mean(key_df, ["key_prop_pos", "prop_word_pos_day_allapps"])
+
+        behavior_labels: list[str] = []
+        if walk >= 20:
+            behavior_labels.append("physically active")
+        if dist >= 2.0 or auto >= 30:
+            behavior_labels.append("out-of-home / mobile")
+        if stat >= max(60.0, duration_min * 0.7):
+            behavior_labels.append("sedentary")
+        if home >= max(90.0, duration_min * 0.7):
+            behavior_labels.append("mostly at home")
+        session_threshold = max(4.0, (duration_min / 60.0) * 2.0)
+        if screen >= 45 or sessions >= session_threshold:
+            behavior_labels.append("digitally engaged")
+        if chars >= 200 or words >= 40:
+            behavior_labels.append("communication-heavy")
+        if not behavior_labels:
+            if observed_parts:
+                behavior_labels.append("mixed / low-signal activity")
+            else:
+                behavior_labels.append("no sensed activity")
+
+        affective_cues: list[str] = []
+        if neg_prop is not None and neg_prop >= 0.15:
+            affective_cues.append("possible negative tone in typing")
+        if pos_prop is not None and pos_prop >= 0.15:
+            affective_cues.append("possible positive tone in typing")
+        if (
+            "physically active" in behavior_labels
+            and ("digitally engaged" in behavior_labels or "communication-heavy" in behavior_labels)
+        ):
+            affective_cues.append("possible engaged / activated state")
+        elif (
+            "sedentary" in behavior_labels
+            and "mostly at home" in behavior_labels
+            and screen < 15
+            and chars < 50
+        ):
+            affective_cues.append("possible low-energy / withdrawn state")
+        elif (
+            "sedentary" in behavior_labels
+            and "digitally engaged" in behavior_labels
+            and neg_prop is not None
+            and neg_prop >= 0.15
+        ):
+            affective_cues.append("possible stress / rumination pattern")
+        if not affective_cues:
+            affective_cues.append("affect unclear from sensors")
+
+        observed = "; ".join(observed_parts) if observed_parts else "no data"
+        start_str = segment_start.strftime("%H:%M")
+        end_str = segment_end.strftime("%H:%M")
+        return (
+            f"{start_str}-{end_str} | "
+            f"Observed: {observed} | "
+            f"Behavioral state: {', '.join(behavior_labels)} | "
+            f"Affective cue: {', '.join(affective_cues)}"
+        )
 
     def _infer_sleep(self, accel_df: pd.DataFrame) -> str:
         if accel_df.empty:
@@ -1352,6 +1536,13 @@ class SensingQueryEngine:
                     date_str=tool_input["date"],
                     lookback_days=tool_input.get("lookback_days", 0),
                 )
+            if tool_name == "get_behavioral_timeline":
+                return self.get_behavioral_timeline(
+                    study_id=study_id,
+                    date_str=tool_input["date"],
+                    ema_timestamp=ema_timestamp,
+                    segment_hours=tool_input.get("segment_hours", 3),
+                )
             if tool_name == "compare_to_baseline":
                 return self.compare_to_baseline(
                     study_id=study_id,
@@ -1386,8 +1577,8 @@ class SensingQueryEngine:
                 )
             return (
                 f"Unknown tool: {tool_name}. "
-                f"Available: query_sensing, get_daily_summary, compare_to_baseline, "
-                f"get_receptivity_history, find_similar_days, query_raw_events"
+                f"Available: query_sensing, get_daily_summary, get_behavioral_timeline, "
+                f"compare_to_baseline, get_receptivity_history, find_similar_days, query_raw_events"
             )
 
         except Exception as exc:

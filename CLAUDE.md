@@ -1,5 +1,7 @@
 # Proactive Affective Agent — BUCS Pilot Study
 
+> ⚠️ **BEFORE running any experiment tasks**, read `PROJECT_CONTROL.md` and check `~/.openclaw/workspace/project-control.json`. If paused (globally, by model, or by project), do NOT start new tasks. Let running tasks finish naturally.
+
 ## Project Overview
 LLM-based emotional state prediction for cancer survivors using passive smartphone sensing + diary data. Compares 5 prediction approaches in a 2x2 design (structured vs agentic × sensing-only vs multimodal) plus a CALLM baseline.
 
@@ -70,3 +72,6 @@ python3 scripts/integration_test.py --versions v2,v4 --n-entries 5  # agentic on
 - All code, comments, commit messages in English
 - Auto commit + push after changes
 - Test with Sonnet, never Opus
+
+## Shared Context
+Read ~/.shared-agent-memory/CONTEXT.md for Ryan's identity, preferences, and current priorities.

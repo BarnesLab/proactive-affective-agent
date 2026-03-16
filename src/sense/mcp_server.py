@@ -207,6 +207,25 @@ def get_daily_summary(date: str = "", lookback_days: int = 0) -> str:
 
 
 @mcp.tool()
+def get_behavioral_timeline(date: str = "", segment_hours: int = 3) -> str:
+    """Reconstruct the day as a chronological behavioral timeline before the EMA.
+
+    Args:
+        date: Date in YYYY-MM-DD format (defaults to EMA date)
+        segment_hours: Width of each segment in hours (default 3, max 6)
+    """
+    return _engine.call_tool(
+        tool_name="get_behavioral_timeline",
+        tool_input={
+            "date": date or _ema_date,
+            "segment_hours": segment_hours,
+        },
+        study_id=_study_id,
+        ema_timestamp=_ema_timestamp,
+    )
+
+
+@mcp.tool()
 def compare_to_baseline(modality: str, feature: str, current_value: float) -> str:
     """Compare a current sensor reading to this person's personal historical baseline.
 

@@ -29,6 +29,7 @@ from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
 from src.think.llm_client import ClaudeCodeClient
+from src.think.openai_client import OpenAIClient
 from src.utils.mappings import SENSING_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -61,10 +62,27 @@ def _build_investigation_summary(pred: dict) -> str:
     Kept brief to fit within session memory trim window. Full tool call
     details are preserved in trace files for post-hoc analysis.
     """
-    tool_calls = pred.get("_tool_calls", [])
+    tool_calls = pred.get("_tool_calls") or pred.get("tool_calls") or []
     if not tool_calls:
-        n_tools = pred.get("_n_tool_calls", pred.get("n_tool_calls", "?"))
-        return f"Used {n_tools} tool calls."
+        n_tools = pred.get("_n_tool_calls", pred.get("n_tool_calls", 0))
+        n_rounds = pred.get("_n_rounds", pred.get("n_rounds", "?"))
+        prompt_text = str(pred.get("_full_prompt", "") or "")
+        hinted = []
+        for name in (
+            "get_behavioral_timeline",
+            "get_daily_summary",
+            "query_sensing",
+            "compare_to_baseline",
+            "find_similar_days",
+            "query_raw_events",
+            "get_receptivity_history",
+            "find_peer_cases",
+        ):
+            if name in prompt_text:
+                hinted.append(name)
+        if hinted:
+            return f"{n_tools} tools, {n_rounds} rounds: hinted={', '.join(hinted[:4])}"
+        return f"{n_tools} tools, {n_rounds} rounds."
 
     # Compact: just tool names and key parameters (no result previews)
     tool_names = []
@@ -153,6 +171,11 @@ def _generate_reflection(pred: dict, ema_row, model: str = "haiku") -> str:
     Uses Haiku via claude -p (free via Max subscription).
     Falls back to a structured text summary if the CLI call fails.
     """
+    if model == "__dry_run__":
+        reasoning = str(pred.get("reasoning", "") or "").strip()
+        reason = reasoning[:120] if reasoning else "insufficient evidence"
+        return f"[DRY RUN] Calibrate on this case by weighting validated behavioral anomalies over generic priors ({reason})."
+
     investigation = _build_investigation_summary(pred)
     prediction = _build_prediction_summary(pred)
     actual = _build_actual_outcome(ema_row)
@@ -164,8 +187,21 @@ def _generate_reflection(pred: dict, ema_row, model: str = "haiku") -> str:
     )
 
     try:
-        client = _get_reflection_client()
-        text = client.generate(prompt=prompt)
+        if str(model).startswith("gpt-"):
+            client = OpenAIClient(
+                model=model,
+                timeout=120,
+                max_retries=2,
+                delay_between_calls=0.5,
+            )
+            text = client.generate(prompt=prompt)
+        else:
+            client = _get_reflection_client()
+            text = client.generate(prompt=prompt)
+        if not isinstance(text, str):
+            raise TypeError("Reflection client returned non-string output")
+        if not text.strip():
+            raise ValueError("Reflection client returned empty output")
         return text.strip()
     except Exception as exc:
         logger.warning(f"Reflection LLM call failed: {exc}; using structured fallback")
@@ -416,16 +452,32 @@ class PilotSimulator:
         logger.info(f"{'='*60}")
 
         # Try to resume from checkpoint
+        selected_users = {u["study_id"] for u in self._users_data}
         all_predictions, all_ground_truths, all_metadata, resume_user, resume_entry = \
-            self._load_checkpoint(version)
+            self._load_checkpoint(version, selected_users=selected_users)
 
         per_user_metrics = {}
 
-        llm_client = ClaudeCodeClient(
-            model=self.model,
-            dry_run=self.dry_run,
-            delay_between_calls=self.delay,
-        )
+        is_gpt = version.startswith("gpt-")
+        base_version = version[4:] if is_gpt else version
+        if is_gpt and base_version not in ("callm", "v1", "v2", "v3", "v4", "v5", "v6"):
+            raise ValueError(
+                f"Unsupported GPT version '{version}'. "
+                "Supported: gpt-callm, gpt-v1, gpt-v2, gpt-v3, gpt-v4, gpt-v5, gpt-v6."
+            )
+
+        if is_gpt:
+            llm_client = OpenAIClient(
+                model=self.model,
+                dry_run=self.dry_run,
+                delay_between_calls=self.delay,
+            )
+        else:
+            llm_client = ClaudeCodeClient(
+                model=self.model,
+                dry_run=self.dry_run,
+                delay_between_calls=self.delay,
+            )
 
         # Session memory directory (for V2/V4 agentic agents)
         memory_dir = self.output_dir / "memory"
@@ -443,9 +495,9 @@ class PilotSimulator:
             logger.info(f"\n--- User {sid} ({version.upper()}, {n_entries} entries) ---")
 
             # Select retriever based on version
-            if version == "callm":
+            if base_version == "callm":
                 retriever = self._retriever
-            elif version == "v3":
+            elif base_version == "v3":
                 retriever = self._mm_retriever
             else:
                 retriever = None
@@ -457,16 +509,17 @@ class PilotSimulator:
                 profile=user_data["profile"],
                 memory_doc=user_data["memory"],
                 retriever=retriever,
-                processed_dir=self._processed_dir if version in ("v2", "v4", "v5", "v6") else None,
-                filtered_data_dir=self._filtered_data_dir if version in ("v5", "v6") else None,
+                processed_dir=self._processed_dir if base_version in ("v2", "v4", "v5", "v6") else None,
+                filtered_data_dir=self._filtered_data_dir if base_version in ("v5", "v6") else None,
                 agentic_model=self.agentic_model,
                 agentic_max_turns=self.agentic_max_turns,
                 peer_db_path=self._peer_db_path,
+                ema_df=self._all_ema,
             )
 
             # Initialize per-user session memory for agentic agents (V2/V4/V5/V6)
             session_memory: str | None = None
-            if version in ("v2", "v4", "v5", "v6"):
+            if base_version in ("v2", "v4", "v5", "v6"):
                 pid_str = str(sid).zfill(3)
                 session_memory_path = memory_dir / f"{version}_user_{pid_str}_session.md"
                 if session_memory_path.exists():
@@ -485,6 +538,18 @@ class PilotSimulator:
             user_preds = []
             user_gts = []
             user_meta = []
+            # Preserve existing per-user prefix when resuming so checkpoint files
+            # keep full arrays instead of only newly generated tail entries.
+            if resume_user is not None and sid == resume_user:
+                cp_path = self.output_dir / "checkpoints" / f"{version}_user{sid}_checkpoint.json"
+                if cp_path.exists():
+                    try:
+                        cp_data = json.loads(cp_path.read_text())
+                        user_preds = list(cp_data.get("predictions", []))
+                        user_gts = list(cp_data.get("ground_truths", []))
+                        user_meta = list(cp_data.get("metadata", []))
+                    except Exception as e:
+                        logger.warning(f"Failed to load existing per-user checkpoint {cp_path}: {e}")
 
             for i, (ema_row, sensing_day) in enumerate(
                 zip(user_data["ema_entries"], user_data["sensing_days"])
@@ -598,13 +663,14 @@ class PilotSimulator:
                 # Update session memory for agentic agents (V2/V4)
                 # Generates an LLM reflection on what the agent investigated,
                 # predicted vs actual outcome, and strategy improvements.
-                if version in ("v2", "v4", "v5", "v6") and session_memory is not None:
+                if base_version in ("v2", "v4", "v5", "v6") and session_memory is not None:
                     try:
                         session_memory = _update_session_memory(
                             path=session_memory_path,
                             ts=timestamp_str,
                             ema_row=ema_row,
                             pred=pred,
+                            model="__dry_run__" if self.dry_run else self.model,
                         )
                     except Exception as e:
                         logger.warning(f"  Session memory update failed: {e}")
@@ -711,7 +777,7 @@ class PilotSimulator:
                 "metadata": metadata,
             }, f, default=str)
 
-    def _load_checkpoint(self, version: str) -> tuple:
+    def _load_checkpoint(self, version: str, selected_users: set[int] | None = None) -> tuple:
         """Load checkpoint for resume. Returns (preds, gts, meta, resume_user, resume_entry).
 
         Loads all per-user checkpoints and merges them.
@@ -739,6 +805,16 @@ class PilotSimulator:
 
         for fpath in files:
             try:
+                name = Path(fpath).name
+                # format: {version}_user{uid}_checkpoint.json
+                uid = None
+                if "_user" in name:
+                    tail = name.split("_user", 1)[1]
+                    uid_str = tail.split("_checkpoint.json", 1)[0]
+                    if uid_str.isdigit():
+                        uid = int(uid_str)
+                if selected_users is not None and uid is not None and uid not in selected_users:
+                    continue
                 with open(fpath) as f:
                     data = json.load(f)
                 all_preds.extend(data.get("predictions", []))

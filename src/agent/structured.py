@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.think.llm_client import ClaudeCodeClient
 from src.think.prompts import (
     build_trait_summary,
     format_sensing_summary,
@@ -39,7 +38,7 @@ class StructuredWorkflow:
 
     def __init__(
         self,
-        llm_client: ClaudeCodeClient,
+        llm_client,
         peer_db_path: str | None = None,
         study_id: int | None = None,
     ) -> None:

@@ -1,5 +1,7 @@
 # Codex Briefing: Proactive Affective Agent
 
+> ⚠️ **BEFORE running any experiment tasks**, read `PROJECT_CONTROL.md` and check `~/.openclaw/workspace/project-control.json`. If paused (globally, by model, or by project), do NOT start new tasks. Let running tasks finish naturally.
+
 ## What This Project Does
 
 Predicts cancer survivors' emotional states (PANAS positive/negative affect, emotion regulation desire, 13 binary emotional indicators) from **passive smartphone sensing data** and **diary text**. This is for an IMWUT paper comparing LLM-based prediction approaches.

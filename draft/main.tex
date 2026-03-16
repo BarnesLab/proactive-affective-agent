@@ -22,6 +22,10 @@
 \usepackage{xcolor}
 \usepackage{soul}
 \usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, fit, decorations.pathreplacing, calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 %% Custom commands
 \newcommand{\sys}{Proactive Affective Agent}
@@ -49,7 +53,7 @@ Just-in-time adaptive interventions (JITAIs) promise to deliver support precisel
 
 We evaluate \sysshort{} through a 2$\times$2 factorial design comparing \emph{structured} vs.\ \emph{agentic} reasoning and \emph{sensing-only} vs.\ \emph{multimodal} (sensing + diary) data, plus a diary-only baseline, across 11 cancer survivors from the BUCS longitudinal study (956 EMA entries per condition). Our primary prediction targets are \emph{intervention opportunity}---the conjunction of emotion regulation desire and intervention availability---and positive/negative affect states.
 
-Results show that agentic multimodal agents achieve the best performance across key targets: balanced accuracy of 0.786 for emotion regulation desire detection, 0.743 for intervention availability, and 0.790 for negative affect state detection, significantly outperforming both structured LLM pipelines and traditional ML baselines. The agentic approach---where the LLM autonomously decides which sensor data to query---consistently outperforms structured pipelines that receive pre-formatted feature summaries, demonstrating the value of autonomous behavioral investigation. Cross-user retrieval-augmented generation provides effective calibration anchors from population-level data. Our findings establish LLM-based agentic sensing as a viable paradigm for proactive mental health support in cancer survivorship.
+Results show that agentic multimodal agents achieve the best performance across key targets: balanced accuracy of 0.786 for emotion regulation desire detection, 0.743 for intervention availability, and 0.790 for negative affect state detection, substantially outperforming both structured LLM pipelines and traditional ML baselines. The agentic approach---where the LLM autonomously decides which sensor data to query---consistently outperforms structured pipelines that receive pre-formatted feature summaries, demonstrating the value of autonomous behavioral investigation. Cross-user retrieval-augmented generation provides effective calibration anchors from population-level data. Our findings provide preliminary evidence that LLM-based agentic sensing is a promising paradigm for proactive mental health support in cancer survivorship.
 \end{abstract}
 
 %% CCS Concepts
@@ -80,13 +84,13 @@ Results show that agentic multimodal agents achieve the best performance across 
 %% ================================================================
 \section{Introduction}
 
-Cancer survivors face persistent psychosocial challenges that extend far beyond treatment completion~\cite{stanton2015cancer_survivorship}. Fear of recurrence, chronic fatigue, anxiety, and depression affect up to 40\% of long-term survivors, yet the majority lack access to continuous psychological support~\cite{hagan2022cancer_fear}. Just-in-time adaptive interventions (JITAIs)---systems that deliver support at moments of need based on real-time contextual data---hold considerable promise for addressing this gap~\cite{nahum2018jitai}. The core premise is compelling: rather than waiting for scheduled therapy sessions, an intelligent system could detect emerging distress and offer coping strategies precisely when a survivor is both \emph{in need} and \emph{available} to engage.
+Cancer survivors face persistent psychosocial challenges that extend far beyond treatment completion~\cite{stanton2012cancer_survivorship}. Fear of recurrence, chronic fatigue, anxiety, and depression affect up to 40\% of long-term survivors, yet the majority lack access to continuous psychological support~\cite{hagan2022cancer_fear}. Just-in-time adaptive interventions (JITAIs)---systems that deliver support at moments of need based on real-time contextual data---hold considerable promise for addressing this gap~\cite{nahum2018jitai}. The core premise is compelling: rather than waiting for scheduled therapy sessions, an intelligent system could detect emerging distress and offer coping strategies precisely when a survivor is both \emph{in need} and \emph{available} to engage.
 
 Realizing this vision, however, confronts a fundamental paradox. Current JITAI systems overwhelmingly rely on \emph{active self-report}---ecological momentary assessments (EMAs), daily diaries, or mood check-ins---to sense users' emotional states~\cite{shiffman2008ema}. Yet the individuals who most urgently need intervention are precisely those who are least likely to complete self-reports: elevated stress reduces motivation to engage with survey prompts, while low energy and social withdrawal diminish the likelihood of timely responses~\cite{mishra2021receptivity}. A system that can only act when told how the user feels is fundamentally \emph{reactive}---it cannot help those who have stopped talking.
 
 Passive smartphone sensing offers a path toward \emph{proactive} intervention. Modern smartphones continuously collect rich behavioral signals---movement patterns, location traces, screen usage, typing behavior, app engagement---that correlate with psychological states~\cite{saeb2015phenotyping, wang2014studentlife, wang2018sensing}. However, translating these noisy, heterogeneous sensor streams into actionable emotional state predictions has proven difficult. Traditional machine learning approaches treat sensing features as fixed tabular inputs, applying random forests or gradient boosted trees to daily aggregate statistics~\cite{xu2023globem}. These methods capture coarse statistical associations but struggle with the contextual interpretation that distinguishes a ``stayed home all day because of illness'' from a ``stayed home all day because it's a holiday''---the same behavioral pattern with radically different affective implications.
 
-Recent advances in large language models (LLMs) suggest a fundamentally different approach. LLMs can reason about behavioral data in natural language, bringing world knowledge, contextual understanding, and nuanced interpretation that statistical models lack. Prior work has shown that LLMs achieve competitive performance on emotion recognition from text~\cite{yang2024llm_mental, amin2023llm_ema} and can interpret wearable sensor data when presented as natural language descriptions~\cite{kim2024health_llm, zhang2024llm_sensing}. Our prior work, CALLM~\cite{wang2026callm}, demonstrated that LLMs can predict emotional states from cancer survivors' diary text with balanced accuracy exceeding traditional NLP approaches---but CALLM remains reactive, requiring users to write diary entries.
+Recent advances in large language models (LLMs) suggest a fundamentally different approach. LLMs can reason about behavioral data in natural language, bringing world knowledge, contextual understanding, and nuanced interpretation that statistical models lack. Prior work has shown that LLMs achieve competitive performance on emotion recognition from text~\cite{yang2024llm_mental, amin2023llm_ema} and can interpret wearable sensor data when presented as natural language descriptions~\cite{kim2024health_llm, xu2024penetrative_ai}. Our prior work, CALLM~\cite{wang2026callm}, demonstrated that LLMs can predict emotional states from cancer survivors' diary text with balanced accuracy exceeding traditional NLP approaches---but CALLM remains reactive, requiring users to write diary entries.
 
 In this paper, we ask: \emph{can LLM agents proactively predict intervention opportunities from passive sensing alone---and does giving them the autonomy to investigate sensor data like a behavioral scientist improve prediction?}
 
@@ -118,10 +122,10 @@ Our evaluation across 11 cancer survivors (956 EMA entries per condition) reveal
 
     \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agent (V6, BA=0.675) outperforms the best ML baseline (MiniLM text embeddings, BA=0.629) despite using a much smaller evaluation set.
 
-    \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' significantly reduces prediction bias compared to agents without peer reference.
+    \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' reduces prediction bias compared to agents without peer reference.
 \end{enumerate}
 
-To our knowledge, this is the first work to apply agentic LLM investigation---where the model autonomously queries structured sensor databases through tool-use---to affective state prediction. Our results establish a new paradigm for proactive mental health sensing that combines the contextual reasoning of LLMs with the passive, always-on nature of smartphone sensing.
+To our knowledge, this is the first work to apply agentic LLM investigation---where the model autonomously queries structured sensor databases through tool-use---to affective state prediction. Our results suggest a promising new direction for proactive mental health sensing that combines the contextual reasoning of LLMs with the passive, always-on nature of smartphone sensing.
 
 %% ================================================================
 %%  2. RELATED WORK
@@ -130,21 +134,23 @@ To our knowledge, this is the first work to apply agentic LLM investigation---wh
 
 \subsection{Passive Sensing for Mental Health}
 
-Smartphone-based passive sensing has emerged as a scalable approach to mental health monitoring. Pioneering work by Saeb et al.~\cite{saeb2015phenotyping} demonstrated significant correlations between GPS-derived mobility features and depression severity. The StudentLife study~\cite{wang2014studentlife} established that passively collected sensor data---including sleep, physical activity, and social interaction patterns---correlate with mental health outcomes, academic performance, and behavioral changes in college students. Subsequent work has expanded these findings to clinical populations~\cite{wang2018sensing, rashid2020predicting, canzian2015trajectories}, showing that smartphone sensors can detect depressive episodes, anxiety, and social isolation.
+Smartphone-based passive sensing has emerged as a scalable approach to mental health monitoring~\cite{torous2016smartphone_psychiatry, jacobson2019digital_phenotyping}. Pioneering work by Saeb et al.~\cite{saeb2015phenotyping} demonstrated significant correlations between GPS-derived mobility features and depression severity. The StudentLife study~\cite{wang2014studentlife} established that passively collected sensor data---including sleep, physical activity, and social interaction patterns---correlate with mental health outcomes, academic performance, and behavioral changes in college students. Subsequent work expanded these findings to clinical populations: Wang et al.~\cite{wang2018sensing} tracked depression dynamics via mobile sensing, Rashid et al.~\cite{rashid2020predicting} predicted social anxiety from sparse mobile data, and Canzian and Musolesi~\cite{canzian2015trajectories} detected depressive episodes from GPS trajectories. CrossCheck~\cite{ben_zeev2015crosscheck} demonstrated continuous monitoring of schizophrenia symptoms, while Gr{\"u}nerbl et al.~\cite{gruenerbl2015phone_depression} recognized bipolar states from smartphone data. Doryab et al.~\cite{doryab2019modeling_behavior} identified behavioral phenotypes of loneliness and social isolation, and Wahle et al.~\cite{wahle2016mobile_sensing} showed the feasibility of mobile sensing for depression support in the wild.
 
-The GLOBEM benchmark~\cite{xu2023globem} systematized evaluation of longitudinal behavior modeling across multiple sensing datasets, revealing that cross-dataset generalization remains a major challenge. Most approaches use traditional ML models (random forests, XGBoost, logistic regression) on hand-crafted daily aggregate features, achieving moderate performance on binary classification tasks (balanced accuracy typically 0.55--0.65 for depression detection). Deep learning approaches, including LSTMs and transformers, have shown marginal improvements on individual datasets but often fail to generalize~\cite{adler2024sensing}.
+The GLOBEM benchmark~\cite{xu2023globem} systematized evaluation of longitudinal behavior modeling across multiple sensing datasets, revealing that cross-dataset generalization remains a major challenge. Most approaches use traditional ML models (random forests, XGBoost, logistic regression) on hand-crafted daily aggregate features, achieving moderate performance on binary classification tasks (balanced accuracy typically 0.55--0.65 for depression detection). Deep learning approaches, including LSTMs and transformers, have shown marginal improvements but often fail to generalize~\cite{adler2024sensing}. A recent scoping review of 42 studies~\cite{adler2024sensing} confirms that cohort studies dominate the field and that combining multiple sensing modalities improves prediction, though clinical translation remains limited. Liu et al.~\cite{liu2025comparative_ml_dl_llm} provide the first systematic comparison of traditional ML, deep learning, and LLMs for mental health forecasting on the same longitudinal dataset, finding that LLMs achieve competitive or superior performance with far less feature engineering.
 
-Recent work has emphasized the importance of \emph{personalization} and \emph{temporal dynamics}. Pedrelli et al.~\cite{pedrelli2024temporal} showed in a large longitudinal study ($n$=1,013) that the temporal scale and person-specificity of sensor-symptom associations matter significantly for prediction. Nickels et al.~\cite{nickels2025personalized} demonstrated that personalized models consistently outperform population-level models for predicting negative affect in individuals with serious mental illness, using year-long multimodal mobile phenotyping. Foundation models for wearable data are also emerging: NormWear~\cite{luo2025normwear} pre-trained on 14,943 hours of multimodal physiological signals and achieved zero-shot transfer across mental health and well-being tasks.
+Recent work has emphasized the importance of \emph{personalization} and \emph{temporal dynamics}. Pedrelli et al.~\cite{pedrelli2024temporal} showed in a large longitudinal study ($n$=1,013) that the temporal scale and person-specificity of sensor-symptom associations matter significantly: spending more time at home relative to one's average was an early signal of depression across multiple time windows. Nickels et al.~\cite{nickels2025personalized} demonstrated that personalized ensemble models consistently outperform population-level models for predicting negative affect in individuals with serious mental illness, using year-long multimodal mobile phenotyping ($n$=68, mean 465 days). Taylor et al.~\cite{taylor2017personalization} showed that personalized multitask learning improves prediction of next-day mood and stress from smartphone data. Foundation models for wearable data are also emerging: NormWear~\cite{luo2025normwear} pre-trained on 14,943 hours of multimodal physiological signals and achieved zero-shot transfer across mental health and well-being tasks, while Liu et al.~\cite{liu2024rise_llm_wearable} survey the broader trend of using LLMs to interpret wearable health data.
 
-A persistent limitation of this literature is the \emph{feature engineering bottleneck}: sensor data is reduced to fixed statistical summaries (daily means, counts, durations) that discard temporal dynamics and contextual information. Our work addresses this by using LLM agents that can query raw hourly sensor data and reason about temporal patterns, anomalies, and cross-modal consistency.
+A persistent limitation of this literature is the \emph{feature engineering bottleneck}: sensor data is reduced to fixed statistical summaries (daily means, counts, durations) that discard temporal dynamics and contextual information~\cite{xu2023globem}. Our work addresses this by using LLM agents that can query raw hourly sensor data and reason about temporal patterns, anomalies, and cross-modal consistency---moving from static feature tables to dynamic behavioral investigation.
 
 \subsection{Just-in-Time Adaptive Interventions}
 
-JITAIs deliver interventions at moments of both need and opportunity~\cite{nahum2018jitai}. The most recent comprehensive review by Nahum-Shani and Murphy~\cite{nahumshani2026jitai_review} surveys the current state and future directions of JITAI design. The micro-randomized trial (MRT) design~\cite{klasnja2015mrt} provides a principled framework for evaluating JITAI components, and has been applied to physical activity (HeartSteps), smoking cessation (Sense2Stop~\cite{battalio2021sense2stop}), and stress management. Digital interventions for cancer patients and survivors have also shown promise in recent meta-analyses~\cite{digital_cancer_mh2025}. A critical component of any JITAI is the \emph{decision rule}: when should the system intervene?
+JITAIs deliver interventions at moments of both need and opportunity~\cite{nahum2018jitai}. The most recent comprehensive review by Nahum-Shani and Murphy~\cite{nahumshani2026jitai_review} surveys the current state and future directions of JITAI design, emphasizing the need for sophisticated decision rules that go beyond simple threshold-based triggers. The Behavioral Intervention Technology (BIT) model~\cite{mohr2011behavioral_intervention} provides a conceptual framework for designing technology-mediated interventions, while the micro-randomized trial (MRT) design~\cite{klasnja2015mrt} offers a principled experimental framework for evaluating JITAI components. MRTs have been applied to physical activity (HeartSteps), smoking cessation (Sense2Stop~\cite{battalio2021sense2stop}), and stress management, revealing that intervention effectiveness varies substantially by context.
 
-Receptivity to intervention has been studied as a distinct construct. Mishra et al.~\cite{mishra2021receptivity} found that contextual factors (time, location, activity) predict notification engagement in the natural environment. Kunzler et al.~\cite{kunzler2019receptivity} conducted a systematic exploration of ``state-of-receptivity,'' finding that time of day, social context, and current activity are key moderators. Recent work has shown that using ML-based receptivity models to trigger EMAs can decrease reported negative affect~\cite{receptivity_affect_ml2024}. However, most receptivity prediction work focuses on \emph{notification engagement} (did the user open the notification?) rather than the more nuanced question we address: \emph{does the user want emotional support and are they available to engage with it?}
+Digital interventions for cancer patients and survivors have shown promise: a recent meta-analysis of 139 RCTs involving 19,233 participants~\cite{digital_cancer_mh2025} found that mHealth, telehealth, and social media-based interventions significantly reduce anxiety and depression in cancer populations. Cancer survivors face unique psychosocial challenges---fear of recurrence, chronic fatigue, and treatment-related distress~\cite{stanton2012cancer_survivorship, linden2012anxiety_cancer, bower2014cancer_fatigue}---that make them a particularly important target population for proactive support systems. Psycho-oncologic interventions can meaningfully reduce emotional distress~\cite{faller2013depression_cancer}, but access remains limited, motivating automated, sensor-driven approaches. A recent landmark RCT~\cite{nejm_ai_chatbot2025} demonstrated that a generative AI chatbot achieved clinically significant improvements in depression and anxiety symptoms, validating the use of AI-based systems for mental health treatment.
 
-Our formulation of \emph{intervention opportunity} as the conjunction of desire and availability is grounded in prior work showing that these constructs are separable and independently informative~\cite{gross2015emotion_regulation}. An individual may desire emotional regulation support but be unavailable (e.g., driving), or be available but have no current need. Predicting both simultaneously enables more precise intervention timing.
+Receptivity to intervention has been studied as a distinct construct. Mishra et al.~\cite{mishra2021receptivity} found that contextual factors (time, location, activity) predict notification engagement in the natural environment. Kunzler et al.~\cite{kunzler2019receptivity} conducted a systematic exploration of ``state-of-receptivity,'' finding that time of day, social context, and current activity are key moderators. Recent work has shown that using ML-based receptivity models to trigger EMAs can decrease reported negative affect~\cite{receptivity_affect_ml2024}. Rabbi et al.~\cite{rabbi2015mybehavior} demonstrated that personalized feedback based on smartphone-sensed behavior can improve health outcomes. However, most receptivity prediction work focuses on \emph{notification engagement} (did the user open the notification?) rather than the more nuanced question we address: \emph{does the user want emotional support and are they available to engage with it?}
+
+Our formulation of \emph{intervention opportunity} as the conjunction of desire and availability is grounded in emotion regulation theory~\cite{gross2015emotion_regulation, sheppes2015emotion_regulation, aldao2010emotion_regulation}. An individual may desire emotional regulation support but be unavailable (e.g., driving), or be available but have no current need. Predicting both simultaneously enables more precise intervention timing than either construct alone.
 
 \subsection{LLMs for Affective Computing}
 
@@ -152,34 +158,47 @@ The application of large language models to affective computing has accelerated 
 
 More relevant to our work, Xu et al.~\cite{xu2024mentalllm} introduced Mental-LLM, which fine-tunes language models on mental health prediction tasks using online text data, achieving state-of-the-art results on depression and stress detection. Kim et al.~\cite{kim2024health_llm} proposed Health-LLM, which uses LLMs to reason about wearable sensor data for health prediction, demonstrating that natural language descriptions of sensor patterns enable LLMs to make clinically meaningful predictions. Sprint et al.~\cite{sprint2025cogprog} developed CogProg, using LLMs to forecast in-the-moment EMA responses (stress, fatigue, mental sharpness)---the task most similar to ours. Xu et al.~\cite{xu2025lens} proposed LENS, which synthesizes multimodal sensing data into natural language narratives for mental health assessment by aligning sensor representations with LLM embeddings.
 
-Most directly relevant, Zhang et al.~\cite{zhang2024llm_affect_sensing} presented the first work using LLMs (Gemini 1.5 Pro) for affective state prediction from smartphone sensor features via zero-shot and few-shot prompting, evaluated on $\sim$150 university students. Our work extends this line in three key ways: (1) we use \emph{agentic} tool-use rather than pre-formatted prompts, enabling selective investigation; (2) we evaluate on a clinical population (cancer survivors) with 8 sensing modalities at hourly resolution; and (3) we systematically compare agentic vs.\ structured approaches through a factorial design.
+Most directly relevant, Zhang et al.~\cite{zhang2024llm_affect_sensing} presented the first work using LLMs (Gemini 1.5 Pro) for affective state prediction from smartphone sensor features via zero-shot and few-shot prompting, evaluated on $\sim$150 university students. A review of multimodal sensing with LLMs for emotional regulation~\cite{multimodal_sensing_llm_er2025} surveys the broader design space, and Liu et al.~\cite{liu2024rise_llm_wearable} document the rising trend of LLM-based wearable data interpretation.
+
+Our work extends this emerging line in three key ways: (1) we use \emph{agentic} tool-use rather than pre-formatted prompts, enabling selective and autonomous investigation of the sensing data; (2) we evaluate on a clinical population (cancer survivors) with 8 sensing modalities at hourly resolution, rather than healthy university students; and (3) we systematically compare agentic vs.\ structured approaches through a factorial design that isolates the contribution of autonomous investigation from other design choices.
 
 \subsection{Agentic AI and Tool-Use}
 
-The agentic AI paradigm---where LLMs autonomously use tools to complete tasks---has emerged as a major research direction. A comprehensive survey by Wang et al.~\cite{wang2024agent_survey} proposed a unified framework for LLM-based autonomous agents comprising profile, memory, planning, and action modules. Yao et al.~\cite{yao2023react} introduced ReAct, which interleaves reasoning and acting in language models, enabling multi-step problem solving. Schick et al.~\cite{schick2024toolformer} demonstrated that language models can learn to use external tools (calculators, search engines, APIs) to augment their capabilities. Park et al.~\cite{park2023generative} created generative agents that simulate human behavior through tool-augmented reasoning and persistent memory.
+The agentic AI paradigm---where LLMs autonomously use tools to complete tasks---has emerged as a major research direction~\cite{wang2024agent_survey, brown2020gpt3}. Yao et al.~\cite{yao2023react} introduced ReAct, which interleaves reasoning and acting in language models, enabling multi-step problem solving through a think-act-observe loop. Schick et al.~\cite{schick2024toolformer} demonstrated that language models can learn to use external tools (calculators, search engines, APIs) to augment their capabilities. Park et al.~\cite{park2023generative} created generative agents that simulate human behavior through tool-augmented reasoning and persistent memory. Chain-of-thought prompting~\cite{wei2022chain_of_thought} and zero-shot reasoning~\cite{kojima2022zero_shot} provide the cognitive scaffolding that enables these agents to decompose complex tasks into sequential reasoning steps.
 
-The Model Context Protocol (MCP)~\cite{anthropic2024mcp} provides a standardized interface for connecting LLMs to external data sources and tools, enabling modular tool integration. We leverage MCP to expose 8 sensing query tools to our agentic agents, allowing them to autonomously investigate behavioral data through a structured API. In the health domain, Merrill et al.~\cite{merrill2025phia} introduced PHIA, an LLM agent that uses multi-step reasoning with code generation to analyze wearable health data, achieving 84\% accuracy on numerical health questions---validating the agentic paradigm for health data analysis.
+The Model Context Protocol (MCP)~\cite{anthropic2024mcp} provides a standardized interface for connecting LLMs to external data sources and tools, enabling modular tool integration. We leverage MCP to expose 8 sensing query tools to our agentic agents, allowing them to autonomously investigate behavioral data through a structured API.
 
-Retrieval-augmented generation (RAG)~\cite{lewis2020rag} has proven effective for grounding LLM outputs in factual evidence. In our system, cross-user RAG serves a distinct purpose: rather than retrieving factual knowledge, we retrieve \emph{calibration anchors}---similar cases from other participants with known outcomes---to help the agent calibrate its predictions against population-level data.
+\paragraph{Health AI Agents.}
+The application of agentic AI to health data is rapidly growing. Merrill et al.~\cite{merrill2025phia} introduced PHIA, an LLM agent that uses multi-step reasoning with code generation to analyze wearable health data, achieving 84\% accuracy on numerical health questions. Abbasian et al.~\cite{abbasian2024conversational_health} proposed a personalized conversational health agent framework with memory and planning components. Chen et al.~\cite{chen2025healthcare_agent} demonstrated Healthcare Agent for medical consultation, and MedAgentBench~\cite{wang2025medagentbench} provides a standardized evaluation environment for medical LLM agents. A systematic review of AI agents in clinical medicine~\cite{li2025ai_agents_clinical} found that 20 peer-reviewed clinical agent studies published between 2024--2025 spanned diverse applications, while Li et al.~\cite{li2025llm_biomedical_agents} comprehensively review biomedicine-specific agent architectures.
+
+Most directly comparable to our work, Min et al.~\cite{min2025gloss} proposed GLOSS, a multi-agent LLM system for open-ended sensemaking of passive sensing data for health and wellbeing, also published at IMWUT. GLOSS uses multiple LLM agents with function calling and code generation to interpret sensing data, evaluated against a RAG baseline. However, GLOSS is designed as a \emph{sensemaking and query} system---it helps users understand their past data---rather than a \emph{prediction} system that anticipates future states.
+
+Our work differs from all these health agents in a critical dimension: existing systems primarily support \emph{clinical decision-making} (diagnosis, treatment planning), \emph{post-hoc analysis} (answering questions about past health data), or \emph{coaching} (PH-LLM~\cite{cosentino2025phllm} for sleep and fitness coaching). \sysshort{} instead performs \emph{real-time predictive inference}---using tool-use to autonomously investigate behavioral signals and predict emotional states \emph{before} the user reports them. This shifts the agent's role from reactive analyst to proactive behavioral scientist, requiring fundamentally different tool designs (sensing queries rather than medical knowledge retrieval) and evaluation criteria (prediction accuracy rather than factual correctness).
+
+\paragraph{RAG for Calibration.}
+Retrieval-augmented generation (RAG)~\cite{lewis2020rag, gao2024rag_survey} has proven effective for grounding LLM outputs in factual evidence. In our system, cross-user RAG serves a distinct purpose: rather than retrieving factual knowledge, we retrieve \emph{calibration anchors}---similar cases from other participants with known outcomes---to help the agent calibrate its predictions against population-level data. This is conceptually similar to case-based reasoning in clinical psychology, where practitioners draw on prior cases to inform current assessments.
 
 \subsection{Summary and Positioning}
 
 Existing work has established that (1) passive sensing correlates with mental health, (2) LLMs can reason about text-based affect, and (3) agentic tool-use enables autonomous data investigation. Our work is the first to combine all three: an LLM agent that autonomously investigates passive sensor data through tool-use to predict emotional states and intervention opportunities in a clinical population. Table~\ref{tab:positioning} summarizes our positioning.
 
 \begin{table}[t]
-\caption{Positioning of our work relative to prior approaches for affect prediction from passive data.}
+\caption{Positioning of our work relative to prior approaches for affect prediction from passive data. \sysshort{} is the first system combining all six capabilities.}
 \label{tab:positioning}
 \small
 \begin{tabular}{lcccccc}
 \toprule
 \textbf{Approach} & \textbf{Passive} & \textbf{LLM} & \textbf{Agentic} & \textbf{Diary} & \textbf{RAG} & \textbf{Clinical} \\
 \midrule
-Traditional ML~\cite{xu2023globem} & \checkmark & & & & & \\
+GLOBEM~\cite{xu2023globem} & \checkmark & & & & & \\
+Nickels et al.~\cite{nickels2025personalized} & \checkmark & & & & & \checkmark \\
 CALLM~\cite{wang2026callm} & & \checkmark & & \checkmark & \checkmark & \checkmark \\
 Health-LLM~\cite{kim2024health_llm} & \checkmark & \checkmark & & & & \\
 Mental-LLM~\cite{xu2024mentalllm} & & \checkmark & & \checkmark & & \\
+CogProg~\cite{sprint2025cogprog} & & \checkmark & & & & \\
 Zhang et al.~\cite{zhang2024llm_affect_sensing} & \checkmark & \checkmark & & & & \\
 PHIA~\cite{merrill2025phia} & \checkmark & \checkmark & \checkmark & & & \\
+GLOSS~\cite{min2025gloss} & \checkmark & \checkmark & \checkmark & & & \\
 LENS~\cite{xu2025lens} & \checkmark & \checkmark & & & & \\
 \textbf{\sysshort{} (ours)} & \checkmark & \checkmark & \checkmark & \checkmark$^*$ & \checkmark & \checkmark \\
 \bottomrule
@@ -192,6 +211,10 @@ LENS~\cite{xu2025lens} & \checkmark & \checkmark & & & & \\
 %%  3. SYSTEM DESIGN
 %% ================================================================
 \section{System Design}
+
+Figure~\ref{fig:architecture} presents the overall system architecture. We describe each component below.
+
+\input{figures/architecture}
 
 \subsection{Problem Formulation}
 
@@ -297,13 +320,17 @@ The agent receives a system prompt instructing it to investigate the participant
 \paragraph{V4/V6: Agentic Multimodal.}
 The agent additionally receives the diary entry and follows a \emph{diary-first} investigation strategy: (1) analyze diary text to extract emotional signals and form hypotheses, (2) use sensing tools to validate/calibrate those hypotheses, (3) check cross-modal consistency, (4) retrieve peer cases with similar diary content, (5) synthesize. The diary anchors the investigation, and sensing tools provide behavioral evidence for or against diary-derived hypotheses.
 
-V6 additionally receives a pre-computed daily behavioral narrative---a filtered, structured summary of the day's sensing data with redundant and zero-information periods removed---reducing the raw data volume by 7.4$\times$ while preserving salient signals.
+V6 additionally receives a pre-computed daily behavioral narrative---a filtered, structured summary of the day's sensing data with redundant and zero-information periods removed---reducing the raw data volume by 7.4$\times$ while preserving salient signals. We also evaluate V5, a sensing-only filtered variant (V2 + filtered narrative); V5 and V6 test whether data quality filtering improves prediction beyond the base agentic approach.
+
+\input{figures/agentic_flow}
 
 \paragraph{Session Memory.}
 Agentic agents maintain per-user longitudinal memory across predictions. After each prediction, the agent generates a 1--2 sentence ``reflection'' capturing calibration lessons (e.g., ``this user's self-reported negative affect is typically lower than behavioral signals suggest''). Reflections accumulate into a session memory document, capped at 6,000 characters. To prevent ground-truth leakage, reflections reference only receptivity signals (diary themes, \erdesire{}, \intavail{})---never PANAS scores.
 
 \subsection{Sensing Query Tools (MCP Server)}
 \label{sec:tools}
+
+Our tool design is grounded in two principles from behavioral science and mobile sensing. First, clinical reasoning in psychological assessment follows a hypothesis-driven process: clinicians begin with an overview, form hypotheses, then seek confirming and disconfirming evidence through targeted investigation~\cite{wilcox2023clinical_reasoning}. Our tools mirror this workflow, progressing from broad summaries (\texttt{get\_daily\_summary}) to targeted queries (\texttt{query\_sensing}, \texttt{query\_raw\_events}). Second, idiographic (person-specific) analysis consistently outperforms nomothetic (population-level) models for affect prediction from behavioral data~\cite{beltz2016idiographic, balliu2024personalized_mood}---Balliu et al.\ showed that personalized smartphone-based mood models achieve $R^2 \geq 0.80$ compared to $< 0.05$ for population models. We therefore provide tools for personalized baseline comparison (\texttt{compare\_to\_baseline}), within-person analogical retrieval (\texttt{find\_similar\_days}), and cross-user calibration (\texttt{find\_peer\_cases}). This design also follows the multi-step health data investigation paradigm validated by PHIA~\cite{merrill2025phia}, which demonstrated that agentic multi-step reasoning over wearable data substantially outperforms single-pass analysis.
 
 The MCP server exposes 8 tools, each querying the participant's hourly Parquet data store. The agent calls these tools autonomously during its investigation:
 
@@ -341,7 +368,7 @@ Three retrieval modes serve different agent configurations:
 
 \subsection{Pilot Study Design}
 
-We evaluate all agent variants on a pilot subset of 11 cancer survivors drawn from the BUCS test sets: participants 43, 71, 119, 164, 258, 275, 310, 338, 399, 403, 437, 458, and 513. These participants span 5 cross-validation folds, yielding 956 EMA entries per agent variant (7 variants $\times$ 956 = 6,692 total predictions). Each participant contributes 81--96 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
+We evaluate all agent variants on a pilot subset of 11 cancer survivors drawn from the BUCS test sets: participants 43, 71, 119, 164, 258, 275, 310, 338, 403, 458, and 513. These participants span 5 cross-validation folds, yielding 956 EMA entries per agent variant (7 variants $\times$ 956 = 6,692 total predictions). Each participant contributes 81--93 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
 
 \subsection{Baselines}
 
@@ -370,6 +397,9 @@ Mean Absolute Error (MAE) averaged across all participants and entries. Lower is
 \paragraph{Focus Targets.}
 Per the study's emphasis on intervention opportunity and affect, we highlight: \erdesire{} (continuous and binary), \intavail{} (binary), PA\_State, and NA\_State. Remaining targets (individual emotions, pain, forecasting, interactions quality) are reported in the appendix.
 
+\paragraph{Class Balance.}
+The binary state targets exhibit varying base rates across the 11 pilot participants: PA\_State is nearly balanced (49.4\% elevated), while NA\_State (25.9\%), \erdesire{} State (29.8\%), and individual negative emotions (25--35\%) are moderately imbalanced. \intavail{} is 59.8\% positive overall but varies dramatically across individuals (3.7\%--98.9\%), reflecting genuine heterogeneity in availability patterns. These base rates motivate our use of balanced accuracy, which accounts for class imbalance.
+
 \subsection{Implementation}
 
 All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscription, with no API cost. Structured agents (V1, V3, CALLM) use \texttt{claude -p} (single-call mode); agentic agents (V2, V4, V6) use \texttt{claude --print} with an MCP server subprocess. Concurrent processes are limited to 5 to respect subscription rate limits. Each agentic prediction typically takes 30--90 seconds and uses 4--8 tool calls.
@@ -382,7 +412,7 @@ All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscrip
 
 \subsection{Overview: Aggregate Performance}
 
-Table~\ref{tab:main_results} presents aggregate results across all prediction targets. The agentic multimodal variants (V4, V6) achieve the highest overall balanced accuracy and F1, while the diary-based approaches (CALLM, V3) achieve lower continuous MAE.
+Table~\ref{tab:main_results} and Figure~\ref{fig:ba_comparison} present aggregate results across all prediction targets. The agentic multimodal variants (V4, V6) achieve the highest overall balanced accuracy and F1, while the diary-based approaches (CALLM, V3) achieve lower continuous MAE.
 
 \begin{table}[t]
 \caption{Aggregate performance across all prediction targets (11 users, 956 entries per variant). Best in each column is \textbf{bold}. $\dagger$ML baselines evaluated via 5-fold CV on full dataset (15,984 entries).}
@@ -411,6 +441,8 @@ XGBoost & Sensing & 9.374 & 0.502 & 0.391 \\
 \end{tabular}
 \end{table}
 
+\input{figures/results_ba_comparison}
+
 Two patterns emerge. First, for \emph{binary state detection} (BA, F1), the ranking is: agentic multimodal (V4/V6) $>$ structured multimodal (V3) $>$ CALLM $>$ agentic sensing (V2) $>$ text baselines $>$ structured sensing (V1) $>$ ML sensing baselines. The agentic multimodal agents (V6: BA=0.675) are the only systems to exceed the AR autocorrelation baseline (BA=0.658). Second, for \emph{continuous regression} (MAE), diary-based systems dominate: CALLM (3.661) $<$ V3 (3.947) $<$ V6 (4.220) $<$ V4 (4.353), while sensing-only systems and ML baselines lag behind.
 
 This divergence---strong binary detection but weaker continuous calibration for agentic agents---suggests that the autonomous investigation approach excels at detecting \emph{whether} a state is unusual, even when absolute value prediction is less precise.
@@ -418,7 +450,7 @@ This divergence---strong binary detection but weaker continuous calibration for 
 \subsection{Intervention Opportunity: Desire and Availability}
 \label{sec:results_intervention}
 
-Table~\ref{tab:intervention} presents results for the two components of intervention opportunity.
+Table~\ref{tab:intervention} and Figure~\ref{fig:intervention_bars} present results for the two components of intervention opportunity.
 
 \begin{table}[t]
 \caption{Intervention opportunity prediction. \erdesire{}: emotion regulation desire; \intavail{}: intervention availability. Best per metric is \textbf{bold}.}
@@ -443,14 +475,16 @@ RF$^\dagger$ & 0.501 & 0.365 & --- & --- & 3.250 \\
 \end{tabular}
 \end{table}
 
+\input{figures/results_intervention}
+
 \paragraph{Emotion Regulation Desire.}
 Detecting when a cancer survivor \emph{wants} emotional support is the most direct signal for intervention timing. The agentic multimodal agents achieve remarkable performance: V6 attains BA = 0.786 and MAE = 0.978 (on a 0--10 scale), substantially outperforming both the structured multimodal agent (V3: BA = 0.734) and CALLM (BA = 0.678). The agentic sensing-only agent (V2: BA = 0.669) also outperforms V1 (BA = 0.533), demonstrating the value of autonomous investigation even without diary text.
 
 \paragraph{Intervention Availability.}
 Predicting whether a survivor is \emph{available} to engage with an intervention shows a striking pattern: agentic agents dramatically outperform structured ones. V4 (BA = 0.751) and V6 (BA = 0.743) far exceed V3 (BA = 0.565) and CALLM (BA = 0.531). Even the sensing-only agentic agent V2 (BA = 0.735) substantially outperforms all structured variants. This suggests that \emph{behavioral signals}---detectable through autonomous sensing investigation---are more informative for availability prediction than diary text alone. A user's diary may describe their emotions but rarely states whether they are currently available for an intervention.
 
-\paragraph{Intervention Opportunity.}
-For a JITAI to act, both desire and availability must be predicted correctly. The agentic multimodal agents excel on both dimensions simultaneously, achieving the only balanced accuracy above 0.74 on both constructs. In contrast, CALLM performs well on desire (0.678) but poorly on availability (0.531), making it an unreliable trigger for intervention delivery.
+\paragraph{Intervention Opportunity (Joint Prediction).}
+For a JITAI to act, both desire and availability must be predicted correctly. We evaluate the joint prediction where both \erdesire{} State = True \emph{and} \intavail{} = yes. The ground-truth joint rate is 19.2\% (184/956 entries). The agentic multimodal agents achieve the best joint detection: V4 achieves joint precision = 0.610, recall = 0.620, F1 = 0.615, substantially outperforming CALLM (F1 = 0.438) and V1 (F1 = 0.148). V6 performs similarly (F1 = 0.603). This confirms that agentic multimodal agents excel not just on individual constructs but on the clinically actionable conjunction. In contrast, CALLM performs well on desire (0.678) but poorly on availability (0.531), causing it to miss the joint opportunity.
 
 \subsection{Positive and Negative Affect}
 \label{sec:results_affect}
@@ -483,7 +517,7 @@ MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 & 6.019 & 3.492 \\
 Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. V6 achieves BA = 0.790, substantially above V3 (0.727) and CALLM (0.681). This represents a meaningful improvement: at 79\% balanced accuracy, the system correctly identifies roughly 4 out of 5 instances of elevated negative affect, while maintaining a low false positive rate.
 
 \paragraph{Positive Affect State Detection.}
-Detecting unusual positive affect states follows the same pattern. V6 (BA = 0.755) significantly outperforms V3 (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
+Detecting unusual positive affect states follows the same pattern. V6 (BA = 0.755) substantially outperforms V3 (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
 
 \paragraph{Continuous PANAS Prediction.}
 For absolute value prediction, diary-based approaches dominate: CALLM achieves the lowest PANAS-Neg MAE (4.264) and V6 the lowest PANAS-Pos MAE (5.385). The AR baseline achieves lower MAE on both (Pos: 4.227, Neg: 2.410), as autocorrelation is inherently well-suited to continuous prediction when states are persistent. However, continuous MAE is less actionable than binary state detection for JITAI applications: what matters is detecting \emph{when states change}, not predicting exact numerical values.
@@ -521,6 +555,9 @@ The agentic approach consistently and substantially outperforms the structured a
 \end{itemize}
 
 The improvement is smaller (but still consistent) in the multimodal condition, where the diary text already provides a strong signal that reduces the marginal value of autonomous sensing investigation.
+
+\paragraph{Per-User Consistency.}
+The agentic advantage is not driven by outlier participants. Examining per-user mean BA across all binary targets, V4 outperforms V1 for 10 of 11 participants (mean per-user BA: V4 = 0.693 $\pm$ 0.070 vs.\ V1 = 0.541 $\pm$ 0.037). Similarly, V6 outperforms V3 for 10 of 11 participants (V6 = 0.696 $\pm$ 0.065 vs.\ V3 = 0.631 $\pm$ 0.056). The single participant (User 310) where the agentic advantage is smallest also has the lowest NA base rate (4.9\% elevated), leaving little room for binary state detection. The consistency of the agentic advantage across participants with diverse base rates and sensing coverage patterns suggests the improvement is genuine rather than a sampling artifact.
 
 \subsection{Sensing-Only vs.\ Multimodal}
 \label{sec:results_modality}
@@ -636,7 +673,25 @@ Our findings suggest several design principles for next-generation JITAIs:
 
 \subsection{Ethical Considerations}
 
-Deploying an AI system that monitors behavioral data and predicts emotional states raises important ethical concerns. Participants in BUCS consented to passive data collection for research purposes; deployment would require clear informed consent, transparency about what data is collected and how it is used, and robust data security. The system should complement, not replace, human clinical judgment. False negatives (missing genuine distress) and false positives (unnecessary interventions) both carry costs that must be weighed in the context of the target population's vulnerability.
+Deploying an AI system that monitors behavioral data and predicts emotional states raises important ethical concerns that we address in detail.
+
+\paragraph{Institutional Review and Consent.}
+The BUCS study was approved by the University of Virginia Institutional Review Board (IRB-SBS). All participants provided written informed consent for passive sensor data collection and EMA self-report. The consent protocol covers research use of sensing and diary data, including computational analysis for health prediction.
+
+\paragraph{Data Privacy and LLM Processing.}
+Our system sends participant data (sensing summaries, diary text, demographic profiles) to Anthropic's Claude API for inference. All data is de-identified before processing: participant IDs are replaced with numeric codes, and no directly identifiable information (names, addresses, medical record numbers) is included in prompts. Diary text, which may contain sensitive health narratives, is transmitted to the API for inference only and is not stored by the provider under the applicable data processing terms. For clinical deployment, on-device or institutionally-hosted LLM inference would be preferable to eliminate third-party data transmission entirely.
+
+\paragraph{Clinical Safety.}
+Our system operates as a \emph{prediction layer}---it detects states and opportunities, but the decision to intervene (and how) remains with the clinical team or the user's own preferences. This separation of prediction from action is an important safeguard. False negatives (missing genuine distress) carry the cost of delayed support; false positives (unnecessary interventions) risk notification fatigue and could erode user trust. In a cancer survivorship population, both errors have meaningful consequences that must be weighed against the benefit of proactive coverage when self-report is absent. The systematic negativity bias in continuous predictions (Section~\ref{sec:results_affect}) underscores the need for careful calibration before any clinical deployment.
+
+\paragraph{Surveillance and Autonomy.}
+Continuous passive monitoring of a vulnerable population raises legitimate concerns about surveillance, autonomy, and power dynamics. Cancer survivors must retain full control over what data is collected and how it is used, including the ability to pause or disable monitoring without affecting their access to care. Transparent explanation of what the system can and cannot infer from behavioral data is essential for informed participation.
+
+\subsection{Future Work}
+
+Several directions extend this work. First, our pilot evaluation covers 11 participants; we are currently scaling to 40 participants across 5 cross-validation folds, which will provide the statistical power for per-user and per-construct significance testing. Second, a \emph{cross-model comparison} using OpenAI's GPT models on a 20-participant subset will test whether the agentic advantage is model-specific or reflects a general benefit of autonomous tool-use investigation. Third, \emph{real-time deployment} is the natural next step: a smartphone companion app that runs the agentic pipeline in real time, using on-device or edge-served LLMs to meet latency requirements while preserving privacy. The current system's 30--90 second inference time per prediction is acceptable for proactive interventions (which need not be instantaneous), but streaming and caching optimizations could reduce this further.
+
+Fourth, \emph{longitudinal personalization} through continual learning deserves investigation. Our session memory mechanism provides a simple form of within-study adaptation, but more sophisticated approaches---such as fine-tuning on a user's accumulated prediction history, or adapting the investigation strategy based on which tool calls proved most informative for each individual---could improve long-term performance. Finally, the natural extension from \emph{predicting} intervention opportunities to \emph{generating} personalized intervention content is an exciting direction. An agentic system that detects elevated negative affect and low mobility could not only flag an intervention opportunity but also generate contextually appropriate support messages (e.g., ``I notice you've been home all day and mentioned pain---would a brief guided breathing exercise help?''), grounding intervention content in the same behavioral evidence used for prediction.
 
 
 %% ================================================================
@@ -648,7 +703,7 @@ We presented the \sys{}, a framework for proactive emotional state prediction us
 
 The key insight is that treating affect prediction as an \emph{autonomous behavioral investigation}---where the LLM decides what sensor data to examine, like a data scientist reasoning about a patient---yields better binary state detection than presenting all features in a fixed format. This agentic approach is especially valuable for intervention availability prediction, which is fundamentally a behavioral construct best captured through selective sensing analysis.
 
-Our work establishes LLM-based agentic sensing as a viable paradigm for proactive JITAI systems. By combining the contextual reasoning capabilities of large language models with the passive, always-on nature of smartphone sensing, we move closer to systems that can support cancer survivors precisely when they need it most---even when they are not actively seeking help.
+Our work provides evidence that LLM-based agentic sensing is a promising paradigm for proactive JITAI systems. By combining the contextual reasoning capabilities of large language models with the passive, always-on nature of smartphone sensing, we move closer to systems that can support cancer survivors precisely when they need it most---even when they are not actively seeking help.
 
 %% ================================================================
 %%  ACKNOWLEDGMENTS
@@ -708,27 +763,7 @@ forecasting & .488 & .510 & .463 & .453 & .414 & \textbf{.457} \\
 \section{Agentic Investigation Example}
 \label{app:example}
 
-Figure~\ref{fig:example_trace} illustrates a typical V4 agentic investigation trace. The agent analyzes a participant's diary entry mentioning chronic pain, then autonomously queries mobility data (confirming reduced movement), screen usage (elevated, suggesting distraction-seeking), and peer cases (finding 3 similar diary entries that all corresponded to elevated negative affect). The investigation takes 6 tool calls and produces a prediction of elevated NA and ER desire---both confirmed by the subsequent EMA response.
-
-\begin{figure}[h]
-\centering
-\fbox{\parbox{0.9\columnwidth}{
-\small
-\textbf{Participant 071, 2024-01-15 14:00 EMA}\\
-\textbf{Diary:} ``Pain is really bad today. Can barely focus on anything.''\\[4pt]
-\texttt{1. Diary analysis} $\rightarrow$ Pain-focused, low energy, negative valence\\
-\texttt{2. get\_behavioral\_timeline()} $\rightarrow$ 100\% stationary all day\\
-\texttt{3. compare\_to\_baseline(gps\_home\_pct)} $\rightarrow$ z=+2.8 (97th pctile)\\
-\texttt{4. query\_sensing(screen, 6h)} $\rightarrow$ 3.4h screen (high for this user)\\
-\texttt{5. find\_peer\_cases(``pain bad focus'')} $\rightarrow$ 3 similar cases, mean NA=5.2\\
-\texttt{6. find\_similar\_days()} $\rightarrow$ Past similar day: NA=5, ER=6\\[4pt]
-\textbf{Prediction:} NA=5, ER\_desire=5, NA\_State=True, INT\_avail=Yes\\
-\textbf{Ground truth:} NA=5, ER\_desire=6, NA\_State=True, INT\_avail=Yes\\
-\textbf{Result:} Correct on all key targets.
-}}
-\caption{Example agentic investigation trace showing diary-first analysis followed by selective tool-use for behavioral validation.}
-\label{fig:example_trace}
-\end{figure}
+Figure~\ref{fig:agentic_flow} in Section~\ref{sec:agentic} illustrates a complete V4 agentic investigation trace for Participant 071. The agent analyzes the diary entry (``Pain is really bad today. Can barely focus on anything.''), forms an initial hypothesis of elevated negative affect, then autonomously queries the behavioral timeline (confirming 100\% stationary day), compares GPS home percentage to the 14-day baseline (z=+2.8, 97th percentile---extreme anomaly), retrieves peer cases with similar diary content (3 matches, mean NA=5.2), and finds behaviorally similar past days (NA=5, ER=6). The investigation converges after 5 tool calls with cross-validated evidence, producing a prediction of NA=5, ER\_desire=5, NA\_State=True, INT\_avail=Yes---all confirmed by the subsequent EMA response (ground truth: NA=5, ER\_desire=6).
 
 
 \section{ML Baseline Details}

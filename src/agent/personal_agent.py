@@ -11,7 +11,7 @@ Research Design:
   CALLM: diary + TF-IDF RAG (diary only) -- CHI 2025 baseline
 
 Backend:
-  V1/V3/CALLM: ClaudeCodeClient (claude -p CLI, Max subscription, free)
+  V1/V3/CALLM (and GPT structured variants): single-call LLM client
   V2/V4/V5/V6: AgenticCCAgent (claude --print + MCP server, Max subscription, free)
 """
 
@@ -25,7 +25,6 @@ from src.agent.structured import StructuredWorkflow
 from src.agent.structured_full import StructuredFullWorkflow
 from src.data.schema import UserProfile
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
-from src.think.llm_client import ClaudeCodeClient
 from src.think.prompts import build_trait_summary, callm_prompt, format_sensing_summary
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class PersonalAgent:
         self,
         study_id: int,
         version: str,
-        llm_client: ClaudeCodeClient,
+        llm_client,
         profile: UserProfile | None = None,
         memory_doc: str = "",
         retriever: TFIDFRetriever | None = None,
@@ -47,54 +46,72 @@ class PersonalAgent:
         agentic_model: str = "sonnet",
         agentic_max_turns: int = 16,
         peer_db_path: str | None = None,
+        ema_df=None,
         # Legacy params (ignored, kept for backward compat)
         query_engine=None,
         agentic_soft_limit: int = 8,
         agentic_hard_limit: int = 20,
     ) -> None:
         self.study_id = study_id
-        self.version = version  # "callm", "v1", "v2", "v3", "v4", "v5", "v6"
+        self.version = version  # supports callm/v1-v6 and gpt-callm/gpt-v1/gpt-v3
+        self.base_version = version[4:] if version.startswith("gpt-") else version
         self.llm = llm_client
         self.profile = profile or UserProfile(study_id=study_id)
         self.memory_doc = memory_doc
         self.retriever = retriever  # CALLM: TFIDFRetriever, V3: MultiModalRetriever
 
         # Initialize workflow
-        if version == "v1":
+        if self.base_version == "v1":
             self._v1 = StructuredWorkflow(llm_client, peer_db_path=peer_db_path, study_id=study_id)
-        elif version in ("v2", "v4", "v5", "v6"):
-            # Agentic agents via claude --print (free, Max subscription)
+        elif self.base_version in ("v2", "v4", "v5", "v6"):
+            # Agentic agents: Claude MCP or OpenAI function-calling loop
             if processed_dir is None:
                 raise ValueError(
-                    f"{version.upper()} requires processed_dir (path to data/processed/). "
+                    f"{self.base_version.upper()} requires processed_dir (path to data/processed/). "
                     f"Pass processed_dir= when constructing PersonalAgent."
                 )
-            from src.agent.cc_agent import AgenticCCAgent
             _version_mode = {
                 "v2": "sensing_only",
                 "v4": "multimodal",
                 "v5": "filtered_sensing",
                 "v6": "filtered_multimodal",
             }
-            mode = _version_mode[version]
+            mode = _version_mode[self.base_version]
             # V5/V6 require filtered_data_dir
-            if version in ("v5", "v6") and filtered_data_dir is None:
+            if self.base_version in ("v5", "v6") and filtered_data_dir is None:
                 raise ValueError(
-                    f"{version.upper()} requires filtered_data_dir (path to data/processed/filtered/). "
+                    f"{self.base_version.upper()} requires filtered_data_dir (path to data/processed/filtered/). "
                     f"Pass filtered_data_dir= when constructing PersonalAgent."
                 )
-            self._agentic = AgenticCCAgent(
-                study_id=study_id,
-                profile=self.profile,
-                memory_doc=memory_doc,
-                processed_dir=processed_dir,
-                model=agentic_model,
-                max_turns=agentic_max_turns,
-                mode=mode,
-                filtered_data_dir=filtered_data_dir,
-                peer_db_path=peer_db_path,
-            )
-        elif version == "v3":
+            if version.startswith("gpt-"):
+                from src.agent.openai_agent import AgenticOpenAIAgent
+                self._agentic = AgenticOpenAIAgent(
+                    study_id=study_id,
+                    profile=self.profile,
+                    memory_doc=memory_doc,
+                    processed_dir=processed_dir,
+                    ema_df=ema_df if ema_df is not None else query_engine,
+                    model=agentic_model,
+                    max_turns=agentic_max_turns,
+                    mode=mode,
+                    filtered_data_dir=filtered_data_dir,
+                    peer_db_path=peer_db_path,
+                    dry_run=getattr(llm_client, "dry_run", False),
+                )
+            else:
+                from src.agent.cc_agent import AgenticCCAgent
+                self._agentic = AgenticCCAgent(
+                    study_id=study_id,
+                    profile=self.profile,
+                    memory_doc=memory_doc,
+                    processed_dir=processed_dir,
+                    model=agentic_model,
+                    max_turns=agentic_max_turns,
+                    mode=mode,
+                    filtered_data_dir=filtered_data_dir,
+                    peer_db_path=peer_db_path,
+                )
+        elif self.base_version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
             self._v3 = StructuredFullWorkflow(
                 llm_client, retriever=mm_retriever, study_id=study_id
@@ -120,19 +137,19 @@ class PersonalAgent:
         Returns:
             Dict with predictions, metadata, and trace info.
         """
-        if self.version == "callm":
+        if self.base_version == "callm":
             return self._run_callm(ema_row, date_str)
-        elif self.version == "v1":
+        elif self.base_version == "v1":
             return self._run_v1(sensing_day, date_str)
-        elif self.version == "v2":
+        elif self.base_version == "v2":
             return self._run_v2(ema_row, session_memory=session_memory)
-        elif self.version == "v3":
+        elif self.base_version == "v3":
             return self._run_v3(ema_row, sensing_day, date_str)
-        elif self.version == "v4":
+        elif self.base_version == "v4":
             return self._run_v4(ema_row, session_memory=session_memory)
-        elif self.version == "v5":
+        elif self.base_version == "v5":
             return self._run_v5(ema_row, session_memory=session_memory)
-        elif self.version == "v6":
+        elif self.base_version == "v6":
             return self._run_v6(ema_row, session_memory=session_memory)
         else:
             raise ValueError(f"Unknown version: {self.version}")

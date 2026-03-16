@@ -11,7 +11,6 @@ import logging
 from typing import Any
 
 from src.remember.retriever import MultiModalRetriever
-from src.think.llm_client import ClaudeCodeClient
 from src.think.prompts import (
     build_trait_summary,
     format_sensing_summary,
@@ -27,7 +26,7 @@ class StructuredFullWorkflow:
 
     def __init__(
         self,
-        llm_client: ClaudeCodeClient,
+        llm_client,
         retriever: MultiModalRetriever | None = None,
         study_id: int | None = None,
     ) -> None:
