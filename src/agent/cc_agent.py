@@ -360,19 +360,24 @@ class AgenticCCAgent:
         prediction["_diary_length"] = len(effective_diary) if prediction["_has_diary"] else 0
         prediction["_emotion_driver"] = effective_diary or ""
 
-        # Best-effort structured tool call extraction from stdout
+        # Tool call extraction: use num_turns from JSON wrapper (most reliable),
+        # supplemented by regex extraction from text for tool names
+        num_turns = getattr(self, "_last_num_turns", 1)
         parsed_tool_calls = self._parse_tool_calls_from_output(output)
+        # num_turns > 1 means tool-use occurred; n_tool_calls = turns - 1
+        # (first turn = initial prompt, subsequent turns = tool call + response)
+        n_tool_calls_from_turns = max(0, num_turns - 1)
         prediction["_tool_calls"] = parsed_tool_calls
-        prediction["_n_tool_calls"] = len(parsed_tool_calls)
-        prediction["_n_rounds"] = len(parsed_tool_calls)  # approximate: 1 tool ≈ 1 round in CC mode
-        prediction["_conversation_length"] = 0  # not available in CC mode
+        prediction["_n_tool_calls"] = n_tool_calls_from_turns or len(parsed_tool_calls)
+        prediction["_n_rounds"] = n_tool_calls_from_turns
+        prediction["_conversation_length"] = num_turns
         usage = getattr(self, "_last_usage", {})
         prediction["_input_tokens"] = usage.get("input_tokens", 0)
         prediction["_output_tokens"] = usage.get("output_tokens", 0)
         prediction["_cost_usd"] = usage.get("cost_usd", 0)
         prediction["_total_tokens"] = 0
         prediction["_cost_usd"] = 0.0  # free via Max subscription
-        prediction["_llm_calls"] = 1  # one subprocess call
+        prediction["_llm_calls"] = num_turns
 
         logger.info(
             f"{tag} User {self.study_id} done | "
@@ -438,6 +443,10 @@ class AgenticCCAgent:
             mcp_config_path = f.name
 
         tag = f"[{self._version.upper()}]"
+        # Pass prompt via stdin to avoid shell escaping issues with special
+        # characters in diary text, behavioral narratives, etc.  Positional
+        # prompt arg was silently corrupted for many entries, causing Claude
+        # to fall back to single-call mode without MCP tool access.
         cmd = [
             "claude",
             "--print",
@@ -447,7 +456,6 @@ class AgenticCCAgent:
             "--mcp-config", mcp_config_path,
             "--append-system-prompt", system_prompt,
             "--no-session-persistence",
-            prompt,
             "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
         ]
 
@@ -470,6 +478,7 @@ class AgenticCCAgent:
                 try:
                     result = subprocess.run(
                         cmd,
+                        input=prompt,
                         capture_output=True,
                         text=True,
                         timeout=600,
@@ -571,7 +580,7 @@ class AgenticCCAgent:
             Path(mcp_config_path).unlink(missing_ok=True)
 
     def _unwrap_json_output(self, raw: str, tag: str = "") -> str:
-        """Unwrap --output-format json response, extract token usage."""
+        """Unwrap --output-format json response, extract token usage and turn count."""
         if not raw:
             return ""
         try:
@@ -587,6 +596,11 @@ class AgenticCCAgent:
                         "cost_usd": wrapper.get("total_cost_usd", 0),
                     }
                     logger.info(f"{tag} tokens: {self._last_usage.get('input_tokens', 0)}in + {self._last_usage.get('output_tokens', 0)}out")
+                # Extract num_turns from JSON wrapper (indicates tool-use rounds)
+                num_turns = wrapper.get("num_turns", 1)
+                self._last_num_turns = num_turns
+                if num_turns > 1:
+                    logger.info(f"{tag} Multi-turn: {num_turns} turns (tool-use confirmed)")
                 if "result" in wrapper:
                     return str(wrapper["result"])
         except json.JSONDecodeError:
