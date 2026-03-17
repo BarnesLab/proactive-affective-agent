@@ -29,14 +29,18 @@ is_peak_hours() {
 log "Watcher started (target=$TARGET)"
 
 while true; do
-    # Check if Claude is rate-limited (weekly cap). If so, sleep 30 min.
-    rate_check=$(echo "hi" | claude -p --model sonnet --no-session-persistence 2>&1 | head -1)
-    if echo "$rate_check" | grep -qi "hit your limit\|rate limit\|resets"; then
-        log "Claude rate-limited: $rate_check — sleeping 30m"
-        # Kill any retrying tasks to save CPU
-        pkill -f "run_pilot.*sonnet" 2>/dev/null
-        sleep 1800
-        continue
+    # Check if Claude is rate-limited. Flag file contains expiry ISO date.
+    RATE_LIMIT_FLAG="$OUTDIR/.rate_limited"
+    if [ -f "$RATE_LIMIT_FLAG" ]; then
+        expiry=$(head -1 "$RATE_LIMIT_FLAG" | tr -d '[:space:]')
+        expiry_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$expiry" "+%s" 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        if [ "$now_epoch" -lt "$expiry_epoch" ]; then
+            sleep 1800  # Sleep 30 min, check again
+            continue
+        fi
+        log "Rate limit expired, removing flag"
+        rm -f "$RATE_LIMIT_FLAG"
     fi
 
     # Skip during Claude peak hours (weekdays 8AM-2PM ET) to save tokens
