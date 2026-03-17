@@ -64,7 +64,7 @@ Bold = best in row among LLM agent systems.
 |------------|-----------|--------|----------|
 | **H1**: Sensing data enhances diary-based prediction | V4 vs CALLM, V6 vs CALLM | ✅ **Supported** | V4 BA=0.666, V6 BA=0.669 > CALLM BA=0.626 |
 | **H2**: LLM agents outperform traditional ML baselines | V4/V6 vs ML baselines | ✅ **Supported** (multimodal) | V6 BA=0.669 > MiniLM BA=0.629, Combined RF BA=0.620 |
-| **H3**: Passive sensing alone enables meaningful prediction | V2/V5 vs random | ⚠️ **Partially supported** | V2 BA=0.598, V5 BA=0.601 — above 0.50 but below AR (0.658) |
+| **H3**: Passive sensing alone enables meaningful prediction | V2/V5 vs random | ⚠️ **Partially supported** | V2 BA=0.598, V5 BA=0.601 — above chance (0.50) but below multimodal |
 | **H4**: Agentic > structured | V2 vs V1, V4 vs V3 | ✅ **Supported** | V4 BA=0.666 > V3 BA=0.607; V2 BA=0.598 > V1 BA=0.521 |
 | **H5**: Diary text adds value beyond sensing | V4 vs V2, V6 vs V5 | ✅ **Supported** | V4 BA=0.666 > V2 BA=0.598; V6 BA=0.669 > V5 BA=0.601 |
 
@@ -78,5 +78,4 @@ Bold = best in row among LLM agent systems.
 4. **V5/V6 (filtered)**: Agentic variants with additional data quality filtering applied to sensing features.
 5. **Ridge excluded**: 3/5 folds diverged catastrophically. Not suitable for this dataset.
 6. **MLP 4-fold**: Fold 5 diverged even with gradient clipping. Reported as 4-fold mean.
-7. **AR BA identical for both variants**: Binary predictions (carry forward) are the same.
-8. **V6 is the best system** by Mean BA (0.669) and Mean F1 (0.664), marginally ahead of V4 (0.666 / 0.661). Both substantially outperform all baselines including autocorrelation.
+7. **V6 is the best system** by Mean BA (0.669) and Mean F1 (0.664), marginally ahead of V4 (0.666 / 0.661). Both substantially outperform all non-LLM baselines.
