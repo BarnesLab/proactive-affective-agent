@@ -146,7 +146,8 @@ class ClaudeCodeClient:
                 if limit_type == RateLimitType.WEEKLY:
                     send_telegram(
                         f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
-                        f"Experiment stopped. Resume after limit resets."
+                        f"Experiment stopped. Resume after limit resets.",
+                        dedup_key="weekly_structured",
                     )
                     raise RateLimitError(
                         f"Weekly rate limit: {stderr_preview}",
