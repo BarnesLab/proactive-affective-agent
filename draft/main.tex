@@ -643,7 +643,7 @@ The cross-user RAG mechanism serves a fundamentally different role than RAG in t
 \subsection{Limitations}
 
 \paragraph{Pilot Scale.}
-Our evaluation covers 11 participants (956 entries per variant). While results are consistent across participants and the patterns are clear, a larger-scale evaluation is needed to establish generalizability. The pilot scale is a direct consequence of LLM inference costs: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
+Our evaluation covers 18 participants (1,567 entries per fully-complete variant; some agent versions have fewer users---see notes). While results are consistent across participants and the patterns are clear, completing all versions to full N=18 coverage and further scaling is needed to establish generalizability. The pilot scale is a direct consequence of LLM inference costs: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
 
 \paragraph{Retrospective Evaluation.}
 We evaluate through retrospective replay of historical data, not real-time deployment. While we carefully enforce temporal boundaries (agents only see data before each EMA timestamp), a deployed system would face additional challenges including sensor dropout, connectivity issues, and real-time latency requirements.
@@ -652,7 +652,7 @@ We evaluate through retrospective replay of historical data, not real-time deplo
 All agents, but especially sensing-based ones, exhibit systematic biases in continuous prediction (negativity bias for PANAS-NA, mean regression for PANAS-PA). While binary state detection is robust to these biases (detecting relative shifts), applications requiring precise continuous values would need additional calibration mechanisms.
 
 \paragraph{Evaluation Set Mismatch.}
-ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 11-user pilot subset. Direct comparison requires caution, though the consistent patterns (LLM agents outperform ML on binary tasks, underperform AR on continuous tasks) are robust to this difference.
+ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 18-user pilot subset (with some versions at partial coverage). Direct comparison requires caution, though the consistent patterns (LLM agents outperform ML on binary tasks, underperform AR on continuous tasks) are robust to this difference.
 
 \paragraph{Model and Platform Dependency.}
 Our system is tightly coupled to Claude Sonnet and the Claude Max subscription. Performance may vary across LLM providers and versions. The Android-only availability of app and light sensor data (29\% of participants) limits the sensing features available to iOS users.
