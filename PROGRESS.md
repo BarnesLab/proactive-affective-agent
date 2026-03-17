@@ -195,12 +195,6 @@ Once all users are done with consistent model:
 
 ## Baseline Results (Complete)
 
-### AR Autocorrelation (ceiling for autocorrelation-only prediction)
-| Variant | Mean MAE | Mean BA | Mean F1 |
-|---------|----------|---------|---------|
-| last_value (AR1) | 2.758 | 0.658 | 0.617 |
-| rolling_mean_w3 | 2.552 | 0.658 | 0.617 |
-
 ### Text Baselines (diary only)
 | Model | Mean MAE | Mean BA | Mean F1 |
 |-------|----------|---------|---------|
