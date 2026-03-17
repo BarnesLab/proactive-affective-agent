@@ -25,7 +25,9 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # Configuration
 # ---------------------------------------------------------------------------
 
-PILOT_USERS = [43, 71, 119, 164, 258, 275, 310, 338, 403, 458, 513]
+# 9 clean fully-complete users (all 7 versions, predictions match expected EMA count)
+# Updated 2026-03-17 from 11 to 9 (removed 119, 164, 513 — incomplete; 505 — corrupted v1/v3)
+PILOT_USERS = [24, 43, 71, 258, 275, 310, 338, 403, 458]
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
 # Multiple checkpoint directories (newer takes precedence)
