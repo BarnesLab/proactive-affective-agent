@@ -78,7 +78,7 @@ Bold = best in row among LLM agent systems.
 2. **All LLM agent systems** use claude-sonnet for inference.
 3. **Baseline–agent comparison caveat**: Baselines use 5-fold CV on full dataset (399 users); LLM agents use 13–18 user subsets. Direct comparison requires caution, though agent results on fewer users still outperform baselines on full data.
 4. **V5/V6 (filtered)**: Agentic variants with additional data quality filtering applied to sensing features.
-5. **Ridge excluded**: 3/5 folds diverged catastrophically (MAE ~1e12). Not suitable for this dataset.
+5. **Ridge excluded**: 3/5 folds diverged catastrophically. Not suitable for this dataset.
 6. **MLP 4-fold**: Fold 5 diverged even with gradient clipping. Reported as 4-fold mean.
-7. **AR BA identical for both variants**: Binary predictions (carry forward) are the same; only continuous MAE differs.
+7. **AR BA identical for both variants**: Binary predictions (carry forward) are the same.
 8. **V6 is the best system** by Mean BA (0.669) and Mean F1 (0.664), marginally ahead of V4 (0.666 / 0.661). Both substantially outperform all baselines including autocorrelation.
