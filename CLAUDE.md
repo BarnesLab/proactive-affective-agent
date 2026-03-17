@@ -1,77 +1,59 @@
-# Proactive Affective Agent — BUCS Pilot Study
+# PULSE (Proactive Affective Agent) — BUCS Study
 
-> ⚠️ **BEFORE running any experiment tasks**, read `PROJECT_CONTROL.md` and check `~/.openclaw/workspace/project-control.json`. If paused (globally, by model, or by project), do NOT start new tasks. Let running tasks finish naturally.
+> ⚠️ **BEFORE running any experiment tasks**, read `PROJECT_CONTROL.md` and check `~/.openclaw/workspace/project-control.json`. If paused, do NOT start new tasks.
 
 ## Project Overview
-LLM-based emotional state prediction for cancer survivors using passive smartphone sensing + diary data. Compares 5 prediction approaches in a 2x2 design (structured vs agentic × sensing-only vs multimodal) plus a CALLM baseline.
+LLM-based emotional state prediction for cancer survivors using passive smartphone sensing + diary data. System name: **PULSE**. Paper target: IMWUT.
 
-## Key Architecture
-
-### 2x2 Agent Design
-| | Sensing-only | Multimodal (sensing + diary) |
+## Naming Convention (Paper ↔ Code)
+| Paper Name | Code Name | Description |
 |---|---|---|
-| **Structured** (fixed pipeline) | V1 | V3 |
-| **Agentic** (autonomous tool-use) | V2 | V4 |
+| **Struct-Sense** | v1 | Structured-agentic, sensing-only |
+| **Auto-Sense** | v2 | Autonomously-agentic, sensing-only |
+| **Struct-Multi** | v3 | Structured-agentic, multimodal |
+| **Auto-Multi** | v4 | Autonomously-agentic, multimodal |
+| **Auto-Sense+** | v5 | Auto-Sense + filtered data |
+| **Auto-Multi+** | v6 | Auto-Multi + filtered data |
+| **CALLM** | callm | Diary-only baseline |
 
-Plus **CALLM** baseline (diary + TF-IDF RAG, structured output).
+Internal code still uses v1-v6. Paper uses descriptive names. Never use v1-v6 in paper text.
 
-### Backend (All Free — Claude Max Subscription)
-- **V1/V3/CALLM**: `claude -p` CLI via `ClaudeCodeClient`
-- **V2/V4**: `claude --print` + MCP server via `AgenticCCAgent` (cc_agent.py)
-- All inference is free through Max subscription — no paid API keys used anywhere
-- Limit concurrent `claude --print` processes to ~5 to avoid Max rate limits
+## 2x2 Agent Design
+| | Sensing-only | Multimodal |
+|---|---|---|
+| **Structured-Agentic** | Struct-Sense | Struct-Multi |
+| **Autonomously-Agentic** | Auto-Sense / Auto-Sense+ | Auto-Multi / Auto-Multi+ |
 
-### Model
-- During testing phase: use **Haiku** for speed
-- For final experiments: use **Sonnet** (`"sonnet"` for CLI)
-- Never use Opus for experiments.
+## Backend
+- **Structured (v1/v3/callm)**: `claude -p` CLI
+- **Autonomous (v2/v4/v5/v6)**: `claude --print` + MCP server
+- All free via Claude Max subscription. Limit to ~5 concurrent processes.
+- Model: **Sonnet** for experiments, Haiku for testing only. Never Opus.
 
-## Critical Files
+## Overleaf Sync
+- **Project ID**: `6999d011b24a9f1d4e6e53e8`
+- **Rule**: After every draft edit, compile PDF + sync to Overleaf. Always keep Overleaf up to date.
+- **Compile command**: `cd draft && pdflatex -interaction=nonstopmode main.tex && pdflatex main.tex && open main.pdf`
+- Sync via MCP: `mcp__overleaf__write_file` then `commit_changes` then `push_changes`
+- `draft/` is gitignored (Overleaf-managed, not in GitHub)
 
-| Path | Purpose |
-|------|---------|
-| `src/agent/personal_agent.py` | Unified agent entry point (routes to V1-V4/CALLM) |
-| `src/agent/cc_agent.py` | V2/V4 agentic agent (claude --print + MCP) |
-| `src/agent/structured.py` | V1 structured sensing-only |
-| `src/agent/structured_full.py` | V3 structured multimodal |
-| `src/sense/query_tools.py` | SensingQueryEngine — Parquet-backed tool definitions |
-| `src/think/llm_client.py` | ClaudeCodeClient wrapping `claude -p` |
-| `src/think/prompts.py` | All LLM prompts |
-| `src/simulation/simulator.py` | PilotSimulator orchestrator |
-| `scripts/run_pilot.py` | Main pilot runner (all versions) |
-| `scripts/run_agentic_pilot.py` | Standalone V4 runner with session memory |
-| `scripts/integration_test.py` | End-to-end LLM integration tests |
-| `scripts/evaluate_pilot.py` | Compute MAE/BA/F1 from checkpoints |
-
-## Data Layout
-- EMA splits: `data/processed/splits/group_{1-5}_{train,test}.csv`
-- Hourly Parquet: `data/processed/hourly/{screen,motion,keyinput,light,mus}/`
-- Pilot checkpoints: `outputs/pilot/checkpoints/{version}_user{id}_checkpoint.json`
+## Key Evaluation (as of 2026-03-17)
+- **18-user primary set** (V2/V4/V5/V6 complete). CALLM/V1: 13/18, V3: 10/18.
+- **Metrics**: BA and F1 only. No MAE (dropped). No AR baseline (unfair — assumes oracle access to previous EMA).
+- **Results**: Auto-Multi+ BA=0.669, Auto-Multi BA=0.666 (best systems)
+- Script: `PYTHONPATH=. python3 scripts/evaluate_pilot.py`
 
 ## Running Tests
 ```bash
-# Unit tests (dry-run, no LLM calls)
 PYTHONPATH=. python3 -m pytest tests/ -v
-
-# Integration tests (real LLM calls, logs to test_logs/)
 python3 scripts/integration_test.py --n-entries 10
-python3 scripts/integration_test.py --versions v2,v4 --n-entries 5  # agentic only
 ```
 
-## Known Issues / Gotchas
-1. **Max rate limits**: Running too many concurrent `claude --print` processes exhausts the Max subscription rate limit. Limit to ~5 concurrent processes.
-2. **Ridge regression diverges**: 3/5 folds produce MAE ~1e12. Exclude from paper.
-3. **DL MLP fold 5 diverges**: Extreme outlier targets. Report 4-fold mean.
-
-## Titan Server
-- `zhiyuan@172.29.39.82`, SSH key auth
-- **Be careful with resources**: check `free -h` and `uptime` before running jobs. Limit to 1-2 parallel processes. Other users share the server.
-- Env: `source ~/anaconda3/etc/profile.d/conda.sh && conda activate efficient-ser`
+## Known Issues
+1. Max rate limits: limit to ~5 concurrent `claude --print` processes
+2. Corrupted V1 checkpoints: user61 (1651), user86 (1317), user99 (1569) — auto-filtered by evaluate_pilot.py
+3. V3 is bottleneck: only 10/18 users complete
 
 ## Conventions
 - All code, comments, commit messages in English
 - Auto commit + push after changes
-- Test with Sonnet, never Opus
-
-## Shared Context
-Read ~/.shared-agent-memory/CONTEXT.md for Ryan's identity, preferences, and current priorities.
