@@ -423,12 +423,12 @@ Table~\ref{tab:main_results} and Figure~\ref{fig:ba_comparison} present aggregat
 \textbf{System} & \textbf{Input} & \textbf{Mean MAE}$\downarrow$ & \textbf{Mean BA}$\uparrow$ & \textbf{Mean F1}$\uparrow$ \\
 \midrule
 \multicolumn{5}{l}{\emph{LLM Agent Systems}} \\
-CALLM & Diary + RAG & 3.661 & 0.624 & 0.611 \\ \todo{CALLM: 13/18 users, results will update}
-V1 (Structured) & Sensing & 5.502 & 0.523 & 0.465 \\ \todo{V1: 13/18 users}
-V2 (Agentic) & Sensing & 4.881 & 0.601 & 0.594 \\
-V3 (Structured) & Multimodal & \textbf{3.947} & 0.638 & 0.632 \\ \todo{V3: only 10/18 users, bottleneck}
-V4 (Agentic) & Multimodal & 4.353 & 0.666 & 0.660 \\
-V6 (Agentic+Filtered) & Multimodal & 4.220 & \textbf{0.669} & \textbf{0.663} \\
+CALLM$^\ddagger$ & Diary + RAG & 3.661 & 0.624 & 0.611 \\
+V1$^\ddagger$ & Sensing & 5.502 & 0.523 & 0.465 \\
+V2 & Sensing & 4.881 & 0.601 & 0.594 \\
+V3$^\S$ & Multimodal & \textbf{3.947} & 0.638 & 0.632 \\
+V4 & Multimodal & 4.353 & 0.666 & 0.660 \\
+V6 & Multimodal & 4.220 & \textbf{0.669} & \textbf{0.663} \\
 \addlinespace
 \multicolumn{5}{l}{\emph{Baselines}$^\dagger$} \\
 AR (last value) & Prior EMA & 2.758 & 0.658 & 0.617 \\
