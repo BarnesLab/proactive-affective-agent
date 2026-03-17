@@ -116,7 +116,7 @@ Our evaluation across 18 cancer survivors (1,567 EMA entries per condition for f
 
     \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (Struct-Multi, Auto-Multi, Auto-Multi+) consistently outperform both sensing-only (Struct-Sense, Auto-Sense) and diary-only (CALLM) approaches, with Auto-Multi+ achieving mean BA of 0.669 across all binary targets.
 
-    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (V6, BA=0.669; V4, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
+    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (Auto-Multi+, BA=0.669; Auto-Multi, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
 
     \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' reduces prediction bias compared to agents without peer reference.
 \end{enumerate}
