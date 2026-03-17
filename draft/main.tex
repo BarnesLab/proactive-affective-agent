@@ -257,9 +257,9 @@ We systematically vary two design dimensions (Table~\ref{tab:design}):
 \emph{Autonomously-agentic} agents (Auto-Sense, Auto-Multi, Auto-Multi+) receive the prediction task and a set of MCP tools (Section~\ref{sec:tools}), then autonomously decide which data to query, in what order, and how deeply to investigate. The agent reasons in a multi-turn loop---forming hypotheses, querying data, updating beliefs---before producing a final prediction. This mirrors how a behavioral data scientist might investigate a patient's daily patterns.
 
 \paragraph{Dimension 2: Sensing-only vs.\ Multimodal.}
-\emph{Sensing-only} agents (V1, V2) use exclusively passive sensor data---no diary text. This represents the fully proactive scenario where the system must predict emotional states without any active user input.
+\emph{Sensing-only} agents (Struct-Sense, Auto-Sense) use exclusively passive sensor data---no diary text. This represents the fully proactive scenario where the system must predict emotional states without any active user input.
 
-\emph{Multimodal} agents (V3, V4, V6) additionally receive the participant's diary entry, enabling cross-modal reasoning. The diary provides a ``ground truth'' emotional narrative that sensing tools can validate or contextualize.
+\emph{Multimodal} agents (Struct-Multi, Auto-Multi, Auto-Multi+) additionally receive the participant's diary entry, enabling cross-modal reasoning. The diary provides a ``ground truth'' emotional narrative that sensing tools can validate or contextualize.
 
 \paragraph{Baseline: CALLM.}
 The diary-only baseline~\cite{wang2026callm} uses the participant's diary text with TF-IDF retrieval-augmented generation to find similar cases from the training population. It represents the current state-of-the-art in LLM-based emotional state prediction for this population, but is fundamentally \emph{reactive}---it cannot operate when the diary is absent.
