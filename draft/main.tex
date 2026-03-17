@@ -392,7 +392,7 @@ The binary state targets exhibit varying base rates across the 18 pilot particip
 
 \subsection{Implementation}
 
-All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscription, with no API cost. Structured agents (V1, V3, CALLM) use \texttt{claude -p} (single-call mode); agentic agents (V2, V4, V6) use \texttt{claude --print} with an MCP server subprocess. Concurrent processes are limited to 5 to respect subscription rate limits. Each agentic prediction typically takes 30--90 seconds and uses 4--8 tool calls.
+All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscription, with no API cost. Structured-agentic agents (Struct-Sense, Struct-Multi, CALLM) use \texttt{claude -p} (single-call mode); autonomously-agentic agents (Auto-Sense, Auto-Multi, Auto-Multi+) use \texttt{claude --print} with an MCP server subprocess. Concurrent processes are limited to 5 to respect subscription rate limits. Each autonomously-agentic prediction typically takes 30--90 seconds and uses 4--8 tool calls.
 
 
 %% ================================================================
