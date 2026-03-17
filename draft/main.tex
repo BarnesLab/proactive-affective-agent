@@ -293,11 +293,11 @@ Smartphones continuously collected data from 8 sensor streams, aggregated to hou
 \paragraph{Data Splits.}
 We use 5-fold across-subject cross-validation: all observations from a given participant appear in exactly one fold. The training set (80\% of participants) provides the population data for RAG and peer reference; the test set (20\%) provides evaluation data. LLM agents are evaluated on a pilot subset of 18 test-set participants (1,567 EMA entries per fully-complete condition) due to inference cost constraints.
 
-\subsection{Structured Agent Architecture (V1, V3)}
+\subsection{Structured-Agentic Architecture (Struct-Sense, Struct-Multi)}
 
-Structured agents receive all data as a single pre-formatted prompt and follow a fixed reasoning pipeline in one LLM call.
+Structured-agentic agents receive all data as a single pre-formatted prompt and follow a fixed reasoning pipeline in one LLM call.
 
-\paragraph{V1: Structured Sensing-Only.}
+\paragraph{Struct-Sense: Structured-Agentic Sensing-Only.}
 The agent receives: (1) a natural-language summary of the day's sensing data (sleep, mobility, activity, screen, typing patterns), (2) the participant's trait profile and demographic information, (3) a longitudinal memory document tracking emotional patterns, and (4) peer reference cases---the 5 most similar behavioral profiles from the training population, retrieved via cosine similarity on daily sensing feature vectors, with their ground-truth EMA outcomes.
 
 The agent follows a 6-step reasoning pipeline: (1) Sleep Analysis, (2) Mobility \& Activity, (3) Social Signals, (4) Pattern Integration, (5) Peer Comparison, (6) User Context $\rightarrow$ Final Prediction.
