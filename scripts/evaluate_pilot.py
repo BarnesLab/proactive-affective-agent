@@ -41,9 +41,6 @@ DEFAULT_CHECKPOINT_DIRS = [
     "outputs/pilot/checkpoints",
 ]
 
-# Expected EMA entries per user (from 5-fold CV test splits)
-_USER_EXPECTED: dict[int, int] = {}  # populated at runtime
-
 # Targets to show prominently in the summary table
 KEY_CONTINUOUS = ["PANAS_Pos", "PANAS_Neg", "ER_desire"]
 KEY_BINARY = [
