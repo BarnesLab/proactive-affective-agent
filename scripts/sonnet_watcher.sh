@@ -29,6 +29,16 @@ is_peak_hours() {
 log "Watcher started (target=$TARGET)"
 
 while true; do
+    # Check if Claude is rate-limited (weekly cap). If so, sleep 30 min.
+    rate_check=$(echo "hi" | claude -p --model sonnet --no-session-persistence 2>&1 | head -1)
+    if echo "$rate_check" | grep -qi "hit your limit\|rate limit\|resets"; then
+        log "Claude rate-limited: $rate_check — sleeping 30m"
+        # Kill any retrying tasks to save CPU
+        pkill -f "run_pilot.*sonnet" 2>/dev/null
+        sleep 1800
+        continue
+    fi
+
     # Skip during Claude peak hours (weekdays 8AM-2PM ET) to save tokens
     if is_peak_hours; then
         current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep python | wc -l | tr -d ' ')
@@ -109,6 +119,7 @@ for v in priority_versions:
 " 2>> "$LOG"
     fi
     
-    pulse beat sonnet-watcher 2>/dev/null
+    # Use project venv python to avoid homebrew python3 hanging in launchd
+    $VENV -c "import json,time;f='$HOME/.openclaw/pulse.json';d=json.load(open(f)) if __import__('os').path.exists(f) else {};d['sonnet-watcher']=int(time.time());json.dump(d,open(f,'w'),indent=2)" 2>/dev/null
     sleep 30
 done
