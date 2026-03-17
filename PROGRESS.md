@@ -132,15 +132,15 @@ These 9 users have clean, complete checkpoints across all 7 versions. Useful for
 
 Evaluated across 18 primary users where possible (per-version user counts vary).
 
-| Version | Users | Entries | Mean MAE ↓ | Mean BA ↑ | Mean F1 ↑ | Notes |
-|---------|-------|---------|-----------|----------|----------|-------|
-| CALLM | 13/18 | 1137 | 3.671 | 0.626 | 0.618 | Diary + TF-IDF RAG |
-| V1 | 13/18 | 1131 | 4.576 | 0.521 | 0.453 | Sensing structured |
-| V2 | 18/18 | 1567 | 4.857 | 0.598 | 0.591 | Sensing agentic |
-| V3 | 10/18 | 862 | 4.217 | 0.607 | 0.590 | Multimodal structured |
-| V4 | 18/18 | 1567 | 4.449 | 0.666 | 0.661 | Multimodal agentic |
-| V5 | 18/18 | 1567 | 5.152 | 0.601 | 0.596 | Sensing agentic (filtered) |
-| **V6** | **18/18** | **1567** | **4.695** | **0.669** | **0.664** | Multimodal agentic (filtered) — **BEST BA** |
+| Version | Users | Entries | Mean BA ↑ | Mean F1 ↑ | Notes |
+|---------|-------|---------|----------|----------|-------|
+| CALLM | 13/18 | 1137 | 0.626 | 0.618 | Diary + TF-IDF RAG |
+| V1 | 13/18 | 1131 | 0.521 | 0.453 | Sensing structured |
+| V2 | 18/18 | 1567 | 0.598 | 0.591 | Sensing agentic |
+| V3 | 10/18 | 862 | 0.607 | 0.590 | Multimodal structured |
+| V4 | 18/18 | 1567 | 0.666 | 0.661 | Multimodal agentic |
+| V5 | 18/18 | 1567 | 0.601 | 0.596 | Sensing agentic (filtered) |
+| **V6** | **18/18** | **1567** | **0.669** | **0.664** | Multimodal agentic (filtered) — **BEST BA** |
 
 AR baseline: Mean BA = 0.658 (autocorrelation ceiling)
 
