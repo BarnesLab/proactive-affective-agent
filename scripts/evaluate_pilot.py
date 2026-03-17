@@ -52,14 +52,6 @@ KEY_BINARY = [
     "INT_availability",
 ]
 
-# AR baseline values (from outputs/ar_baseline/ar_results.json)
-AR_BASELINES = {
-    "PANAS_Pos": {"mae": 2.758, "ba": 0.658},
-    "PANAS_Neg": {"mae": 2.140, "ba": 0.658},
-    "ER_desire": {"mae": 1.012, "ba": 0.658},
-    "mean_ba": 0.658,
-}
-
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -268,7 +260,7 @@ def print_summary_table(all_results: dict[str, dict]) -> None:
 
     # Continuous targets
     print(f"\n{'── MAE (lower is better) ──':}")
-    print(f"\n  AR baseline: PANAS_Pos={AR_BASELINES['PANAS_Pos']['mae']:.3f}  (autocorrelation ceiling)\n")
+    print()
     for target in KEY_CONTINUOUS:
         row = f"  {target:<36}"
         for v in available:
@@ -282,7 +274,7 @@ def print_summary_table(all_results: dict[str, dict]) -> None:
 
     # Binary targets
     print(f"\n{'── Balanced Accuracy (higher is better) ──':}")
-    print(f"\n  AR baseline: BA={AR_BASELINES['mean_ba']:.3f}  (autocorrelation ceiling)\n")
+    print()
     for target in KEY_BINARY:
         row = f"  {target:<36}"
         for v in available:
