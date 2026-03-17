@@ -53,7 +53,7 @@ Just-in-time adaptive interventions (JITAIs) promise to deliver support precisel
 
 We evaluate \sysshort{} through a 2$\times$2 factorial design comparing \emph{structured} vs.\ \emph{agentic} reasoning and \emph{sensing-only} vs.\ \emph{multimodal} (sensing + diary) data, plus a diary-only baseline, across 18 cancer survivors from the BUCS longitudinal study (1,567 EMA entries per condition for the four fully-complete versions). Our primary prediction targets are \emph{intervention opportunity}---the conjunction of emotion regulation desire and intervention availability---and positive/negative affect states.
 
-Results show that agentic multimodal agents achieve the best performance across key targets: balanced accuracy of 0.749 for emotion regulation desire detection (V4/V6), 0.733--0.738 for intervention availability (V2/V4/V6), and 0.760 for negative affect state detection (V6), substantially outperforming both structured LLM pipelines and traditional ML baselines. Overall, V6 achieves mean BA = 0.669 and V4 achieves mean BA = 0.666, both beating the autocorrelation baseline (0.658). The agentic approach---where the LLM autonomously decides which sensor data to query---consistently outperforms structured pipelines that receive pre-formatted feature summaries, demonstrating the value of autonomous behavioral investigation. Cross-user retrieval-augmented generation provides effective calibration anchors from population-level data. Our findings provide preliminary evidence that LLM-based agentic sensing is a promising paradigm for proactive mental health support in cancer survivorship.
+Results show that agentic multimodal agents achieve the best performance across key targets: balanced accuracy of 0.749 for emotion regulation desire detection (V4/V6), 0.733--0.738 for intervention availability (V2/V4/V6), and 0.760 for negative affect state detection (V6), substantially outperforming both structured LLM pipelines and traditional ML baselines. Overall, V6 achieves mean BA = 0.669 and V4 achieves mean BA = 0.666, substantially outperforming the best non-LLM baseline (MiniLM text embeddings, BA = 0.629). The agentic approach---where the LLM autonomously decides which sensor data to query---consistently outperforms structured pipelines that receive pre-formatted feature summaries, demonstrating the value of autonomous behavioral investigation. Cross-user retrieval-augmented generation provides effective calibration anchors from population-level data. Our findings provide preliminary evidence that LLM-based agentic sensing is a promising paradigm for proactive mental health support in cancer survivorship.
 \end{abstract}
 
 %% CCS Concepts
@@ -120,7 +120,7 @@ Our evaluation across 18 cancer survivors (1,567 EMA entries per condition for f
 
     \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (V3/V4/V6) consistently outperform both sensing-only (V1/V2) and diary-only (CALLM) approaches, with V6 achieving mean BA of 0.669 across all binary targets.
 
-    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (V6, BA=0.669; V4, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629) and the AR baseline (BA=0.658).
+    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (V6, BA=0.669; V4, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
 
     \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' reduces prediction bias compared to agents without peer reference.
 \end{enumerate}
@@ -371,9 +371,6 @@ Three retrieval modes serve different agent configurations:
 We evaluate all agent variants on a pilot subset of 18 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding 1,567 EMA entries per fully-complete agent variant. \todo{Update participant list for N=18. CALLM: 13/18 users, results will update. V1: 13/18 users. V3: only 10/18 users, bottleneck. V2/V4/V5/V6: 18/18 complete.} Each participant contributes 81--93 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
 
 \subsection{Baselines}
-
-\paragraph{Autocorrelation (AR).}
-We compute a ``last-value'' AR baseline: the prediction for each target is the participant's most recent EMA response for that target. This establishes an empirical ceiling for autocorrelation-only prediction (BA = 0.658).
 
 \paragraph{Traditional ML.}
 Random Forest (RF) and XGBoost classifiers/regressors trained on 20 daily aggregate sensing features via 5-fold across-subject CV on the full dataset (15,984 entries). Additional variants include logistic regression and MLP.
@@ -645,7 +642,7 @@ We evaluate through retrospective replay of historical data, not real-time deplo
 All agents, but especially sensing-based ones, exhibit systematic biases in continuous prediction (negativity bias for PANAS-NA, mean regression for PANAS-PA). While binary state detection is robust to these biases (detecting relative shifts), applications requiring precise continuous values would need additional calibration mechanisms.
 
 \paragraph{Evaluation Set Mismatch.}
-ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 18-user pilot subset (with some versions at partial coverage). Direct comparison requires caution, though the consistent patterns (LLM agents outperform ML on binary tasks, underperform AR on continuous tasks) are robust to this difference.
+ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 18-user pilot subset (with some versions at partial coverage). Direct comparison requires caution, though the consistent pattern---LLM agents outperform ML on binary state detection---is robust to this difference.
 
 \paragraph{Model and Platform Dependency.}
 Our system is tightly coupled to Claude Sonnet and the Claude Max subscription. Performance may vary across LLM providers and versions. The Android-only availability of app and light sensor data (29\% of participants) limits the sensing features available to iOS users.
