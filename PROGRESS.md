@@ -142,10 +142,8 @@ Evaluated across 18 primary users where possible (per-version user counts vary).
 | V5 | 18/18 | 1567 | 0.601 | 0.596 | Sensing agentic (filtered) |
 | **V6** | **18/18** | **1567** | **0.669** | **0.664** | Multimodal agentic (filtered) — **BEST BA** |
 
-AR baseline: Mean BA = 0.658 (autocorrelation ceiling)
-
 **Key insights:**
-- V6 (0.669) and V4 (0.666) beat the AR baseline (0.658) — multimodal agentic works
+- V6 (0.669) and V4 (0.666) are best — multimodal agentic works
 - Agentic > Structured: V4 > V3, V2 > V1
 - Multimodal > Sensing-only across the board
 - V3 only has 10/18 users — bottleneck, needs more runs

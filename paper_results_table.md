@@ -26,8 +26,6 @@ All LLM agent results use claude-sonnet.
 | Combined RF | Sensing + diary | 5-fold CV | 399 | ~15,984 | 0.620 | 0.568 | |
 | Combined Logistic | Sensing + diary | 5-fold CV | 399 | ~15,984 | 0.615 | 0.575 | |
 | **Autocorrelation Baselines** |||||||||
-| AR last_value | Prior EMA | 5-fold CV | 399 | ~15,984 | 0.658 | 0.617 | |
-| AR rolling_mean | Prior EMA | 5-fold CV | 399 | ~15,984 | 0.658 | 0.617 | |
 | **LLM Agent Systems (N=18 primary set)** |||||||||
 | CALLM | Diary + TF-IDF RAG | Pilot (13/18) | 13 | 1,137 | 0.626 | 0.618 | |
 | V1 (Structured) | Sensing only | Pilot (13/18) | 13 | 1,131 | 0.521 | 0.453 | |
