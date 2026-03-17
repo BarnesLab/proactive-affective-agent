@@ -487,25 +487,24 @@ For a JITAI to act, both desire and availability must be predicted correctly. We
 Table~\ref{tab:affect} presents results for affect state detection and continuous prediction.
 
 \begin{table}[t]
-\caption{Affect prediction. PA/NA State: binary (elevated vs.\ typical); PANAS: continuous (0--30). Best per metric is \textbf{bold}.}
+\caption{Affect state detection. PA/NA State: binary (elevated vs.\ typical). Best per metric is \textbf{bold}.}
 \label{tab:affect}
 \small
-\begin{tabular}{l cc cc cc}
+\begin{tabular}{l cc cc}
 \toprule
-& \multicolumn{2}{c}{PA State} & \multicolumn{2}{c}{NA State} & \multicolumn{2}{c}{PANAS (MAE)} \\
-\textbf{System} & BA & F1 & BA & F1 & Pos & Neg \\
+& \multicolumn{2}{c}{PA State} & \multicolumn{2}{c}{NA State} \\
+\textbf{System} & BA & F1 & BA & F1 \\
 \midrule
-CALLM$^\ddagger$ & 0.566 & 0.545 & 0.681 & 0.700 & 5.147 & \textbf{4.264} \\
-V1$^\ddagger$ & 0.522 & 0.406 & 0.520 & 0.510 & 7.033 & 6.671 \\
-V2 & 0.604 & 0.603 & 0.633 & 0.609 & 6.023 & 7.304 \\
-V3$^\S$ & 0.601 & 0.580 & 0.727 & 0.740 & 5.899 & 4.201 \\
-V4 & 0.738 & 0.734 & 0.753 & 0.725 & 5.436 & 6.615 \\
-V6 & \textbf{0.755} & \textbf{0.750} & \textbf{0.760} & \textbf{0.738} & \textbf{5.385} & 6.298 \\
+CALLM$^\ddagger$ & 0.566 & 0.545 & 0.681 & 0.700 \\
+V1$^\ddagger$ & 0.522 & 0.406 & 0.520 & 0.510 \\
+V2 & 0.604 & 0.603 & 0.633 & 0.609 \\
+V3$^\S$ & 0.601 & 0.580 & 0.727 & 0.740 \\
+V4 & 0.738 & 0.734 & 0.753 & 0.725 \\
+V6 & \textbf{0.755} & \textbf{0.750} & \textbf{0.760} & \textbf{0.738} \\
 \midrule
-AR$^\dagger$ & --- & --- & --- & --- & 4.227 & 2.410 \\
-MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 & 6.019 & 3.492 \\
+MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 \\
 \bottomrule
-\multicolumn{7}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
+\multicolumn{5}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
 \end{tabular}
 \end{table}
 
