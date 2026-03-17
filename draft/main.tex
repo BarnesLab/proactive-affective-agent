@@ -305,12 +305,12 @@ The agent follows a 6-step reasoning pipeline: (1) Sleep Analysis, (2) Mobility 
 \paragraph{Struct-Multi: Structured-Agentic Multimodal.}
 Extends Struct-Sense by adding the participant's diary text and multimodal RAG: the 10 most similar diary entries from the training set (via TF-IDF), enriched with each matched participant's sensing data and ground-truth outcomes. The agent follows a 5-step pipeline: (1) Diary Analysis, (2) Sensing Analysis, (3) Cross-Modal Consistency, (4) Similar Case Comparison, (5) Integrated Prediction.
 
-\subsection{Agentic Agent Architecture (V2, V4, V6)}
+\subsection{Autonomously-Agentic Architecture (Auto-Sense, Auto-Multi, Auto-Multi+)}
 \label{sec:agentic}
 
-Agentic agents operate through a multi-turn tool-use loop. Each prediction spawns an LLM subprocess with access to an MCP server that exposes 8 sensing query tools backed by the participant's Parquet data store.
+Autonomously-agentic agents operate through a multi-turn tool-use loop. Each prediction spawns an LLM subprocess with access to an MCP server that exposes 8 sensing query tools backed by the participant's Parquet data store.
 
-\paragraph{V2: Agentic Sensing-Only.}
+\paragraph{Auto-Sense: Autonomously-Agentic Sensing-Only.}
 The agent receives a system prompt instructing it to investigate the participant's behavioral data like a ``behavioral data scientist detective,'' with a strategy: (1) reconstruct the day chronologically, (2) identify behavioral patterns, (3) detect anomalies via baseline comparison, (4) find analogous past days, (5) calibrate against peer cases, (6) synthesize into prediction. Critically, the agent \emph{decides which tools to call and in what order}---it may skip modalities it deems uninformative or drill deeply into anomalies.
 
 \paragraph{V4/V6: Agentic Multimodal.}
