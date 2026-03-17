@@ -25,9 +25,10 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # Configuration
 # ---------------------------------------------------------------------------
 
-# 9 clean fully-complete users (all 7 versions, predictions match expected EMA count)
-# Updated 2026-03-17 from 11 to 9 (removed 119, 164, 513 — incomplete; 505 — corrupted v1/v3)
-PILOT_USERS = [24, 43, 71, 258, 275, 310, 338, 403, 458]
+# Core set: 9 clean fully-complete users (all 7 versions match expected EMA count)
+CORE_USERS = [24, 43, 71, 258, 275, 310, 338, 403, 458]
+# Legacy compatibility
+PILOT_USERS = CORE_USERS
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
 # Multiple checkpoint directories (newer takes precedence)
@@ -35,6 +36,9 @@ DEFAULT_CHECKPOINT_DIRS = [
     "outputs/pilot_v2/checkpoints",
     "outputs/pilot/checkpoints",
 ]
+
+# Expected EMA entries per user (from 5-fold CV test splits)
+_USER_EXPECTED: dict[int, int] = {}  # populated at runtime
 
 # Targets to show prominently in the summary table
 KEY_CONTINUOUS = ["PANAS_Pos", "PANAS_Neg", "ER_desire"]
