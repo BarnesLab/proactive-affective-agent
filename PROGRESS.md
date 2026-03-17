@@ -1,7 +1,7 @@
 # Project Progress — Proactive Affective Agent (BUCS Pilot)
 
-**Last updated:** 2026-03-12
-**Status:** 11/14 users fully complete across 7 versions; 11 tasks remaining for 3 users. V3 model contamination in pilot/ (mixed sonnet+haiku) needs resolution.
+**Last updated:** 2026-03-17
+**Status:** 50 users have checkpoints; 18 users form the primary evaluation set (V2∩V4∩V5∩V6 clean complete); 9 users fully complete across all 7 versions.
 
 ---
 
@@ -91,62 +91,65 @@ These pilot/ V1 files have wildly inflated n_entries (bug from an earlier run):
 
 **Not a problem**: pilot_v2 has correct V1 checkpoints for all these users, and the evaluate script checks pilot_v2 first.
 
----
+### Corrupted V1 Checkpoints (separate issue — exclude from evaluation)
 
-## Completion Status (per user × version)
-
-### Fully Complete Users (11/14)
-
-| User | Total | Source | All 7 versions done? |
-|------|-------|--------|---------------------|
-| 43 | 93 | pilot_v2 | Yes (sonnet) |
-| 71 | 93 | pilot_v2 | Yes (sonnet) |
-| 119 | 84 | pilot | Yes — V3 mixed sonnet+haiku, rest sonnet |
-| 164 | 87 | pilot | Yes — V3 mixed sonnet+haiku, rest sonnet |
-| 258 | 94 | pilot_v2 | Yes (sonnet) |
-| 275 | 89 | pilot_v2 | Yes (sonnet) |
-| 310 | 81 | pilot | Yes — V3 mixed sonnet+haiku, rest sonnet |
-| 338 | 81 | pilot_v2 | Yes (sonnet) |
-| 403 | 82 | pilot_v2 | Yes (sonnet) |
-| 458 | 82 | pilot | Yes — V3 mixed sonnet+haiku, rest sonnet |
-| 513 | 90 | pilot_v2 | Yes (sonnet) |
-
-### Incomplete Users (3/14)
-
-| User | Total | Incomplete Versions | Details |
-|------|-------|-------------------|---------|
-| **362** | 88 | v2 (59/88), v4 (11/88), v5 (0), v6 (0) | 4 tasks remaining |
-| **399** | 96 | callm (21/96), v1 (18/96), v3 (48/96) | 3 tasks remaining |
-| **437** | 88 | v2 (32/88), v4 (0), v5 (0), v6 (0) | 4 tasks remaining |
-
-**Total remaining: 11 tasks** — all in pilot_v2 (sonnet).
+Three V1 checkpoints have corrupted entry counts and must be excluded:
+- `v1_user61`: 1651 entries (corrupted)
+- `v1_user86`: 1317 entries (corrupted)
+- `v1_user99`: 1569 entries (corrupted)
 
 ---
 
-## Current Evaluation Results (2026-03-12)
+## Completion Status
 
-**WARNING**: V3 results include 4 users (119, 164, 310, 458) with mixed sonnet+haiku checkpoints from pilot/. All other versions are pure sonnet.
+### Primary Evaluation Set (18 users — complete for V2/V4/V5/V6)
 
-Evaluated across 11 complete users, 956 entries per version.
+Users: **24, 43, 71, 119, 164, 232, 242, 258, 275, 310, 338, 362, 399, 403, 437, 458, 505, 513**
 
-| Version | Mean MAE ↓ | Mean BA ↑ | Mean F1 ↑ | Notes |
-|---------|-----------|----------|----------|-------|
-| CALLM | 3.661 | 0.624 | 0.611 | Diary + TF-IDF RAG |
-| V1 | 5.502 | 0.523 | 0.465 | Sensing structured |
-| V2 | 4.881 | 0.601 | 0.594 | Sensing agentic |
-| V3 | 3.947 | 0.638 | 0.632 | Multimodal structured |
-| **V4** | **4.353** | **0.673** | **0.667** | Multimodal agentic |
-| V5 | 4.878 | 0.602 | 0.596 | Sensing agentic (filtered) |
-| **V6** | **4.220** | **0.675** | **0.669** | Multimodal agentic (filtered) — **BEST BA** |
+These 18 users have clean, complete checkpoints for V2, V4, V5, and V6. Other versions have partial coverage (see per-version counts below).
+
+### Per-Version Clean Complete User Counts
+
+| Version | Clean Complete Users | Notes |
+|---------|---------------------|-------|
+| CALLM | 23 | |
+| V1 | 22 | 3 corrupted excluded: user61 (1651), user86 (1317), user99 (1569) |
+| V2 | 22 | |
+| **V3** | **17** | **Bottleneck** — fewest users |
+| V4 | 24 | |
+| V5 | 25 | |
+| V6 | 24 | |
+
+### Consistent Set — All 7 Versions Complete (9 users)
+
+**[24, 43, 71, 258, 275, 310, 338, 403, 458]**
+
+These 9 users have clean, complete checkpoints across all 7 versions. Useful for fully within-subject analyses.
+
+---
+
+## Current Evaluation Results (2026-03-17, 18-user primary set)
+
+Evaluated across 18 primary users where possible (per-version user counts vary).
+
+| Version | Users | Entries | Mean MAE ↓ | Mean BA ↑ | Mean F1 ↑ | Notes |
+|---------|-------|---------|-----------|----------|----------|-------|
+| CALLM | 13/18 | 1137 | 3.671 | 0.626 | 0.618 | Diary + TF-IDF RAG |
+| V1 | 13/18 | 1131 | 4.576 | 0.521 | 0.453 | Sensing structured |
+| V2 | 18/18 | 1567 | 4.857 | 0.598 | 0.591 | Sensing agentic |
+| V3 | 10/18 | 862 | 4.217 | 0.607 | 0.590 | Multimodal structured |
+| V4 | 18/18 | 1567 | 4.449 | 0.666 | 0.661 | Multimodal agentic |
+| V5 | 18/18 | 1567 | 5.152 | 0.601 | 0.596 | Sensing agentic (filtered) |
+| **V6** | **18/18** | **1567** | **4.695** | **0.669** | **0.664** | Multimodal agentic (filtered) — **BEST BA** |
 
 AR baseline: Mean BA = 0.658 (autocorrelation ceiling)
 
-**Key insights (preliminary):**
-- V6 (0.675) and V4 (0.673) beat the AR baseline (0.658) — multimodal agentic works
-- V3 (0.638) is close but doesn't beat AR in this larger evaluation
-- Sensing-only versions (V1/V2/V5) underperform: BA 0.52-0.60
-- CALLM (diary-only baseline) at 0.624 is competitive
-- Filtering (V5 vs V2, V6 vs V4) makes marginal difference
+**Key insights:**
+- V6 (0.669) and V4 (0.666) beat the AR baseline (0.658) — multimodal agentic works
+- Agentic > Structured: V4 > V3, V2 > V1
+- Multimodal > Sensing-only across the board
+- V3 only has 10/18 users — bottleneck, needs more runs
+- CALLM and V1 also short (13/18 each)
 
 Full results saved to `outputs/pilot_v2/evaluation.json`.
 
@@ -154,42 +157,36 @@ Full results saved to `outputs/pilot_v2/evaluation.json`.
 
 ## PENDING ACTION — Priority Order
 
-### P0: Complete 11 Remaining Tasks (3 users)
+### P0: Complete Remaining Tasks for 18 Primary Users
 
-These are all in pilot_v2 using sonnet. Resume with queue_runner:
+Fill in missing version coverage for the 18-user primary set:
+- **CALLM**: 5 more users needed (13 → 18)
+- **V1**: 5 more users needed (13 → 18)
+- **V3**: 8 more users needed (10 → 18) — biggest gap
 
 ```bash
 cd /Users/zwang/Documents/proactive-affective-agent
-python3 scripts/queue_runner.py --dry-run   # verify 11 tasks
+python3 scripts/queue_runner.py --dry-run   # verify pending tasks
 python3 scripts/queue_runner.py --workers 5  # execute
 ```
 
 **Note**: Sonnet weekly quota may need to reset first. Check quota before running.
 
-### P1: Resolve V3 Model Contamination (4 users × 1 version = 4 tasks)
+### P1: Fix Corrupted V1 Checkpoints (3 users)
 
-Users 119, 164, 310, 458 have V3 checkpoints with mixed sonnet+haiku predictions. Options:
+Users 61, 86, 99 have corrupted V1 checkpoints (inflated entry counts: 1651, 1317, 1569). These need to be deleted and rerun.
 
-**Option A (recommended): Rerun V3 for these 4 users in pilot_v2/**
-```bash
-python3 scripts/run_pilot.py \
-    --version v3 --users 119 164 310 458 --output-dir outputs/pilot_v2 --model sonnet
-```
-This creates fresh sonnet-only V3 checkpoints in pilot_v2/ which take evaluation priority.
+### P2: Expand queue_runner USERS List to All 50 Users
 
-**Option B: Accept mixed-model V3**
-Document in paper that 4/11 users have mixed sonnet+haiku for V3 only. Minimal impact since V3 is not a top performer.
+The current `USERS` list in `queue_runner.py` only has 15 users. Update it to include all 50 users with checkpoints.
 
-**Option C: Exclude these 4 users from V3 evaluation**
-Evaluate V3 with only the 7 pure-sonnet users. Reduces V3 sample size but ensures model consistency.
-
-### P2: Re-run Evaluation After P0/P1
+### P3: Re-evaluate After Completion
 
 ```bash
 PYTHONPATH=. python3 scripts/evaluate_pilot.py
 ```
 
-### P3: Paper-Ready Results Table
+### P4: Paper-Ready Results Table
 
 Once all users are done with consistent model:
 - Final comparison table across all systems + baselines
@@ -283,7 +280,7 @@ python3 scripts/queue_runner.py --clean
 
 ### queue_runner.py Configuration (current)
 - `ALL_VERSIONS = ["CALLM", "v1", "v2", "v3", "v4", "v5", "v6"]`
-- `USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437]`
+- `USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437]` — **only 15 users; needs expansion to all 50**
 - Model: hardcoded `--model sonnet` (line 128)
 - Output: `outputs/pilot_v2/`
 

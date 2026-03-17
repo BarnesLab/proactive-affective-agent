@@ -29,10 +29,10 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Core set: 9 clean fully-complete users (all 7 versions match expected EMA count)
-CORE_USERS = [24, 43, 71, 258, 275, 310, 338, 403, 458]
-# Legacy compatibility
-PILOT_USERS = CORE_USERS
+# Primary evaluation set: 18 users with clean complete V2/V4/V5/V6
+# Updated 2026-03-17
+PRIMARY_USERS = [24, 43, 71, 119, 164, 232, 242, 258, 275, 310, 338, 362, 399, 403, 437, 458, 505, 513]
+PILOT_USERS = PRIMARY_USERS  # backward compat
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
 # Multiple checkpoint directories (newer takes precedence)
