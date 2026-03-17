@@ -251,10 +251,10 @@ We systematically vary two design dimensions (Table~\ref{tab:design}):
 \end{tabular}
 \end{table}
 
-\paragraph{Dimension 1: Structured vs.\ Agentic.}
-\emph{Structured} agents (V1, V3) receive all relevant data as a pre-formatted text prompt and follow a fixed multi-step reasoning pipeline. This mirrors the dominant approach in prior work, where sensing features are pre-computed and presented to the model in a single context window.
+\paragraph{Dimension 1: Structured-Agentic vs.\ Autonomously-Agentic.}
+\emph{Structured-agentic} agents (Struct-Sense, Struct-Multi) receive all relevant data as a pre-formatted text prompt and follow a fixed multi-step reasoning pipeline. This mirrors the dominant approach in prior work, where sensing features are pre-computed and presented to the model in a single context window.
 
-\emph{Agentic} agents (V2, V4, V6) receive the prediction task and a set of MCP tools (Section~\ref{sec:tools}), then autonomously decide which data to query, in what order, and how deeply to investigate. The agent reasons in a multi-turn loop---forming hypotheses, querying data, updating beliefs---before producing a final prediction. This mirrors how a behavioral data scientist might investigate a patient's daily patterns.
+\emph{Autonomously-agentic} agents (Auto-Sense, Auto-Multi, Auto-Multi+) receive the prediction task and a set of MCP tools (Section~\ref{sec:tools}), then autonomously decide which data to query, in what order, and how deeply to investigate. The agent reasons in a multi-turn loop---forming hypotheses, querying data, updating beliefs---before producing a final prediction. This mirrors how a behavioral data scientist might investigate a patient's daily patterns.
 
 \paragraph{Dimension 2: Sensing-only vs.\ Multimodal.}
 \emph{Sensing-only} agents (V1, V2) use exclusively passive sensor data---no diary text. This represents the fully proactive scenario where the system must predict emotional states without any active user input.
