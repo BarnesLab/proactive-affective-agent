@@ -35,7 +35,7 @@ All LLM agent results use claude-sonnet.
 | V5 (Agentic+filtered) | Sensing only | Pilot (18/18) | 18 | 1,567 | 0.601 | 0.596 | |
 | **V6 (Agentic+filtered)** | **Sensing + diary** | **Pilot (18/18)** | **18** | **1,567** | **0.669** | **0.664** | **BEST BA** |
 
-**Ranking by Mean BA:** V6 (0.669) > V4 (0.666) > AR (0.658) > MiniLM (0.629) > CALLM (0.626) > Combined RF (0.620) > TF-IDF (0.613) > V3 (0.607) > V5 (0.601) > V2 (0.598) > MLP (0.507) > ML (~0.50) > V1 (0.521)
+**Ranking by Mean BA:** V6 (0.669) > V4 (0.666) > MiniLM (0.629) > CALLM (0.626) > Combined RF (0.620) > TF-IDF (0.613) > V3 (0.607) > V5 (0.601) > V2 (0.598) > V1 (0.521) > MLP (0.507) > ML (~0.50)
 
 ---
 
