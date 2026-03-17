@@ -116,11 +116,11 @@ We focus on predicting \emph{intervention opportunity}, which we define as the c
 Our evaluation across 18 cancer survivors (1,567 EMA entries per condition for fully-complete versions) reveals:
 
 \begin{enumerate}[nosep]
-    \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The agentic multimodal agent (V6) achieves balanced accuracy (BA) of 0.786 for \erdesire{} state detection vs.\ 0.734 for the structured multimodal agent (V3), and 0.790 vs.\ 0.727 for negative affect state detection.
+    \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The agentic multimodal agents (V4/V6) achieve balanced accuracy (BA) of 0.749 for \erdesire{} state detection vs.\ 0.734 for the structured multimodal agent (V3), and V6 achieves 0.760 for negative affect state detection vs.\ 0.727 for V3.
 
-    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (V3/V4/V6) consistently outperform both sensing-only (V1/V2) and diary-only (CALLM) approaches, with V6 achieving mean BA of 0.675 across all binary targets.
+    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (V3/V4/V6) consistently outperform both sensing-only (V1/V2) and diary-only (CALLM) approaches, with V6 achieving mean BA of 0.669 across all binary targets.
 
-    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agent (V6, BA=0.675) outperforms the best ML baseline (MiniLM text embeddings, BA=0.629) despite using a much smaller evaluation set.
+    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (V6, BA=0.669; V4, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629) and the AR baseline (BA=0.658).
 
     \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' reduces prediction bias compared to agents without peer reference.
 \end{enumerate}
