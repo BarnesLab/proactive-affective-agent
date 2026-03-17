@@ -388,11 +388,8 @@ RF and logistic regression trained on concatenated sensing features and diary te
 
 We report two classes of metrics aligned with our prediction targets:
 
-\paragraph{Continuous Targets (PANAS-PA, PANAS-NA, \erdesire{}).}
-Mean Absolute Error (MAE) averaged across all participants and entries. Lower is better.
-
 \paragraph{Binary State Targets.}
-\emph{Balanced Accuracy} (BA = (TPR + TNR) / 2) handles the class imbalance inherent in ``unusual state'' detection (most entries are not elevated). \emph{Macro F1} provides a complementary measure. We report per-target and mean values across all binary targets.
+\emph{Balanced Accuracy} (BA = (TPR + TNR) / 2) handles the class imbalance inherent in ``unusual state'' detection (most entries are not elevated). \emph{Macro F1} provides a complementary measure. We report per-target and mean values across all binary targets. We focus exclusively on binary classification metrics, as the clinically actionable question is whether a state is \emph{elevated or not}, rather than the exact numeric value.
 
 \paragraph{Focus Targets.}
 Per the study's emphasis on intervention opportunity and affect, we highlight: \erdesire{} (continuous and binary), \intavail{} (binary), PA\_State, and NA\_State. Remaining targets (individual emotions, pain, forecasting, interactions quality) are reported in the appendix.
