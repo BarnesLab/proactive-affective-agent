@@ -78,16 +78,54 @@ def find_checkpoint(version: str, uid: int, checkpoint_dirs: list[Path]) -> Path
     return None
 
 
+def _get_expected_entries() -> dict[int, int]:
+    """Build a mapping of user_id -> expected EMA entry count from CSV test splits.
+
+    Scans all group_*_test.csv files and counts rows per Study_ID.
+    Each user appears in exactly one test fold, so the count is unique.
+    """
+    splits_dir = Path("data/processed/splits")
+    expected: dict[int, int] = {}
+    if not splits_dir.exists():
+        return expected
+    for csv_file in sorted(splits_dir.glob("group_*_test.csv")):
+        try:
+            df = pd.read_csv(csv_file)
+        except Exception:
+            continue
+        if "Study_ID" not in df.columns:
+            continue
+        for uid, count in df["Study_ID"].value_counts().items():
+            expected[int(uid)] = int(count)
+    return expected
+
+
 def load_checkpoints(version: str, checkpoint_dirs: list[Path]) -> tuple[list, list]:
-    """Load all predictions and ground truths for a version across pilot users."""
+    """Load all predictions and ground truths for a version across pilot users.
+
+    Filters out corrupted checkpoints where the number of predictions
+    exceeds 1.5x the expected entry count (looked up from CSV test splits).
+    """
+    expected_entries = _get_expected_entries()
     all_preds, all_gts = [], []
     for uid in PILOT_USERS:
         f = find_checkpoint(version, uid, checkpoint_dirs)
         if f is None:
             continue
         data = json.loads(f.read_text())
-        all_preds.extend(data.get("predictions", []))
-        all_gts.extend(data.get("ground_truths", []))
+        preds = data.get("predictions", [])
+        gts = data.get("ground_truths", [])
+
+        # Filter out corrupted checkpoints (predictions > 1.5x expected)
+        if uid in expected_entries:
+            expected = expected_entries[uid]
+            if len(preds) > 1.5 * expected:
+                print(f"    WARNING: skipping corrupted checkpoint {f.name} "
+                      f"({len(preds)} preds vs {expected} expected)")
+                continue
+
+        all_preds.extend(preds)
+        all_gts.extend(gts)
     return all_preds, all_gts
 
 
