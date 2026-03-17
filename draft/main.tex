@@ -443,7 +443,7 @@ XGBoost & Sensing & 9.374 & 0.502 & 0.391 \\
 
 \input{figures/results_ba_comparison}
 
-Two patterns emerge. First, for \emph{binary state detection} (BA, F1), the ranking is: agentic multimodal (V4/V6) $>$ structured multimodal (V3) $>$ CALLM $>$ agentic sensing (V2) $>$ text baselines $>$ structured sensing (V1) $>$ ML sensing baselines. The agentic multimodal agents (V6: BA=0.675) are the only systems to exceed the AR autocorrelation baseline (BA=0.658). Second, for \emph{continuous regression} (MAE), diary-based systems dominate: CALLM (3.661) $<$ V3 (3.947) $<$ V6 (4.220) $<$ V4 (4.353), while sensing-only systems and ML baselines lag behind.
+Two patterns emerge. First, for \emph{binary state detection} (BA, F1), the ranking is: agentic multimodal (V4/V6) $>$ structured multimodal (V3) $>$ CALLM $>$ agentic sensing (V2) $>$ text baselines $>$ structured sensing (V1) $>$ ML sensing baselines. The agentic multimodal agents (V6: BA=0.669, V4: BA=0.666) are the only systems to exceed the AR autocorrelation baseline (BA=0.658). Second, for \emph{continuous regression} (MAE), diary-based systems dominate: CALLM (3.661) $<$ V3 (3.947) $<$ V6 (4.220) $<$ V4 (4.353), while sensing-only systems and ML baselines lag behind.
 
 This divergence---strong binary detection but weaker continuous calibration for agentic agents---suggests that the autonomous investigation approach excels at detecting \emph{whether} a state is unusual, even when absolute value prediction is less precise.
 
