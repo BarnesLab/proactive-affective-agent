@@ -114,7 +114,7 @@ Our evaluation across 18 cancer survivors (1,567 EMA entries per condition for f
 \begin{enumerate}[nosep]
     \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The autonomously-agentic multimodal agents (Auto-Multi/Auto-Multi+) achieve balanced accuracy (BA) of 0.749 for \erdesire{} state detection vs.\ 0.734 for the structured-agentic multimodal agent (Struct-Multi), and Auto-Multi+ achieves 0.760 for negative affect state detection vs.\ 0.727 for Struct-Multi.
 
-    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (V3/V4/V6) consistently outperform both sensing-only (V1/V2) and diary-only (CALLM) approaches, with V6 achieving mean BA of 0.669 across all binary targets.
+    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (Struct-Multi, Auto-Multi, Auto-Multi+) consistently outperform both sensing-only (Struct-Sense, Auto-Sense) and diary-only (CALLM) approaches, with Auto-Multi+ achieving mean BA of 0.669 across all binary targets.
 
     \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (V6, BA=0.669; V4, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
 
