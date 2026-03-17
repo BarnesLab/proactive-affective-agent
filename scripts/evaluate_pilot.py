@@ -1,12 +1,16 @@
 """Evaluate pilot study results from checkpoint files.
 
-Computes MAE, BA, F1 for all versions (CALLM, V1, V2, V3, V4) across
-all pilot users and targets. Outputs a formatted comparison table and
-saves results to outputs/pilot/evaluation.json.
+Computes MAE, BA, F1 for all versions (CALLM, V1-V6) across 18 primary
+users and targets. Outputs a formatted comparison table and saves results
+to outputs/pilot/evaluation.json.
+
+Updated 2026-03-17: expanded to 18 clean complete users with V2/V4/V5/V6.
+Added --users CLI override and corrupted-checkpoint filtering.
 
 Usage:
     PYTHONPATH=. python3 scripts/evaluate_pilot.py
     PYTHONPATH=. python3 scripts/evaluate_pilot.py --output outputs/pilot/evaluation.json
+    PYTHONPATH=. python3 scripts/evaluate_pilot.py --users 24 43 71
 """
 
 from __future__ import annotations
