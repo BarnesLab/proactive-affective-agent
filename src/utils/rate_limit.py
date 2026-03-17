@@ -36,20 +36,22 @@ class RateLimitError(Exception):
         self.limit_type = limit_type
 
 
-def classify_error(stderr: str, returncode: int) -> str:
+def classify_error(stderr: str, returncode: int, stdout: str = "") -> str:
     """Classify a claude CLI error into a rate limit category.
 
     Args:
         stderr: Standard error output from the subprocess.
         returncode: Process exit code (0 = success).
+        stdout: Standard output (checked for limit messages in result field
+                when returncode==0 but output indicates an error).
 
     Returns:
         One of RateLimitType constants.
     """
-    if returncode == 0:
-        return RateLimitType.NONE
-
-    text = stderr.lower() if stderr else ""
+    # Check stdout/result for limit messages even on returncode==0.
+    # Claude CLI can return exit 0 with is_error=true and a limit message
+    # in the "result" field (e.g. "You've hit your limit · resets Mar 22").
+    all_text = ((stderr or "") + " " + (stdout or "")).lower()
 
     # Weekly / hard cap patterns
     weekly_patterns = [
@@ -58,10 +60,18 @@ def classify_error(stderr: str, returncode: int) -> str:
         r"quota\s*exceeded",
         r"billing.*limit",
         r"max\s*usage.*reached",
+        r"you'?ve\s+hit\s+your\s+limit",
+        r"hit\s+your\s+limit.*resets",
     ]
     for pat in weekly_patterns:
-        if re.search(pat, text):
+        if re.search(pat, all_text):
             return RateLimitType.WEEKLY
+
+    # If returncode==0 and no limit detected, it's not an error
+    if returncode == 0:
+        return RateLimitType.NONE
+
+    text = stderr.lower() if stderr else ""
 
     # Hourly / rolling-window rate limit patterns
     hourly_patterns = [

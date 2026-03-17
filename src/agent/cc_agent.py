@@ -495,7 +495,7 @@ class AgenticCCAgent:
 
                     # Non-zero exit or empty output — classify the error
                     stderr_text = result.stderr if result.returncode != 0 else ""
-                    limit_type = classify_error(stderr_text, result.returncode)
+                    limit_type = classify_error(stderr_text, result.returncode, result.stdout)
                     stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
                     if limit_type == RateLimitType.WEEKLY:
