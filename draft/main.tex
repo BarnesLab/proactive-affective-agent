@@ -240,11 +240,11 @@ We systematically vary two design dimensions (Table~\ref{tab:design}):
 \small
 \begin{tabular}{p{2cm}p{3.5cm}p{3.5cm}}
 \toprule
-& \textbf{Structured} (fixed pipeline) & \textbf{Agentic} (autonomous tool-use) \\
+& \textbf{Structured-Agentic} (fixed pipeline) & \textbf{Autonomously-Agentic} (autonomous tool-use) \\
 \midrule
-\textbf{Sensing-only} & V1: Pre-formatted summary $\rightarrow$ 6-step reasoning & V2: MCP tools $\rightarrow$ autonomous investigation \\
+\textbf{Sensing-only} & Struct-Sense: Pre-formatted summary $\rightarrow$ 6-step reasoning & Auto-Sense: MCP tools $\rightarrow$ autonomous investigation \\
 \addlinespace
-\textbf{Multimodal} (diary + sensing) & V3: Diary + summary $\rightarrow$ 5-step reasoning & V4/V6: Diary-first analysis $\rightarrow$ tool-based validation \\
+\textbf{Multimodal} (diary + sensing) & Struct-Multi: Diary + summary $\rightarrow$ 5-step reasoning & Auto-Multi/Auto-Multi+: Diary-first analysis $\rightarrow$ tool-based validation \\
 \midrule
 \multicolumn{3}{l}{\textbf{Baseline:} CALLM --- diary text + TF-IDF RAG, structured output~\cite{wang2026callm}} \\
 \bottomrule
