@@ -60,22 +60,7 @@ Bold = best in row among LLM agent systems.
 
 ---
 
-## Table 3: Per-Target Continuous Metrics (MAE)
-
-Prediction targets: PANAS_Pos (0–30), PANAS_Neg (0–30), ER_desire (0–10).
-
-| Target | CALLM | V1 | V2 | V3 | V4 | V5 | V6 |
-|--------|-------|------|------|------|------|------|------|
-| PANAS_Pos | **5.215** | 6.793 | 6.658 | 6.049 | 6.191 | 6.835 | 6.309 |
-| PANAS_Neg | **3.810** | 4.254 | 6.535 | 4.324 | 6.037 | 7.198 | 6.659 |
-| ER_desire | 1.987 | 2.680 | 1.378 | 2.279 | **1.118** | 1.424 | **1.118** |
-| **Mean MAE** | **3.671** | 4.576 | 4.857 | 4.217 | 4.449 | 5.152 | 4.695 |
-
-Bold = best in row among LLM agent systems.
-
----
-
-## Table 4: Hypotheses Evaluation
+## Table 3: Hypotheses Evaluation
 
 | Hypothesis | Comparison | Result | Evidence |
 |------------|-----------|--------|----------|
