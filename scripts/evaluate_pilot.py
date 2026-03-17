@@ -340,6 +340,10 @@ def main():
         default="outputs/pilot_v2/evaluation.json",
         help="Where to save evaluation results JSON",
     )
+    parser.add_argument(
+        "--users", nargs="+", type=int, default=None,
+        help="Override user list",
+    )
     args = parser.parse_args()
 
     if args.checkpoint_dirs:
