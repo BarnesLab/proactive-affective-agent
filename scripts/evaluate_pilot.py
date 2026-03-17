@@ -346,6 +346,10 @@ def main():
     )
     args = parser.parse_args()
 
+    global PILOT_USERS
+    if args.users:
+        PILOT_USERS = args.users
+
     if args.checkpoint_dirs:
         cp_dirs = [Path(d) for d in args.checkpoint_dirs]
     else:
