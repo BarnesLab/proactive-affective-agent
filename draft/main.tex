@@ -490,10 +490,10 @@ Table~\ref{tab:affect} presents results for affect state detection and continuou
 \midrule
 CALLM$^\ddagger$ & 0.566 & 0.545 & 0.681 & 0.700 \\
 Struct-Sense$^\ddagger$ & 0.522 & 0.406 & 0.520 & 0.510 \\
-V2 & 0.604 & 0.603 & 0.633 & 0.609 \\
+Auto-Sense & 0.604 & 0.603 & 0.633 & 0.609 \\
 Struct-Multi$^\S$ & 0.601 & 0.580 & 0.727 & 0.740 \\
-V4 & 0.738 & 0.734 & 0.753 & 0.725 \\
-V6 & \textbf{0.755} & \textbf{0.750} & \textbf{0.760} & \textbf{0.738} \\
+Auto-Multi & 0.738 & 0.734 & 0.753 & 0.725 \\
+Auto-Multi+ & \textbf{0.755} & \textbf{0.750} & \textbf{0.760} & \textbf{0.738} \\
 \midrule
 MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 \\
 \bottomrule
@@ -502,10 +502,10 @@ MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 \\
 \end{table}
 
 \paragraph{Negative Affect State Detection.}
-Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. V6 achieves BA = 0.760, above V3 (0.727) and CALLM (0.681). This represents a meaningful improvement: at 76\% balanced accuracy, the system correctly identifies roughly 3 out of 4 instances of elevated negative affect, while maintaining a low false positive rate.
+Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. Auto-Multi+ achieves BA = 0.760, above Struct-Multi (0.727) and CALLM (0.681). This represents a meaningful improvement: at 76\% balanced accuracy, the system correctly identifies roughly 3 out of 4 instances of elevated negative affect, while maintaining a low false positive rate.
 
 \paragraph{Positive Affect State Detection.}
-Detecting unusual positive affect states follows the same pattern. V6 (BA = 0.755) substantially outperforms V3 (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
+Detecting unusual positive affect states follows the same pattern. Auto-Multi+ (BA = 0.755) substantially outperforms Struct-Multi (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
 
 
 \subsection{Structured vs.\ Agentic: The Value of Autonomous Investigation}
@@ -520,7 +520,7 @@ Table~\ref{tab:agentic_vs_structured} isolates the effect of agentic reasoning b
 \begin{tabular}{l cc cc}
 \toprule
 & \multicolumn{2}{c}{Sensing-Only} & \multicolumn{2}{c}{Multimodal} \\
-\textbf{Target (BA)} & V1 & V2 & V3 & V4 \\
+\textbf{Target (BA)} & Struct-Sense & Auto-Sense & Struct-Multi & Auto-Multi \\
 \midrule
 \erdesire{} State & 0.533 & \textbf{0.669} {\scriptsize (+.136)} & 0.734 & \textbf{0.749} {\scriptsize (+.015)} \\
 \intavail{} & 0.494 & \textbf{0.733} {\scriptsize (+.239)} & 0.565 & \textbf{0.738} {\scriptsize (+.173)} \\
@@ -543,7 +543,7 @@ The agentic approach consistently and substantially outperforms the structured a
 The improvement is smaller (but still consistent) in the multimodal condition, where the diary text already provides a strong signal that reduces the marginal value of autonomous sensing investigation.
 
 \paragraph{Per-User Consistency.}
-The agentic advantage is not driven by outlier participants. Examining per-user mean BA across all binary targets, V4 outperforms V1 for the majority of participants. \todo{Update per-user consistency stats for N=18. V1 only 13/18 users.} Similarly, V6 outperforms V3 for most participants. \todo{V3 only 10/18 users; per-user comparison limited.} The consistency of the agentic advantage across participants with diverse base rates and sensing coverage patterns suggests the improvement is genuine rather than a sampling artifact.
+The agentic advantage is not driven by outlier participants. Examining per-user mean BA across all binary targets, Auto-Multi outperforms Struct-Sense for the majority of participants. \todo{Update per-user consistency stats for N=18. Struct-Sense only 13/18 users.} Similarly, Auto-Multi+ outperforms Struct-Multi for most participants. \todo{Struct-Multi only 10/18 users; per-user comparison limited.} The consistency of the agentic advantage across participants with diverse base rates and sensing coverage patterns suggests the improvement is genuine rather than a sampling artifact.
 
 \subsection{Sensing-Only vs.\ Multimodal}
 \label{sec:results_modality}
@@ -555,7 +555,7 @@ The agentic advantage is not driven by outlier participants. Examining per-user 
 \begin{tabular}{l cc cc}
 \toprule
 & \multicolumn{2}{c}{Structured} & \multicolumn{2}{c}{Agentic} \\
-\textbf{Target (BA)} & V1 & V3 & V2 & V4 \\
+\textbf{Target (BA)} & Struct-Sense & Struct-Multi & Auto-Sense & Auto-Multi \\
 \midrule
 \erdesire{} State & 0.533 & \textbf{0.734} {\scriptsize (+.201)} & 0.669 & \textbf{0.749} {\scriptsize (+.080)} \\
 \intavail{} & 0.494 & 0.565 {\scriptsize (+.071)} & \textbf{0.733} & \textbf{0.738} {\scriptsize (+.005)} \\
@@ -579,17 +579,17 @@ Adding diary text to sensing data consistently improves performance, with partic
 \toprule
 \textbf{System} & \textbf{PA pred $\mu$/$\sigma$} & \textbf{PA GT $\mu$/$\sigma$} & \textbf{NA pred $\mu$/$\sigma$} & \textbf{NA GT $\mu$/$\sigma$} \\
 \midrule
-V6 & 16.2 / 4.7 & 18.1 / 7.8 & 9.2 / 4.9 & 3.4 / 4.8 \\
-V4 & 15.9 / 4.7 & 18.1 / 7.8 & 9.5 / 4.9 & 3.4 / 4.8 \\
-V3 & 17.0 / 5.2 & 17.8 / 8.1 & 6.0 / 4.8 & 3.6 / 5.1 \\
+Auto-Multi+ & 16.2 / 4.7 & 18.1 / 7.8 & 9.2 / 4.9 & 3.4 / 4.8 \\
+Auto-Multi & 15.9 / 4.7 & 18.1 / 7.8 & 9.5 / 4.9 & 3.4 / 4.8 \\
+Struct-Multi & 17.0 / 5.2 & 17.8 / 8.1 & 6.0 / 4.8 & 3.6 / 5.1 \\
 CALLM & 17.9 / 5.6 & 17.7 / 7.7 & 5.5 / 5.3 & 3.8 / 5.1 \\
-V1 & 16.3 / 3.4 & 18.4 / 7.8 & 7.9 / 4.7 & 3.0 / 4.6 \\
-V2 & 16.0 / 4.1 & 18.0 / 7.8 & 10.0 / 4.4 & 3.4 / 4.9 \\
+Struct-Sense & 16.3 / 3.4 & 18.4 / 7.8 & 7.9 / 4.7 & 3.0 / 4.6 \\
+Auto-Sense & 16.0 / 4.1 & 18.0 / 7.8 & 10.0 / 4.4 & 3.4 / 4.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents underestimate the spread of positive affect ($\sigma_{\text{pred}} < \sigma_{\text{GT}}$, i.e., mean regression). More critically, sensing-based agents (V1, V2, V4, V6) systematically \emph{overestimate} negative affect: V2 predicts mean NA = 10.0 vs.\ ground truth 3.4. This ``negativity bias'' is less severe in diary-informed agents (CALLM: 5.5 vs.\ 3.8; V3: 6.0 vs.\ 3.6), where the diary text provides direct evidence of emotional valence.
+Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents underestimate the spread of positive affect ($\sigma_{\text{pred}} < \sigma_{\text{GT}}$, i.e., mean regression). More critically, sensing-based agents (Struct-Sense, Auto-Sense, Auto-Multi, Auto-Multi+) systematically \emph{overestimate} negative affect: Auto-Sense predicts mean NA = 10.0 vs.\ ground truth 3.4. This ``negativity bias'' is less severe in diary-informed agents (CALLM: 5.5 vs.\ 3.8; Struct-Multi: 6.0 vs.\ 3.6), where the diary text provides direct evidence of emotional valence.
 
 Despite this calibration gap in continuous values, the agentic agents achieve superior \emph{binary} state detection because they correctly identify \emph{relative} shifts---entries where the predicted NA is high \emph{relative to the agent's own predictions for that user}---even when absolute values are biased.
 
@@ -616,11 +616,11 @@ Through \texttt{find\_similar\_days} and \texttt{find\_peer\_cases}, agentic age
 
 Our results reveal a productive tension. Diary text is the single most informative signal for emotional state prediction---the multimodal advantage is primarily driven by diary content rather than sensing data. Yet diary text is precisely the signal that is absent when users most need help. This creates the \emph{diary paradox}: the most useful input for prediction is the one that disappears when prediction is most needed.
 
-The sensing-only agents (V2) achieve BA = 0.601---above chance and above all traditional ML baselines---demonstrating that proactive prediction from passive sensing alone is viable, if imperfect. In practice, a deployed system could use multimodal prediction when diary entries are available and fall back to sensing-only prediction when they are not, combining reactive accuracy with proactive coverage.
+The sensing-only agents (Auto-Sense) achieve BA = 0.601---above chance and above all traditional ML baselines---demonstrating that proactive prediction from passive sensing alone is viable, if imperfect. In practice, a deployed system could use multimodal prediction when diary entries are available and fall back to sensing-only prediction when they are not, combining reactive accuracy with proactive coverage.
 
 \subsection{Intervention Availability: A Behavioral Construct}
 
-Our finding that agentic sensing agents dramatically outperform diary-based approaches for \intavail{} prediction (V2: 0.733 vs.\ CALLM: 0.531) has important implications. Intervention availability is fundamentally a \emph{behavioral} construct---it depends on what the user is currently doing (driving? in a meeting? asleep?), which passive sensing can directly observe but diary text rarely mentions. This suggests that sensing-based availability prediction may be sufficient for JITAI deployment even without diary input, while emotional state prediction benefits from multimodal integration.
+Our finding that agentic sensing agents dramatically outperform diary-based approaches for \intavail{} prediction (Auto-Sense: 0.733 vs.\ CALLM: 0.531) has important implications. Intervention availability is fundamentally a \emph{behavioral} construct---it depends on what the user is currently doing (driving? in a meeting? asleep?), which passive sensing can directly observe but diary text rarely mentions. This suggests that sensing-based availability prediction may be sufficient for JITAI deployment even without diary input, while emotional state prediction benefits from multimodal integration.
 
 \subsection{Cross-User RAG as Calibration}
 
@@ -715,7 +715,7 @@ Our work provides evidence that LLM-based agentic sensing is a promising paradig
 Table~\ref{tab:full_ba} presents balanced accuracy for all 16 binary prediction targets.
 
 \begin{table*}[t]
-\caption{Balanced accuracy for all binary targets across LLM agent variants (18 users, 1,567 entries for fully-complete versions). Bold = best per row. Targets above the line are focus targets discussed in the main text; those below are supplementary. \todo{CALLM: 13/18, V1: 13/18, V3: 10/18 users---these values are interim.}}
+\caption{Balanced accuracy for all binary targets across LLM agent variants (18 users, 1,567 entries for fully-complete versions). Bold = best per row. Targets above the line are focus targets discussed in the main text; those below are supplementary. \todo{CALLM: 13/18, Struct-Sense: 13/18, Struct-Multi: 10/18 users---these values are interim.}}
 \label{tab:full_ba}
 \small
 \begin{tabular}{l cccccc}
@@ -749,7 +749,7 @@ forecasting & .488 & .510 & .463 & .453 & .414 & \textbf{.457} \\
 \section{Agentic Investigation Example}
 \label{app:example}
 
-Figure~\ref{fig:agentic_flow} in Section~\ref{sec:agentic} illustrates a complete V4 agentic investigation trace for Participant 071. The agent analyzes the diary entry (``Pain is really bad today. Can barely focus on anything.''), forms an initial hypothesis of elevated negative affect, then autonomously queries the behavioral timeline (confirming 100\% stationary day), compares GPS home percentage to the 14-day baseline (z=+2.8, 97th percentile---extreme anomaly), retrieves peer cases with similar diary content (3 matches, mean NA=5.2), and finds behaviorally similar past days (NA=5, ER=6). The investigation converges after 5 tool calls with cross-validated evidence, producing a prediction of NA=5, ER\_desire=5, NA\_State=True, INT\_avail=Yes---all confirmed by the subsequent EMA response (ground truth: NA=5, ER\_desire=6).
+Figure~\ref{fig:agentic_flow} in Section~\ref{sec:agentic} illustrates a complete Auto-Multi agentic investigation trace for Participant 071. The agent analyzes the diary entry (``Pain is really bad today. Can barely focus on anything.''), forms an initial hypothesis of elevated negative affect, then autonomously queries the behavioral timeline (confirming 100\% stationary day), compares GPS home percentage to the 14-day baseline (z=+2.8, 97th percentile---extreme anomaly), retrieves peer cases with similar diary content (3 matches, mean NA=5.2), and finds behaviorally similar past days (NA=5, ER=6). The investigation converges after 5 tool calls with cross-validated evidence, producing a prediction of NA=5, ER\_desire=5, NA\_State=True, INT\_avail=Yes---all confirmed by the subsequent EMA response (ground truth: NA=5, ER\_desire=6).
 
 
 \section{ML Baseline Details}
