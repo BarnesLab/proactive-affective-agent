@@ -93,11 +93,29 @@ def classify_error(stderr: str, returncode: int, stdout: str = "") -> str:
     return RateLimitType.TRANSIENT
 
 
-def send_telegram(text: str) -> None:
+def send_telegram(text: str, dedup_key: str | None = None, dedup_ttl: int = 3600) -> None:
     """Send a notification message via Telegram Boo bot.
 
     Best-effort: logs but does not raise on failure.
+
+    Args:
+        text: Message to send.
+        dedup_key: If set, skip sending if a file /tmp/paa_notif_{dedup_key}
+                   exists and is younger than dedup_ttl seconds.
+        dedup_ttl: Seconds before a dedup key expires (default: 1 hour).
     """
+    import os, time as _time
+    if dedup_key:
+        flag = f"/tmp/paa_notif_{dedup_key}"
+        try:
+            if os.path.exists(flag) and (_time.time() - os.path.getmtime(flag)) < dedup_ttl:
+                logger.info(f"Telegram notification suppressed (dedup: {dedup_key}): {text[:60]}")
+                return
+            with open(flag, "w") as f:
+                f.write(str(_time.time()))
+        except Exception:
+            pass  # best-effort dedup
+
     try:
         payload = json.dumps({"chat_id": _CHAT_ID, "text": text})
         subprocess.run(
