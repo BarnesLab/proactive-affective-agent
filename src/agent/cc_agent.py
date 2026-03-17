@@ -504,7 +504,7 @@ class AgenticCCAgent:
                             f"Version: {self._version.upper()}, User: {self.study_id}\n"
                             f"Experiment stopped. Resume after limit resets."
                         )
-                        send_telegram(msg)
+                        send_telegram(msg, dedup_key="weekly_agentic")
                         raise RateLimitError(
                             f"Weekly rate limit hit: {stderr_preview}",
                             RateLimitType.WEEKLY,
