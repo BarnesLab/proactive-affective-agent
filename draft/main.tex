@@ -313,10 +313,10 @@ Autonomously-agentic agents operate through a multi-turn tool-use loop. Each pre
 \paragraph{Auto-Sense: Autonomously-Agentic Sensing-Only.}
 The agent receives a system prompt instructing it to investigate the participant's behavioral data like a ``behavioral data scientist detective,'' with a strategy: (1) reconstruct the day chronologically, (2) identify behavioral patterns, (3) detect anomalies via baseline comparison, (4) find analogous past days, (5) calibrate against peer cases, (6) synthesize into prediction. Critically, the agent \emph{decides which tools to call and in what order}---it may skip modalities it deems uninformative or drill deeply into anomalies.
 
-\paragraph{V4/V6: Agentic Multimodal.}
+\paragraph{Auto-Multi/Auto-Multi+: Autonomously-Agentic Multimodal.}
 The agent additionally receives the diary entry and follows a \emph{diary-first} investigation strategy: (1) analyze diary text to extract emotional signals and form hypotheses, (2) use sensing tools to validate/calibrate those hypotheses, (3) check cross-modal consistency, (4) retrieve peer cases with similar diary content, (5) synthesize. The diary anchors the investigation, and sensing tools provide behavioral evidence for or against diary-derived hypotheses.
 
-V6 additionally receives a pre-computed daily behavioral narrative---a filtered, structured summary of the day's sensing data with redundant and zero-information periods removed---reducing the raw data volume by 7.4$\times$ while preserving salient signals. We also evaluate V5, a sensing-only filtered variant (V2 + filtered narrative); V5 and V6 test whether data quality filtering improves prediction beyond the base agentic approach.
+Auto-Multi+ additionally receives a pre-computed daily behavioral narrative---a filtered, structured summary of the day's sensing data with redundant and zero-information periods removed---reducing the raw data volume by 7.4$\times$ while preserving salient signals. We also evaluate Auto-Sense+, a sensing-only filtered variant (Auto-Sense + filtered narrative); Auto-Sense+ and Auto-Multi+ test whether data quality filtering improves prediction beyond the base autonomously-agentic approach.
 
 \input{figures/agentic_flow}
 
