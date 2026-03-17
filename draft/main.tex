@@ -349,9 +349,9 @@ A key challenge in affect prediction is calibration: how does the agent know wha
 
 Three retrieval modes serve different agent configurations:
 \begin{itemize}[nosep]
-    \item \textbf{Text retrieval} (CALLM, V3, V4/V6): TF-IDF similarity over diary text (5,000 features, bigrams, min document frequency 2). Returns 10--20 most similar diary entries with outcomes.
-    \item \textbf{Sensing retrieval} (V1, V2): Cosine similarity on z-score normalized daily sensing feature vectors. Returns 5 most behaviorally similar peer days with outcomes.
-    \item \textbf{Tool-based retrieval} (V2, V4/V6): The \texttt{find\_peer\_cases} MCP tool exposes both modes to agentic agents, letting them choose retrieval strategy.
+    \item \textbf{Text retrieval} (CALLM, Struct-Multi, Auto-Multi/Auto-Multi+): TF-IDF similarity over diary text (5,000 features, bigrams, min document frequency 2). Returns 10--20 most similar diary entries with outcomes.
+    \item \textbf{Sensing retrieval} (Struct-Sense, Auto-Sense): Cosine similarity on z-score normalized daily sensing feature vectors. Returns 5 most behaviorally similar peer days with outcomes.
+    \item \textbf{Tool-based retrieval} (Auto-Sense, Auto-Multi/Auto-Multi+): The \texttt{find\_peer\_cases} MCP tool exposes both modes to autonomously-agentic agents, letting them choose retrieval strategy.
 \end{itemize}
 
 \noindent Current-participant entries are excluded from retrieval to prevent data leakage.
@@ -364,7 +364,7 @@ Three retrieval modes serve different agent configurations:
 
 \subsection{Pilot Study Design}
 
-We evaluate all agent variants on a pilot subset of 18 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding 1,567 EMA entries per fully-complete agent variant. \todo{Update participant list for N=18. CALLM: 13/18 users, results will update. V1: 13/18 users. V3: only 10/18 users, bottleneck. V2/V4/V5/V6: 18/18 complete.} Each participant contributes 81--93 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
+We evaluate all agent variants on a pilot subset of 18 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding 1,567 EMA entries per fully-complete agent variant. \todo{Update participant list for N=18. CALLM: 13/18 users, results will update. Struct-Sense: 13/18 users. Struct-Multi: only 10/18 users, bottleneck. Auto-Sense/Auto-Multi/Auto-Sense+/Auto-Multi+: 18/18 complete.} Each participant contributes 81--93 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
 
 \subsection{Baselines}
 
