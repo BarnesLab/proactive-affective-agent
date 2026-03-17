@@ -451,23 +451,22 @@ Table~\ref{tab:intervention} and Figure~\ref{fig:intervention_bars} present resu
 \caption{Intervention opportunity prediction. \erdesire{}: emotion regulation desire; \intavail{}: intervention availability. Best per metric is \textbf{bold}.}
 \label{tab:intervention}
 \small
-\begin{tabular}{l cc cc c}
+\begin{tabular}{l cc cc}
 \toprule
-& \multicolumn{2}{c}{\erdesire{} State (Binary)} & \multicolumn{2}{c}{\intavail{} (Binary)} & \erdesire{} \\
-\textbf{System} & BA & F1 & BA & F1 & MAE \\
+& \multicolumn{2}{c}{\erdesire{} State (Binary)} & \multicolumn{2}{c}{\intavail{} (Binary)} \\
+\textbf{System} & BA & F1 & BA & F1 \\
 \midrule
-CALLM$^\ddagger$ & 0.678 & 0.697 & 0.531 & 0.521 & 1.572 \\
-V1$^\ddagger$ & 0.533 & 0.518 & 0.494 & 0.396 & 2.802 \\
-V2 & 0.669 & 0.672 & 0.733 & 0.732 & 1.316 \\
-V3$^\S$ & 0.734 & 0.751 & 0.565 & 0.561 & 1.740 \\
-V4 & \textbf{0.749} & \textbf{0.753} & \textbf{0.738} & \textbf{0.737} & 1.010 \\
-V6 & \textbf{0.749} & 0.748 & 0.735 & 0.734 & \textbf{0.978} \\
+CALLM$^\ddagger$ & 0.678 & 0.697 & 0.531 & 0.521 \\
+V1$^\ddagger$ & 0.533 & 0.518 & 0.494 & 0.396 \\
+V2 & 0.669 & 0.672 & 0.733 & 0.732 \\
+V3$^\S$ & 0.734 & 0.751 & 0.565 & 0.561 \\
+V4 & \textbf{0.749} & \textbf{0.753} & \textbf{0.738} & \textbf{0.737} \\
+V6 & \textbf{0.749} & 0.748 & 0.735 & 0.734 \\
 \midrule
-AR & 0.658 & --- & --- & --- & 1.646 \\
-MiniLM$^\dagger$ & 0.629 & 0.588 & 0.573 & 0.624 & 2.185 \\
-RF$^\dagger$ & 0.501 & 0.365 & --- & --- & 3.250 \\
+MiniLM$^\dagger$ & 0.629 & 0.588 & 0.573 & 0.624 \\
+RF$^\dagger$ & 0.501 & 0.365 & --- & --- \\
 \bottomrule
-\multicolumn{6}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
+\multicolumn{5}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
 \end{tabular}
 \end{table}
 
