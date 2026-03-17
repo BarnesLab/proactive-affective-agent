@@ -11,31 +11,31 @@ All baselines use 5-fold across-subject CV on full dataset (~15,984 EMA entries,
 LLM agents are evaluated on the 18-user primary set (V2/V4/V5/V6 = 18 users, CALLM/V1 = 13, V3 = 10).
 All LLM agent results use claude-sonnet.
 
-| System | Input Modality | Method | Users | Entries | Mean MAE ↓ | Mean BA ↑ | Mean F1 ↑ | Notes |
-|--------|---------------|--------|-------|---------|-----------|----------|----------|-------|
-| **Traditional ML Baselines (Sensing)** ||||||||||
-| RF | Sensing | 5-fold CV | 399 | ~15,984 | 5.923 | 0.501 | 0.365 | |
-| XGBoost | Sensing | 5-fold CV | 399 | ~15,984 | 9.374 | 0.502 | 0.391 | |
-| Logistic | Sensing | 5-fold CV | 399 | ~15,984 | — | 0.500 | 0.302 | Classifier only |
-| MLP | Sensing | 4-fold CV† | 399 | ~12,800 | 4.699 | 0.507 | 0.440 | †Fold 5 diverged |
-| **Text Baselines (Diary)** ||||||||||
-| TF-IDF + SVM | Diary text | 5-fold CV | 399 | ~15,984 | 3.999 | 0.613 | 0.570 | |
-| BoW + SVM | Diary text | 5-fold CV | 399 | ~15,984 | 4.043 | 0.607 | 0.561 | |
-| MiniLM | Diary embeddings | 5-fold CV | 399 | ~15,984 | 3.898 | 0.629 | 0.588 | |
-| **Combined Baselines (Sensing + Diary)** ||||||||||
-| Combined RF | Sensing + diary | 5-fold CV | 399 | ~15,984 | 3.935 | 0.620 | 0.568 | |
-| Combined Logistic | Sensing + diary | 5-fold CV | 399 | ~15,984 | — | 0.615 | 0.575 | |
-| **Autocorrelation Baselines** ||||||||||
-| AR last_value | Prior EMA | 5-fold CV | 399 | ~15,984 | 2.758 | 0.658 | 0.617 | |
-| AR rolling_mean | Prior EMA | 5-fold CV | 399 | ~15,984 | 2.552 | 0.658 | 0.617 | |
-| **LLM Agent Systems (N=18 primary set)** ||||||||||
-| CALLM | Diary + TF-IDF RAG | Pilot (13/18) | 13 | 1,137 | 3.671 | 0.626 | 0.618 | |
-| V1 (Structured) | Sensing only | Pilot (13/18) | 13 | 1,131 | 4.576 | 0.521 | 0.453 | |
-| V2 (Agentic) | Sensing only | Pilot (18/18) | 18 | 1,567 | 4.857 | 0.598 | 0.591 | |
-| V3 (Structured) | Sensing + diary | Pilot (10/18) | 10 | 862 | 4.217 | 0.607 | 0.590 | |
-| **V4 (Agentic)** | **Sensing + diary** | **Pilot (18/18)** | **18** | **1,567** | **4.449** | **0.666** | **0.661** | |
-| V5 (Agentic+filtered) | Sensing only | Pilot (18/18) | 18 | 1,567 | 5.152 | 0.601 | 0.596 | |
-| **V6 (Agentic+filtered)** | **Sensing + diary** | **Pilot (18/18)** | **18** | **1,567** | **4.695** | **0.669** | **0.664** | **BEST BA** |
+| System | Input Modality | Method | Users | Entries | Mean BA ↑ | Mean F1 ↑ | Notes |
+|--------|---------------|--------|-------|---------|----------|----------|-------|
+| **Traditional ML Baselines (Sensing)** |||||||||
+| RF | Sensing | 5-fold CV | 399 | ~15,984 | 0.501 | 0.365 | |
+| XGBoost | Sensing | 5-fold CV | 399 | ~15,984 | 0.502 | 0.391 | |
+| Logistic | Sensing | 5-fold CV | 399 | ~15,984 | 0.500 | 0.302 | Classifier only |
+| MLP | Sensing | 4-fold CV† | 399 | ~12,800 | 0.507 | 0.440 | †Fold 5 diverged |
+| **Text Baselines (Diary)** |||||||||
+| TF-IDF + SVM | Diary text | 5-fold CV | 399 | ~15,984 | 0.613 | 0.570 | |
+| BoW + SVM | Diary text | 5-fold CV | 399 | ~15,984 | 0.607 | 0.561 | |
+| MiniLM | Diary embeddings | 5-fold CV | 399 | ~15,984 | 0.629 | 0.588 | |
+| **Combined Baselines (Sensing + Diary)** |||||||||
+| Combined RF | Sensing + diary | 5-fold CV | 399 | ~15,984 | 0.620 | 0.568 | |
+| Combined Logistic | Sensing + diary | 5-fold CV | 399 | ~15,984 | 0.615 | 0.575 | |
+| **Autocorrelation Baselines** |||||||||
+| AR last_value | Prior EMA | 5-fold CV | 399 | ~15,984 | 0.658 | 0.617 | |
+| AR rolling_mean | Prior EMA | 5-fold CV | 399 | ~15,984 | 0.658 | 0.617 | |
+| **LLM Agent Systems (N=18 primary set)** |||||||||
+| CALLM | Diary + TF-IDF RAG | Pilot (13/18) | 13 | 1,137 | 0.626 | 0.618 | |
+| V1 (Structured) | Sensing only | Pilot (13/18) | 13 | 1,131 | 0.521 | 0.453 | |
+| V2 (Agentic) | Sensing only | Pilot (18/18) | 18 | 1,567 | 0.598 | 0.591 | |
+| V3 (Structured) | Sensing + diary | Pilot (10/18) | 10 | 862 | 0.607 | 0.590 | |
+| **V4 (Agentic)** | **Sensing + diary** | **Pilot (18/18)** | **18** | **1,567** | **0.666** | **0.661** | |
+| V5 (Agentic+filtered) | Sensing only | Pilot (18/18) | 18 | 1,567 | 0.601 | 0.596 | |
+| **V6 (Agentic+filtered)** | **Sensing + diary** | **Pilot (18/18)** | **18** | **1,567** | **0.669** | **0.664** | **BEST BA** |
 
 **Ranking by Mean BA:** V6 (0.669) > V4 (0.666) > AR (0.658) > MiniLM (0.629) > CALLM (0.626) > Combined RF (0.620) > TF-IDF (0.613) > V3 (0.607) > V5 (0.601) > V2 (0.598) > MLP (0.507) > ML (~0.50) > V1 (0.521)
 
