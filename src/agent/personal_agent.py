@@ -181,10 +181,8 @@ class PersonalAgent:
         )
 
         logger.debug(f"CALLM: Calling LLM for user {self.study_id}")
-        raw_response = self.llm.generate(prompt=prompt)
+        raw_response, result = self.llm.generate_and_parse(prompt=prompt)
         usage = getattr(self.llm, "last_usage", {})
-        from src.think.parser import parse_prediction
-        result = parse_prediction(raw_response)
 
         # Comprehensive trace
         result["_version"] = "callm"
