@@ -230,6 +230,10 @@ class ClaudeCodeClient:
                 logger.error(f"Unexpected error in generate(): {exc}")
                 raise
 
+    # Parse-retry constants (mirrors AgenticCCAgent)
+    _MAX_PARSE_RETRIES = 5
+    _PARSE_RETRY_WAIT = 30  # seconds
+
     def generate_structured(
         self,
         prompt: str,
@@ -237,21 +241,53 @@ class ClaudeCodeClient:
     ) -> dict:
         """Generate a structured JSON response using the prediction schema.
 
+        Retries up to _MAX_PARSE_RETRIES times if the LLM output cannot be
+        parsed into valid JSON (mirrors AgenticCCAgent.predict() behaviour).
+
         Returns:
             Parsed JSON dict.
-        """
-        response = self.generate(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            schema_path=SCHEMA_PATH if SCHEMA_PATH.exists() else None,
-        )
 
+        Raises:
+            RuntimeError: If parsing fails after all retries.
+        """
         if self.dry_run:
+            response = self.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                schema_path=SCHEMA_PATH if SCHEMA_PATH.exists() else None,
+            )
             return json.loads(response) if response.strip().startswith("{") else {}
 
-        # Parse JSON from response
         from src.think.parser import parse_prediction
-        return parse_prediction(response)
+
+        for attempt in range(1, self._MAX_PARSE_RETRIES + 1):
+            response = self.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                schema_path=SCHEMA_PATH if SCHEMA_PATH.exists() else None,
+            )
+            result = parse_prediction(response)
+            if not result.get("_parse_error"):
+                return result
+
+            if attempt < self._MAX_PARSE_RETRIES:
+                logger.warning(
+                    f"Parse failed (attempt {attempt}/{self._MAX_PARSE_RETRIES}), "
+                    f"re-calling claude in {self._PARSE_RETRY_WAIT}s. "
+                    f"Output: {response[:200]}"
+                )
+                time.sleep(self._PARSE_RETRY_WAIT)
+            else:
+                logger.error(
+                    f"Parse failed after {self._MAX_PARSE_RETRIES} attempts. "
+                    f"Last output: {response[:500]}"
+                )
+                raise RuntimeError(
+                    f"Unparseable response after {self._MAX_PARSE_RETRIES} attempts"
+                )
+
+        # Should never reach here, but satisfy type checker
+        return result
 
     def _build_command(
         self,
