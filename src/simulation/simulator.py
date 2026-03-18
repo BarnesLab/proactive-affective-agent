@@ -567,16 +567,37 @@ class PilotSimulator:
                 logger.info(f"  Entry {i+1}/{n_entries} ({date_str})")
 
                 t0 = time.monotonic()
-                try:
-                    pred = agent.predict(
-                        ema_row=ema_row,
-                        sensing_day=sensing_day,
-                        date_str=date_str,
-                        session_memory=session_memory,
-                    )
-                except Exception as e:
-                    logger.error(f"  Error predicting: {e}")
-                    pred = {"_error": str(e)}
+                # Retry loop for rate limits: wait up to 5 hours for weekly reset
+                _RATE_LIMIT_WAIT = 600  # 10 min between retries
+                _RATE_LIMIT_MAX_RETRIES = 30  # 30 × 10 min = 5 hours max
+                pred = None
+                for _rl_attempt in range(_RATE_LIMIT_MAX_RETRIES + 1):
+                    try:
+                        pred = agent.predict(
+                            ema_row=ema_row,
+                            sensing_day=sensing_day,
+                            date_str=date_str,
+                            session_memory=session_memory,
+                        )
+                        break  # success
+                    except RateLimitError as e:
+                        if _rl_attempt >= _RATE_LIMIT_MAX_RETRIES:
+                            logger.error(
+                                f"  Rate limit persisted after {_RATE_LIMIT_MAX_RETRIES} retries "
+                                f"({_RATE_LIMIT_MAX_RETRIES * _RATE_LIMIT_WAIT / 3600:.1f}h), "
+                                f"recording empty: {e}"
+                            )
+                            pred = {"_error": str(e)}
+                            break
+                        logger.warning(
+                            f"  Rate limit hit (attempt {_rl_attempt + 1}), "
+                            f"waiting {_RATE_LIMIT_WAIT}s before retry: {e}"
+                        )
+                        time.sleep(_RATE_LIMIT_WAIT)
+                    except Exception as e:
+                        logger.error(f"  Error predicting: {e}")
+                        pred = {"_error": str(e)}
+                        break
                 elapsed = time.monotonic() - t0
 
                 # Extract ground truth
