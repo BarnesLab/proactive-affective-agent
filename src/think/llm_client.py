@@ -234,6 +234,42 @@ class ClaudeCodeClient:
     _MAX_PARSE_RETRIES = 5
     _PARSE_RETRY_WAIT = 30  # seconds
 
+    def generate_and_parse(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+    ) -> tuple[str, dict]:
+        """Generate + parse with retry. Returns (raw_response, parsed_dict).
+
+        Retries up to _MAX_PARSE_RETRIES times if LLM output fails to parse.
+        Raises RuntimeError after all retries exhausted.
+        """
+        from src.think.parser import parse_prediction
+
+        for attempt in range(1, self._MAX_PARSE_RETRIES + 1):
+            raw = self.generate(prompt=prompt, system_prompt=system_prompt)
+            result = parse_prediction(raw)
+            if not result.get("_parse_error"):
+                return raw, result
+
+            if attempt < self._MAX_PARSE_RETRIES:
+                logger.warning(
+                    f"Parse failed (attempt {attempt}/{self._MAX_PARSE_RETRIES}), "
+                    f"re-calling claude in {self._PARSE_RETRY_WAIT}s. "
+                    f"Output: {raw[:200]}"
+                )
+                time.sleep(self._PARSE_RETRY_WAIT)
+            else:
+                logger.error(
+                    f"Parse failed after {self._MAX_PARSE_RETRIES} attempts. "
+                    f"Last output: {raw[:500]}"
+                )
+                raise RuntimeError(
+                    f"Unparseable response after {self._MAX_PARSE_RETRIES} attempts"
+                )
+
+        return raw, result  # unreachable, satisfies type checker
+
     def generate_structured(
         self,
         prompt: str,
