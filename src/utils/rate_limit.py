@@ -54,18 +54,33 @@ def classify_error(stderr: str, returncode: int, stdout: str = "") -> str:
     all_text = ((stderr or "") + " " + (stdout or "")).lower()
 
     # Weekly / hard cap patterns
+    # First check if it's a 5-hour rolling limit (NOT weekly)
+    # Claude Max: "You've hit your limit · resets in X hours" = 5-hour rolling cap
+    # This should be treated as HOURLY (wait and retry), not WEEKLY (stop)
+    rolling_patterns = [
+        r"hit\s+your\s+limit.*resets\s+in",
+        r"limit.*resets\s+in\s+\d+\s*(hour|min)",
+    ]
+    for pat in rolling_patterns:
+        if re.search(pat, all_text):
+            return RateLimitType.HOURLY
+
+    # True weekly/hard cap patterns
     weekly_patterns = [
         r"weekly\s*(usage\s*)?limit",
         r"weekly\s*cap",
         r"quota\s*exceeded",
         r"billing.*limit",
         r"max\s*usage.*reached",
-        r"you'?ve\s+hit\s+your\s+limit",
-        r"hit\s+your\s+limit.*resets",
+        r"hit\s+your\s+limit.*resets\s+(mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
     ]
     for pat in weekly_patterns:
         if re.search(pat, all_text):
             return RateLimitType.WEEKLY
+
+    # Generic "hit your limit" without clear reset timeframe → treat as HOURLY (safe side)
+    if re.search(r"you'?ve\s+hit\s+your\s+limit", all_text):
+        return RateLimitType.HOURLY
 
     # If returncode==0 and no limit detected, it's not an error
     if returncode == 0:
