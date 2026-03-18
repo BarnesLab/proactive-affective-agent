@@ -50,6 +50,8 @@ while true; do
             log "Peak hours detected ($(date '+%H:%M')), stopping $current sonnet processes"
             pkill -f "run_pilot.*sonnet" 2>/dev/null
         fi
+        # Still update pulse during peak hours so heartbeat doesn't flag us as dead
+        $VENV -c "import json,time;f='$HOME/.openclaw/pulse.json';d=json.load(open(f)) if __import__('os').path.exists(f) else {};d['sonnet-watcher']=int(time.time());json.dump(d,open(f,'w'),indent=2)" 2>/dev/null
         sleep 300  # Check every 5 min during peak
         continue
     fi
