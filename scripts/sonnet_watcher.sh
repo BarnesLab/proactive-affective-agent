@@ -126,7 +126,7 @@ for u in sorted_users:
             launched += 1
             launched_set.add(u)  # one task per user per cycle
 " 2>> "$LOG"
-    fi
+    fi  # end if/elif current vs TARGET
     
     # Use project venv python to avoid homebrew python3 hanging in launchd
     $VENV -c "import json,time;f='$HOME/.openclaw/pulse.json';d=json.load(open(f)) if __import__('os').path.exists(f) else {};d['sonnet-watcher']=int(time.time());json.dump(d,open(f,'w'),indent=2)" 2>/dev/null
