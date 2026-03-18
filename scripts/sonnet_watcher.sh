@@ -29,6 +29,12 @@ is_peak_hours() { return 1  # DISABLED — full speed until defense
 log "Watcher started (target=$TARGET)"
 
 while true; do
+    # Manual pause — touch .pause to stop all scheduling
+    if [ -f "$PROJ_DIR/.pause" ]; then
+        sleep 60
+        continue
+    fi
+
     # Check if Claude is rate-limited. Flag file contains expiry ISO date.
     RATE_LIMIT_FLAG="$OUTDIR/.rate_limited"
     if [ -f "$RATE_LIMIT_FLAG" ]; then
