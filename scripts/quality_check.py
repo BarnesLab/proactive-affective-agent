@@ -75,8 +75,13 @@ def scan_bad_files(versions=None, archive=False):
     return bad
 
 
-def get_done_set(versions=None):
-    """Return set of 'version_userXXX' keys that pass quality check."""
+def get_done_set(versions=None, skip_bad=False):
+    """Return set of 'version_userXXX' keys that have record files.
+    
+    By default, any existing file counts as done (skip_bad=False).
+    Set skip_bad=True to only count quality-passing files as done.
+    This avoids re-running bad files and lets watcher focus on fresh tasks.
+    """
     if versions is None:
         versions = ['callm', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6']
     
@@ -96,9 +101,12 @@ def get_done_set(versions=None):
         if ver not in versions:
             continue
         
-        ok, _ = check_quality(f)
-        if ok:
-            done.add(f'{ver}_user{uid}')
+        if skip_bad:
+            ok, _ = check_quality(f)
+            if not ok:
+                continue
+        
+        done.add(f'{ver}_user{uid}')
     
     return done
 
