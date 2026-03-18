@@ -13,7 +13,7 @@ BASE = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'pilot_v2')
 ARCHIVE = os.path.join(BASE, '_bad')
 
 MIN_RECORDS = 10
-MAX_EMPTY_RATIO = 0.3
+MAX_EMPTY_RATIO = 0.05
 
 
 def check_quality(filepath):
