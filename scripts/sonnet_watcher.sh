@@ -56,7 +56,10 @@ while true; do
 
     current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep python | wc -l | tr -d ' ')
     
-    if [ "$current" -lt "$TARGET" ]; then
+    if [ "$current" -gt "$TARGET" ]; then
+        log "Sonnet processes: $current/$TARGET, converging (no new spawns, waiting for $((current - TARGET)) to finish)"
+        # Don't kill, just don't spawn — let running tasks finish naturally
+    elif [ "$current" -lt "$TARGET" ]; then
         needed=$((TARGET - current))
         log "Sonnet processes: $current/$TARGET, launching $needed"
         
