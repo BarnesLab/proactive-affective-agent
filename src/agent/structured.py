@@ -189,10 +189,8 @@ class StructuredWorkflow:
 
         # Step 3: Single LLM call
         logger.debug("V1: Calling LLM with sensing + memory context")
-        raw_response = self.llm.generate(prompt=prompt, system_prompt=system)
+        raw_response, result = self.llm.generate_and_parse(prompt=prompt, system_prompt=system)
         usage = getattr(self.llm, "last_usage", {})
-        from src.think.parser import parse_prediction
-        result = parse_prediction(raw_response)
 
         # Comprehensive trace
         result["_version"] = "v1"
