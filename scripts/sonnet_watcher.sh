@@ -45,7 +45,7 @@ while true; do
 
     # Skip during Claude peak hours (weekdays 8AM-2PM ET) to save tokens
     if is_peak_hours; then
-        current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep "bin/python" | wc -l | tr -d ' ')
+        current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep -v "sh -c" | wc -l | tr -d ' ')
         if [ "$current" -gt 0 ]; then
             log "Peak hours detected ($(date '+%H:%M')), stopping $current sonnet processes"
             pkill -f "run_pilot.*sonnet" 2>/dev/null
@@ -54,7 +54,7 @@ while true; do
         continue
     fi
 
-    current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep "bin/python" | wc -l | tr -d ' ')
+    current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep -v "sh -c" | wc -l | tr -d ' ')
     
     if [ "$current" -gt "$TARGET" ]; then
         log "Sonnet processes: $current/$TARGET, converging (no new spawns, waiting for $((current - TARGET)) to finish)"
