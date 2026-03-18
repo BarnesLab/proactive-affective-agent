@@ -8,7 +8,8 @@ Design:
 All inference routes through Claude Max subscription (free, no API cost).
 
 Iterates users -> EMA entries chronologically -> calls agent.predict() ->
-collects results. Supports checkpointing, dry-run mode, and per-user output.
+collects results. Supports checkpointing, dry-run mode, per-user output,
+and automatic wait-and-retry on weekly rate limits.
 No group dependency: uses combined test data from all 5 splits.
 """
 
