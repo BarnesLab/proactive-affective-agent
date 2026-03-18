@@ -67,19 +67,17 @@ while true; do
         cd "$PROJ_DIR"
         source .venv/bin/activate 2>/dev/null
         
-        # Get next tasks from python
+        # Get next tasks from python (with quality check)
         $VENV -c "
 import os, glob, subprocess, sys
 sys.path.insert(0, '.')
-from src.data.loader import DataLoader
 
 versions = ['callm','v1','v2','v3','v4','v5','v6']
 target_users = [399, 258, 43, 71, 211, 505, 513, 363, 275, 437, 362, 86, 24, 164, 169, 119, 99, 61, 458, 403, 503, 41, 310, 338, 25, 40, 89, 232, 242, 299, 455, 187, 499, 320, 257, 361, 95, 103, 75, 83, 464, 335, 392, 351, 60, 82, 260, 189, 140, 98]
 
-# What's done
-done = set()
-for f in glob.glob('outputs/pilot_v2/*_records.jsonl') + glob.glob('outputs/pilot/*_records.jsonl'):
-    done.add(os.path.basename(f).replace('_records.jsonl','').lower())
+# What's done — USE QUALITY CHECK instead of just file existence
+from scripts.quality_check import get_done_set
+done = get_done_set(versions)
 
 # What's running
 running = set()
