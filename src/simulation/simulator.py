@@ -23,6 +23,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.utils.rate_limit import RateLimitError
+
 from src.agent.personal_agent import PersonalAgent
 from src.data.loader import DataLoader
 from src.data.preprocessing import align_sensing_to_ema, get_user_trait_profile, prepare_pilot_data
