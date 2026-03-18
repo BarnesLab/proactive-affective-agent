@@ -101,28 +101,30 @@ for u in target_users:
     if remaining > 0:
         user_completion[u] = (completed, remaining)
 
-# Sort: most completed first (closest to done)
+# USER-FIRST scheduling: prioritize users closest to completion
+# so more users finish sooner, rather than concentrating on one version
 sorted_users = sorted(user_completion.keys(), key=lambda u: -user_completion[u][0])
-
-# Priority order: v6 first, then v5, v4, ... (finish higher versions first)
-priority_versions = list(reversed(versions))
 
 needed = $needed
 launched = 0
-for v in priority_versions:
+launched_set = set()  # avoid launching 2 tasks for same user in one cycle
+
+for u in sorted_users:
     if launched >= needed:
         break
-    for u in sorted_users:
+    # For this user, pick the first missing version (any order)
+    for v in versions:
         if launched >= needed:
             break
         key = f'{v}_user{u}'
-        if key not in done and key not in running:
+        if key not in done and key not in running and u not in launched_set:
             outdir = '$OUTDIR'
             logf = f'{outdir}/logs/{v}_user{u}.log'
-            cmd = f'nohup $VENV scripts/run_pilot.py --version {v} --users {u} --model sonnet --delay 1.0 --output-dir {outdir} --verbose > {logf} 2>&1 &'
+            cmd = f'cd $PROJ_DIR && nohup $VENV scripts/run_pilot.py --version {v} --users {u} --model sonnet --delay 1.0 --output-dir {outdir} --verbose > {logf} 2>&1 &'
             os.system(cmd)
             print(f'Launched: {v} user{u}')
             launched += 1
+            launched_set.add(u)  # one task per user per cycle
 " 2>> "$LOG"
     fi
     
