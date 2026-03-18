@@ -15,7 +15,7 @@ mkdir -p "$OUTDIR/logs"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
 
-is_peak_hours() {
+is_peak_hours() { return 1  # DISABLED — full speed until defense
     # Peak: weekdays 8AM-2PM ET (Claude promo: 2026-03-13 to 2026-03-27)
     local dow=$(date +%u)  # 1=Mon, 7=Sun
     local hour=$(date +%H)
@@ -74,7 +74,7 @@ while true; do
 import os, glob, subprocess, sys
 sys.path.insert(0, '.')
 
-versions = ['callm','v1','v2','v3','v4','v5','v6']
+versions = ['callm']  # TEMP: callm-only sprint until done, then restore all
 target_users = [399, 258, 43, 71, 211, 505, 513, 363, 275, 437, 362, 86, 24, 164, 169, 119, 99, 61, 458, 403, 503, 41, 310, 338, 25, 40, 89, 232, 242, 299, 455, 187, 499, 320, 257, 361, 95, 103, 75, 83, 464, 335, 392, 351, 60, 82, 260, 189, 140, 98]
 
 # What's done — USE QUALITY CHECK instead of just file existence
