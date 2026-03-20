@@ -395,7 +395,7 @@ class AgenticCCAgent:
     _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
     _PATIENT_WAIT = 300  # 5 minutes — slow retry after fast retries exhausted
     _HOURLY_WAIT = 10800  # 3 hours — 5h rolling limit needs ~5h to reset
-    _HOURLY_MAX_RETRIES = 12  # up to 6 hours total
+    _HOURLY_MAX_RETRIES = 999  # effectively unlimited — wait until limit resets
     _TIMEOUT_RETRIES = 3
     _TIMEOUT_BACKOFF = [10, 20, 40]
 
