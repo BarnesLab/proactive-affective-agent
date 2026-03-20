@@ -144,15 +144,19 @@ class ClaudeCodeClient:
                 stderr_preview = stderr[:300] if stderr else "(empty)"
 
                 if limit_type == RateLimitType.WEEKLY:
+                    weekly_wait = 3600  # 1 hour
                     send_telegram(
                         f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
-                        f"Experiment stopped. Resume after limit resets.",
+                        f"Waiting {weekly_wait // 60}min and retrying (user may switch accounts).",
                         dedup_key="weekly_structured",
+                        dedup_ttl=7200,
                     )
-                    raise RateLimitError(
-                        f"Weekly rate limit: {stderr_preview}",
-                        RateLimitType.WEEKLY,
+                    logger.warning(
+                        f"Weekly rate limit. Waiting {weekly_wait}s..."
                     )
+                    import time as _time
+                    _time.sleep(weekly_wait)
+                    continue
 
                 if limit_type == RateLimitType.HOURLY:
                     hourly_attempts += 1
