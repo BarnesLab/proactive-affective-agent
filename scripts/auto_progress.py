@@ -4,10 +4,20 @@ import os, glob, re, subprocess, json, sys
 from collections import defaultdict
 
 base = '/Users/zwang/Documents/proactive-affective-agent'
+workspace = '/Users/zwang/.openclaw/workspace'
 versions = ['callm','v1','v2','v3','v4','v5','v6']
 gpt_versions = ['gpt-' + v for v in versions]
 
 DRY_RUN = '--dry-run' in sys.argv
+
+
+def load_project_control():
+    path = os.path.join(workspace, 'project-control.json')
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
 
 def get_all_users():
     """Get all available user IDs from the dataset"""
