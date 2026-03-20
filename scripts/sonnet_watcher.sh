@@ -5,7 +5,7 @@
 
 trap '' HUP  # Ignore SIGHUP so gateway restart won't kill us
 
-TARGET=15
+TARGET=10
 PROJ_DIR="$HOME/Documents/proactive-affective-agent"
 OUTDIR="$PROJ_DIR/outputs/pilot_v2"
 VENV="$PROJ_DIR/.venv/bin/python"
