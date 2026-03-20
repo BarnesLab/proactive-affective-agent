@@ -160,11 +160,6 @@ class ClaudeCodeClient:
 
                 if limit_type == RateLimitType.HOURLY:
                     hourly_attempts += 1
-                    if hourly_attempts > self._HOURLY_MAX_RETRIES:
-                        raise RuntimeError(
-                            f"Hourly rate limit persisted after {hourly_attempts} attempts "
-                            f"({hourly_attempts * self._HOURLY_WAIT / 3600:.1f}h): {stderr_preview}"
-                        )
                     if not _notified_hourly:
                         send_telegram(
                             f"[proactive-affective-agent] Rate limit hit (structured agent) — waiting 30min\n"
