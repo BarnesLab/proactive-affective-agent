@@ -110,11 +110,25 @@ for adir in glob.glob(os.path.join(base, 'outputs/_archive/pilot_gpt51codexmini*
     for v, users in extra.items():
         mini_done[v].update(users)
 
+control = load_project_control()
+global_paused = bool(control.get('global_pause'))
+project_paused = bool(control.get('projects', {}).get('proactive-affective-agent', {}).get('paused'))
+claude_paused = bool(control.get('model_pause', {}).get('claude'))
+openai_paused = bool(control.get('model_pause', {}).get('openai'))
+
 running = get_running()
 target_users = plan_40_users(sonnet_done, mini_done, all_users)
 
 print(f"Target {len(target_users)} users: {target_users}")
 print(f"Currently running: {len(running)} tasks")
+if global_paused:
+    print("Global pause is ON — will not launch any tasks.")
+if project_paused:
+    print("Project pause is ON for proactive-affective-agent — will not launch any tasks.")
+if claude_paused:
+    print("Claude/Sonnet is paused by project-control.json — skipping sonnet launches.")
+if openai_paused:
+    print("OpenAI/GPT is paused by project-control.json — skipping GPT launches.")
 
 # Find gaps
 sonnet_gaps = []
@@ -174,6 +188,16 @@ def user_first_schedule_per_model(gaps, model_name, target_users):
 print("\n--- User-first scheduling (per model) ---")
 sonnet_ordered = user_first_schedule_per_model(sonnet_gaps, 'sonnet', target_users)
 mini_ordered = user_first_schedule_per_model(mini_gaps, 'gpt-5.1-codex-mini', target_users)
+
+if global_paused or project_paused:
+    sonnet_ordered = []
+    mini_ordered = []
+    available = 0
+else:
+    if claude_paused:
+        sonnet_ordered = []
+    if openai_paused:
+        mini_ordered = []
 
 # Interleave: alternate between models to keep both progressing
 to_launch = []
