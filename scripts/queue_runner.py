@@ -36,8 +36,11 @@ LOG_DIR = PILOT_DIR / "queue_logs"
 
 ALL_VERSIONS = ["CALLM", "v1", "v2", "v3", "v4", "v5", "v6"]
 AGENTIC_VERSIONS = {"v2", "v4", "v5", "v6"}  # set for fast lookup
-# pilot_v2 (original 10) + pilot_v1 users with 3+ versions (5 new)
-USERS = [43, 258, 338, 399, 403, 275, 513, 362, 71, 437, 24, 119, 164, 310, 458]
+# All 50 users (matches evaluate_pilot.py PRIMARY_USERS + remaining)
+USERS = [24, 25, 40, 41, 43, 60, 61, 71, 75, 82, 83, 86, 89, 95, 98, 99,
+         103, 119, 140, 164, 169, 187, 189, 211, 232, 242, 257, 258, 260,
+         275, 299, 310, 320, 335, 338, 351, 361, 362, 363, 392, 399, 403,
+         437, 455, 458, 464, 499, 503, 505, 513]
 
 logging.basicConfig(
     level=logging.INFO,

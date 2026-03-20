@@ -37,10 +37,11 @@ Internal code still uses v1-v6. Paper uses descriptive names. Never use v1-v6 in
 - Sync via MCP: `mcp__overleaf__write_file` then `commit_changes` then `push_changes`
 - `draft/` is gitignored (Overleaf-managed, not in GitHub)
 
-## Key Evaluation (as of 2026-03-17)
-- **18-user primary set** (V2/V4/V5/V6 complete). CALLM/V1: 13/18, V3: 10/18.
+## Key Evaluation (as of 2026-03-20)
+- **50 users, 7 versions**: 217/350 checkpoints complete, 133 tasks running/queued
+- **18-user primary set**: V2/V4/V5/V6 complete (18/18). CALLM: 16/18, V1: 12/18, V3: 10/18.
 - **Metrics**: BA and F1 only. No MAE (dropped). No AR baseline (unfair — assumes oracle access to previous EMA).
-- **Results**: Auto-Multi+ BA=0.669, Auto-Multi BA=0.666 (best systems)
+- **evaluation.json is STALE** (2026-03-12) — re-run after tasks complete
 - Script: `PYTHONPATH=. python3 scripts/evaluate_pilot.py`
 
 ## Running Tests
@@ -49,10 +50,16 @@ PYTHONPATH=. python3 -m pytest tests/ -v
 python3 scripts/integration_test.py --n-entries 10
 ```
 
+## Experiment Execution
+- **sonnet_watcher.sh**: daemon that maintains TARGET parallel `run_pilot.py` processes
+- **Completion detection**: `quality_check.get_done_set()` checks checkpoint n_entries vs expected (≥95% = done)
+- **Rate limits**: all wait indefinitely (5h rolling → 3h wait, weekly → 12h wait). Never produces empty predictions.
+- **Peak hours**: weekdays 8AM-2PM, no new launches (running tasks continue)
+- **Scheduling**: user-first (users closest to 7/7 completion get priority)
+- **Legacy `outputs/pilot/`**: Haiku-contaminated, NOT used by evaluation
+
 ## Known Issues
-1. Max rate limits: limit to ~5 concurrent `claude --print` processes
-2. Corrupted V1 checkpoints: user61 (1651), user86 (1317), user99 (1569) — auto-filtered by evaluate_pilot.py
-3. V3 is bottleneck: only 10/18 users complete
+1. Corrupted V1 checkpoints: user61 (1651), user86 (1317), user99 (1569) — auto-filtered by evaluate_pilot.py
 
 ## Conventions
 - All code, comments, commit messages in English

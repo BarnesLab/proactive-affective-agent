@@ -35,10 +35,9 @@ PRIMARY_USERS = [24, 43, 71, 119, 164, 232, 242, 258, 275, 310, 338, 362, 399, 4
 PILOT_USERS = PRIMARY_USERS  # backward compat
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
-# Multiple checkpoint directories (newer takes precedence)
+# Only use pilot_v2 — legacy pilot/ has Haiku-contaminated checkpoints
 DEFAULT_CHECKPOINT_DIRS = [
     "outputs/pilot_v2/checkpoints",
-    "outputs/pilot/checkpoints",
 ]
 
 # Targets to show prominently in the summary table
