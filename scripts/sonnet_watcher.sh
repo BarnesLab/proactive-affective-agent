@@ -49,12 +49,12 @@ while true; do
         rm -f "$RATE_LIMIT_FLAG"
     fi
 
-    # Skip during Claude peak hours (weekdays 8AM-2PM ET) to save tokens
+    # During peak hours (weekdays 8AM-2PM ET): don't launch new tasks,
+    # but let running ones finish to avoid wasting partial work.
     if is_peak_hours; then
         current=$(ps aux | grep "run_pilot.*sonnet" | grep -v grep | grep -v "sh -c" | wc -l | tr -d ' ')
         if [ "$current" -gt 0 ]; then
-            log "Peak hours detected ($(date '+%H:%M')), stopping $current sonnet processes"
-            pkill -f "run_pilot.*sonnet" 2>/dev/null
+            log "Peak hours ($(date '+%H:%M')), $current tasks still running (letting them finish, no new launches)"
         fi
         # Still update pulse during peak hours so heartbeat doesn't flag us as dead
         $VENV -c "import json,time;f='$HOME/.openclaw/pulse.json';d=json.load(open(f)) if __import__('os').path.exists(f) else {};d['sonnet-watcher']=int(time.time());json.dump(d,open(f,'w'),indent=2)" 2>/dev/null
