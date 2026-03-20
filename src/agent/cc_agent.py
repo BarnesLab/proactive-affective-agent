@@ -394,7 +394,7 @@ class AgenticCCAgent:
     _TRANSIENT_RETRIES = 3
     _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
     _PATIENT_WAIT = 300  # 5 minutes — slow retry after fast retries exhausted
-    _HOURLY_WAIT = 1800  # 30 minutes
+    _HOURLY_WAIT = 10800  # 3 hours — 5h rolling limit needs ~5h to reset
     _HOURLY_MAX_RETRIES = 12  # up to 6 hours total
     _TIMEOUT_RETRIES = 3
     _TIMEOUT_BACKOFF = [10, 20, 40]
@@ -499,7 +499,7 @@ class AgenticCCAgent:
                     stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
                     if limit_type == RateLimitType.WEEKLY:
-                        weekly_wait = 14400  # 4 hours — may need to wait overnight
+                        weekly_wait = 43200  # 12 hours — weekly reset, wait overnight
                         msg = (
                             f"[proactive-affective-agent] Weekly rate limit hit\n"
                             f"Version: {self._version.upper()}, User: {self.study_id}\n"
