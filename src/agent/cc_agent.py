@@ -499,7 +499,7 @@ class AgenticCCAgent:
                     stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
                     if limit_type == RateLimitType.WEEKLY:
-                        weekly_wait = 3600  # 1 hour
+                        weekly_wait = 14400  # 4 hours — may need to wait overnight
                         msg = (
                             f"[proactive-affective-agent] Weekly rate limit hit\n"
                             f"Version: {self._version.upper()}, User: {self.study_id}\n"

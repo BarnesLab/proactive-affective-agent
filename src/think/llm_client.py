@@ -144,7 +144,7 @@ class ClaudeCodeClient:
                 stderr_preview = stderr[:300] if stderr else "(empty)"
 
                 if limit_type == RateLimitType.WEEKLY:
-                    weekly_wait = 3600  # 1 hour
+                    weekly_wait = 14400  # 4 hours — may need to wait overnight
                     send_telegram(
                         f"[proactive-affective-agent] Weekly rate limit hit (structured agent)\n"
                         f"Waiting {weekly_wait // 60}min and retrying (user may switch accounts).",
