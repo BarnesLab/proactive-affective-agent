@@ -499,16 +499,16 @@ class AgenticCCAgent:
                     stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
                     if limit_type == RateLimitType.WEEKLY:
+                        weekly_wait = 3600  # 1 hour
                         msg = (
                             f"[proactive-affective-agent] Weekly rate limit hit\n"
                             f"Version: {self._version.upper()}, User: {self.study_id}\n"
-                            f"Experiment stopped. Resume after limit resets."
+                            f"Waiting {weekly_wait // 60}min and retrying (user may switch accounts)."
                         )
-                        send_telegram(msg, dedup_key="weekly_agentic")
-                        raise RateLimitError(
-                            f"Weekly rate limit hit: {stderr_preview}",
-                            RateLimitType.WEEKLY,
-                        )
+                        send_telegram(msg, dedup_key="weekly_agentic", dedup_ttl=7200)
+                        logger.warning(f"{tag} Weekly rate limit. Waiting {weekly_wait}s...")
+                        time.sleep(weekly_wait)
+                        continue
 
                     if limit_type == RateLimitType.HOURLY:
                         hourly_attempts += 1
