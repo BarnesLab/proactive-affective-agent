@@ -220,8 +220,6 @@ class ClaudeCodeClient:
                 timeout_attempts = 0
                 continue
 
-            except RateLimitError:
-                raise
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
