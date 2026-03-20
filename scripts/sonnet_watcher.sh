@@ -15,8 +15,8 @@ mkdir -p "$OUTDIR/logs"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"; }
 
-is_peak_hours() { return 1  # DISABLED — full speed until defense
-    # Peak: weekdays 8AM-2PM ET (Claude promo: 2026-03-13 to 2026-03-27)
+is_peak_hours() {
+    # Peak: weekdays 8AM-2PM ET — pause to avoid rate limits during high usage
     local dow=$(date +%u)  # 1=Mon, 7=Sun
     local hour=$(date +%H)
     # Weekday (1-5) AND 8-13 (8AM to 1:59PM)
