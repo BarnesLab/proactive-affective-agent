@@ -154,8 +154,7 @@ class ClaudeCodeClient:
                     logger.warning(
                         f"Weekly rate limit. Waiting {weekly_wait}s..."
                     )
-                    import time as _time
-                    _time.sleep(weekly_wait)
+                    time.sleep(weekly_wait)
                     continue
 
                 if limit_type == RateLimitType.HOURLY:
