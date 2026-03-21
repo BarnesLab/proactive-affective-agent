@@ -304,6 +304,7 @@ class AgenticCCAgent:
         """
         ema_timestamp = str(ema_row.get("timestamp_local", ""))
         ema_date = str(ema_row.get("date_local", ""))
+        self._current_ema_timestamp = ema_timestamp
         ema_slot = self._get_ema_slot(ema_row)
 
         # Only include diary text in multimodal modes (V4, V6)
@@ -360,16 +361,18 @@ class AgenticCCAgent:
         prediction["_diary_length"] = len(effective_diary) if prediction["_has_diary"] else 0
         prediction["_emotion_driver"] = effective_diary or ""
 
-        # Tool call extraction: use num_turns from JSON wrapper (most reliable),
-        # supplemented by regex extraction from text for tool names
+        # Tool call extraction: read MCP server-side tool log, fall back to num_turns
         num_turns = getattr(self, "_last_num_turns", 1)
-        parsed_tool_calls = self._parse_tool_calls_from_output(output)
-        # num_turns > 1 means tool-use occurred; n_tool_calls = turns - 1
-        # (first turn = initial prompt, subsequent turns = tool call + response)
-        n_tool_calls_from_turns = max(0, num_turns - 1)
-        prediction["_tool_calls"] = parsed_tool_calls
-        prediction["_n_tool_calls"] = n_tool_calls_from_turns or len(parsed_tool_calls)
-        prediction["_n_rounds"] = n_tool_calls_from_turns
+        mcp_tool_calls = self._read_mcp_tool_log(ema_date)
+        if mcp_tool_calls:
+            prediction["_tool_calls"] = mcp_tool_calls
+            prediction["_n_tool_calls"] = len(mcp_tool_calls)
+        else:
+            parsed_tool_calls = self._parse_tool_calls_from_output(output)
+            n_tool_calls_from_turns = max(0, num_turns - 1)
+            prediction["_tool_calls"] = parsed_tool_calls
+            prediction["_n_tool_calls"] = n_tool_calls_from_turns or len(parsed_tool_calls)
+        prediction["_n_rounds"] = max(0, num_turns - 1)
         prediction["_conversation_length"] = num_turns
         usage = getattr(self, "_last_usage", {})
         prediction["_input_tokens"] = usage.get("input_tokens", 0)
@@ -605,6 +608,100 @@ class AgenticCCAgent:
             pass
         return raw
 
+    def _unwrap_stream_json(self, raw: str, tag: str = "") -> str:
+        """Parse --output-format stream-json --verbose output.
+
+        Extracts: final text result, token usage, num_turns, and detailed tool calls
+        (tool name, input, result) from the conversation stream.
+        """
+        if not raw:
+            return ""
+
+        events = []
+        for line in raw.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+        if not events:
+            return raw
+
+        # Extract tool calls from assistant messages
+        tool_calls_detail = []
+        tool_results = {}  # tool_use_id -> result content
+        final_text = ""
+        last_assistant_text = ""
+
+        for event in events:
+            etype = event.get("type", "")
+
+            # Result event (final summary)
+            if etype == "result":
+                usage = event.get("usage", {})
+                if isinstance(usage, dict):
+                    self._last_usage = {
+                        "input_tokens": usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+                        "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+                        "cost_usd": event.get("total_cost_usd", 0),
+                    }
+                    logger.info(f"{tag} tokens: {self._last_usage.get('input_tokens', 0)}in + {self._last_usage.get('output_tokens', 0)}out")
+                num_turns = event.get("num_turns", 1)
+                self._last_num_turns = num_turns
+                if num_turns > 1:
+                    logger.info(f"{tag} Multi-turn: {num_turns} turns (tool-use confirmed)")
+                final_text = str(event.get("result", ""))
+                continue
+
+            # Assistant messages: extract tool_use blocks and text
+            if etype == "assistant":
+                msg = event.get("message", {})
+                for block in msg.get("content", []):
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_use":
+                        tool_calls_detail.append({
+                            "id": block.get("id", ""),
+                            "name": block.get("name", ""),
+                            "input": block.get("input", {}),
+                        })
+                    elif block.get("type") == "text":
+                        last_assistant_text = block.get("text", "")
+
+            # User messages with tool_result
+            if etype == "user":
+                msg = event.get("message", {})
+                for block in msg.get("content", []):
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        content = block.get("content", "")
+                        if isinstance(content, list):
+                            # Extract text from content blocks
+                            content = " ".join(
+                                c.get("text", "") for c in content
+                                if isinstance(c, dict) and c.get("type") == "text"
+                            )
+                        tool_results[tid] = str(content)[:2000]  # cap size
+
+        # Attach results to tool calls
+        for tc in tool_calls_detail:
+            tc["result"] = tool_results.get(tc["id"], "")
+
+        # Store for prediction extraction
+        self._last_tool_calls_detail = tool_calls_detail
+        if tool_calls_detail:
+            names = [tc["name"] for tc in tool_calls_detail]
+            logger.info(f"{tag} Tool calls captured: {names}")
+
+        return final_text or last_assistant_text
+
     # ------------------------------------------------------------------
     # Private: prompt building
     # ------------------------------------------------------------------
@@ -721,6 +818,43 @@ Date: {ema_date}
     # ------------------------------------------------------------------
     # Private: parsing helpers
     # ------------------------------------------------------------------
+
+    def _read_mcp_tool_log(self, ema_date: str) -> list[dict[str, Any]]:
+        """Read tool calls logged by the MCP server for this (user, date) pair.
+
+        The MCP server writes JSONL to outputs/pilot_v2/tool_logs/user{id}_{date}.jsonl.
+        We read entries matching our ema_timestamp and consume (delete) the file.
+        """
+        tool_log_dir = PROJECT_ROOT / "outputs" / "pilot_v2" / "tool_logs"
+        log_file = tool_log_dir / f"user{self.study_id}_{ema_date}.jsonl"
+        if not log_file.exists():
+            return []
+
+        tool_calls = []
+        try:
+            with open(log_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    # Only include records matching our ema_timestamp
+                    if record.get("ema_timestamp") == self._current_ema_timestamp:
+                        tool_calls.append({
+                            "name": record.get("tool", ""),
+                            "input": record.get("inputs", {}),
+                            "result_preview": record.get("result_preview", ""),
+                            "result_length": record.get("result_length", 0),
+                        })
+            # Clean up after reading
+            log_file.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to read MCP tool log {log_file}: {e}")
+
+        if tool_calls:
+            names = [tc["name"] for tc in tool_calls]
+            logger.info(f"MCP tool log: {names}")
+        return tool_calls
 
     def _parse_tool_calls_from_output(self, output: str) -> list[dict[str, Any]]:
         """Best-effort extraction of tool calls from claude --print output."""

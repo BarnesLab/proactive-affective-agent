@@ -47,6 +47,63 @@ _args = _parse_args()
 _study_id: int = _args.study_id
 _ema_timestamp: str = _args.ema_timestamp
 _ema_date: str = _args.ema_date or _ema_timestamp[:10]
+
+# ---------------------------------------------------------------------------
+# Tool call logging — writes JSONL to a shared log file per (version, user)
+# ---------------------------------------------------------------------------
+
+import json as _json
+import time as _time
+import os as _os
+
+_TOOL_LOG_DIR = PROJECT_ROOT / "outputs" / "pilot_v2" / "tool_logs"
+_TOOL_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _log_tool_call(tool_name: str, inputs: dict, result_preview: str) -> None:
+    """Append a tool call record to the per-session JSONL log."""
+    try:
+        log_file = _TOOL_LOG_DIR / f"user{_study_id}_{_ema_date}.jsonl"
+        record = {
+            "ts": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "study_id": _study_id,
+            "ema_date": _ema_date,
+            "ema_timestamp": _ema_timestamp,
+            "tool": tool_name,
+            "inputs": inputs,
+            "result_length": len(result_preview),
+            "result_preview": result_preview[:500],
+        }
+        with open(log_file, "a") as f:
+            f.write(_json.dumps(record) + "\n")
+    except Exception:
+        pass  # best-effort logging, never break the tool
+
+
+import functools as _functools
+
+
+def _logged_tool(fn):
+    """Decorator that logs every MCP tool call to JSONL."""
+    @_functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        # Capture input args
+        import inspect
+        try:
+            sig = inspect.signature(fn)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            inputs = dict(bound.arguments)
+        except Exception:
+            inputs = {"args": str(args), "kwargs": str(kwargs)}
+        # Call original
+        result = fn(*args, **kwargs)
+        # Log
+        _log_tool_call(fn.__name__, inputs, str(result))
+        import sys as _sys
+        print(f"[TOOL_LOG] {fn.__name__} logged to {_TOOL_LOG_DIR}", file=_sys.stderr)
+        return result
+    return wrapper
 _data_dir: Path = Path(_args.data_dir) if _args.data_dir else PROJECT_ROOT / "data" / "processed" / "hourly"
 _peer_db_path: str = _args.peer_db_path
 
@@ -67,6 +124,18 @@ except Exception:
     _ema_df = pd.DataFrame()
 
 _engine = SensingQueryEngine(processed_dir=_data_dir, ema_df=_ema_df)
+
+# Monkey-patch call_tool to log every MCP tool invocation
+_original_call_tool = _engine.call_tool
+
+
+def _logging_call_tool(tool_name, tool_input, study_id=None, ema_timestamp=None, **kwargs):
+    result = _original_call_tool(tool_name, tool_input, study_id=study_id, ema_timestamp=ema_timestamp, **kwargs)
+    _log_tool_call(tool_name, tool_input, str(result))
+    return result
+
+
+_engine.call_tool = _logging_call_tool
 
 # ---------------------------------------------------------------------------
 # Peer database for cross-user search (loaded once at startup)
@@ -340,11 +409,14 @@ def find_peer_cases(
     top_k = min(max(top_k, 1), 10)
 
     if search_mode == "text":
-        return _peer_search_text(query_text, top_k)
+        result = _peer_search_text(query_text, top_k)
     elif search_mode == "sensing":
-        return _peer_search_sensing(top_k)
+        result = _peer_search_sensing(top_k)
     else:
-        return f"Unknown search_mode '{search_mode}'. Use 'text' or 'sensing'."
+        result = f"Unknown search_mode '{search_mode}'. Use 'text' or 'sensing'."
+
+    _log_tool_call("find_peer_cases", {"search_mode": search_mode, "query_text": query_text[:100], "top_k": top_k}, result)
+    return result
 
 
 def _peer_search_text(query_text: str, top_k: int) -> str:
