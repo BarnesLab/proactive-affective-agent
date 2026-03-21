@@ -317,7 +317,17 @@ class AgenticCCAgent:
         else:
             effective_diary = None
 
-        prompt = self._build_prompt(ema_timestamp, ema_date, ema_slot, effective_diary, session_memory)
+        raw_prompt = self._build_prompt(ema_timestamp, ema_date, ema_slot, effective_diary, session_memory)
+        # Prepend ToolSearch activation for agentic modes (V2/V4)
+        # MCP sensing tools are deferred and must be discovered via ToolSearch first
+        if self.mode in ("sensing_only", "multimodal"):
+            prompt = (
+                'STEP 0: Use the ToolSearch tool with query "select:mcp__sensing__get_daily_summary,mcp__sensing__get_behavioral_timeline,mcp__sensing__query_sensing,mcp__sensing__compare_to_baseline,mcp__sensing__find_similar_days,mcp__sensing__find_peer_cases,mcp__sensing__get_receptivity_history,mcp__sensing__query_raw_events" '
+                "to load the MCP sensing tool schemas. You MUST do this before you can call any sensing tool.\n\n"
+                + raw_prompt
+            )
+        else:
+            prompt = raw_prompt
         system_prompt = {
             "sensing_only": SYSTEM_PROMPT_SENSING_ONLY,
             "multimodal": SYSTEM_PROMPT_MULTIMODAL,
