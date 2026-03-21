@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 HOURLY_DIR = Path("data/processed/hourly")
 OUTPUT_DIR = Path("data/processed/filtered")
+SPLITS_DIR = Path("data/processed/splits")
+
+# Cache for EMA entries (loaded once per run)
+_ema_cache: pd.DataFrame | None = None
 
 # ── Platform detection ──────────────────────────────────────────────
 
@@ -372,129 +377,267 @@ def generate_narrative(row: pd.Series, platform: str) -> str:
     return "\n".join(parts)
 
 
-# ── Main pipeline ───────────────────────────────────────────────────
+# ── EMA loading & per-EMA filtering ─────────────────────────────────
 
 
-def build_filtered_for_user(pid: str) -> pd.DataFrame | None:
-    """Build filtered daily data for a single user."""
-    platform = detect_platform(pid)
+def load_all_ema_entries() -> pd.DataFrame:
+    """Load all EMA entries from train+test splits (cached per run)."""
+    global _ema_cache
+    if _ema_cache is not None:
+        return _ema_cache
 
-    # Load all modalities
-    motion_h = load_hourly(pid, "motion")
-    screen_h = load_hourly(pid, "screen")
-    keyboard_h = load_hourly(pid, "keyinput")
-    light_h = load_hourly(pid, "light") if platform == "android" else None
-    music_h = load_hourly(pid, "mus")
+    dfs = []
+    for split_file in sorted(SPLITS_DIR.glob("group_*_*.csv")):
+        df = pd.read_csv(split_file)
+        dfs.append(df)
+    if not dfs:
+        raise FileNotFoundError(f"No split files found in {SPLITS_DIR}")
+    combined = pd.concat(dfs, ignore_index=True)
+    combined["timestamp_local"] = pd.to_datetime(combined["timestamp_local"])
+    combined["date_local"] = pd.to_datetime(combined["date_local"]).dt.date
+    # Deduplicate (same entry appears in train of one group + test of another)
+    combined = combined.drop_duplicates(subset=["Study_ID", "timestamp_local"])
+    _ema_cache = combined
+    logger.info(f"Loaded {len(_ema_cache)} unique EMA entries from splits")
+    return _ema_cache
 
-    # Aggregate to daily
+
+def _filter_hourly_before_ema(
+    df: pd.DataFrame | None, ema_ts: pd.Timestamp, ema_date,
+) -> pd.DataFrame:
+    """Filter hourly data to today's bins fully before EMA timestamp.
+
+    A bin [hour_local, hour_local+1h) is safe iff hour_local+1h <= ema_ts.
+    Only returns bins on ema_date.
+    """
+    if df is None or df.empty or "hour_local" not in df.columns:
+        return pd.DataFrame()
+    df = df.copy()
+    df["hour_local"] = pd.to_datetime(df["hour_local"])
+    df["date_local"] = df["hour_local"].dt.date
+    mask = (df["date_local"] == ema_date) & (
+        df["hour_local"] + pd.Timedelta(hours=1) <= ema_ts
+    )
+    return df[mask]
+
+
+def _filter_hourly_yesterday(
+    df: pd.DataFrame | None, yesterday_date,
+) -> pd.DataFrame:
+    """Get full day of hourly data for yesterday."""
+    if df is None or df.empty or "hour_local" not in df.columns:
+        return pd.DataFrame()
+    df = df.copy()
+    df["hour_local"] = pd.to_datetime(df["hour_local"])
+    df["date_local"] = df["hour_local"].dt.date
+    return df[df["date_local"] == yesterday_date]
+
+
+def _last_full_hour_label(ema_ts: pd.Timestamp) -> str:
+    """Return HH:00 label for the cutoff time (last included bin's end).
+
+    E.g., EMA at 13:37 → last bin 12:00-13:00 → returns "13:00".
+         EMA at 14:00 → last bin 13:00-14:00 → returns "14:00".
+         EMA at 08:15 → last bin 07:00-08:00 → returns "08:00".
+    """
+    return ema_ts.floor("h").strftime("%H:%M")
+
+
+def _agg_to_row(
+    motion_h: pd.DataFrame,
+    screen_h: pd.DataFrame,
+    keyboard_h: pd.DataFrame,
+    light_h: pd.DataFrame,
+    music_h: pd.DataFrame,
+    platform: str,
+    target_date,
+) -> pd.Series | None:
+    """Aggregate pre-filtered hourly data into a single row of features."""
     motion_d = agg_motion_daily(motion_h)
     screen_d = agg_screen_daily(screen_h)
     keyboard_d = agg_keyboard_daily(keyboard_h)
     light_d = agg_light_daily(light_h)
     music_d = agg_music_daily(music_h)
-
-    # App data from screen parquet (Android only)
     app_d = agg_app_daily(screen_h) if platform == "android" else pd.DataFrame()
 
-    # Collect all dates
-    all_dates = set()
-    for df in [motion_d, screen_d, keyboard_d, light_d, music_d, app_d]:
-        if df is not None and not df.empty and "date_local" in df.columns:
-            all_dates.update(df["date_local"].tolist())
-
-    if not all_dates:
-        return None
-
-    # Build daily dataframe
-    daily = pd.DataFrame({"date_local": sorted(all_dates)})
-    daily["platform"] = platform
-
-    # Modalities available for this user
-    available_mods = ["motion", "screen"]
-    if not keyboard_d.empty:
-        available_mods.append("keyboard")
-    if platform == "android":
-        if not app_d.empty:
-            available_mods.append("app")
-        if not light_d.empty:
-            available_mods.append("light")
-    if not music_d.empty:
-        available_mods.append("music")
-    daily["modalities_available"] = [available_mods] * len(daily)
-
-    # Merge all modalities
+    merged = pd.DataFrame({"date_local": [target_date]})
     for df in [motion_d, screen_d, app_d, keyboard_d, light_d, music_d]:
         if df is not None and not df.empty and "date_local" in df.columns:
-            daily = daily.merge(df, on="date_local", how="left")
+            merged = merged.merge(df, on="date_local", how="left")
 
-    # Data quality flags (computed BEFORE capping for transparency)
-    daily["data_quality_flags"] = ""
+    feat_cols = [c for c in merged.columns if c != "date_local"]
+    if not feat_cols or merged[feat_cols].iloc[0].isna().all():
+        return None
+    return merged.iloc[0]
 
-    def _flag_row(row):
-        flags = []
-        # These checks use the already-capped values, so flag based on
-        # tracked hours exceeding normal expectations
-        scr = _safe_float(row.get("screen_n_sessions"))
-        if scr > 5000:
-            flags.append("high_screen_sessions")
-        return ",".join(flags) if flags else ""
 
-    daily["data_quality_flags"] = daily.apply(_flag_row, axis=1)
+def _generate_ema_narrative(
+    today_row: pd.Series | None,
+    yesterday_row: pd.Series | None,
+    platform: str,
+    ema_ts: pd.Timestamp,
+) -> str:
+    """Generate combined yesterday + today-until-EMA narrative."""
+    parts = []
+    cutoff = _last_full_hour_label(ema_ts)
 
-    # Generate narratives
-    daily["narrative"] = daily.apply(lambda row: generate_narrative(row, platform), axis=1)
+    # Yesterday section (full day, no leakage)
+    if yesterday_row is not None:
+        yest_text = generate_narrative(yesterday_row, platform)
+        parts.append(f"Yesterday:\n{yest_text}")
+    else:
+        parts.append("Yesterday: No data available.")
 
-    return daily
+    # Today section (only bins fully before EMA)
+    if today_row is not None:
+        today_text = generate_narrative(today_row, platform)
+        parts.append(f"Today (until {cutoff}):\n{today_text}")
+    else:
+        parts.append(f"Today (until {cutoff}): No activity data yet.")
+
+    return "\n".join(parts)
+
+
+# ── Main pipeline ───────────────────────────────────────────────────
+
+
+def build_filtered_for_user(pid: str) -> pd.DataFrame | None:
+    """Build per-EMA filtered data for a single user.
+
+    Each EMA entry gets its own row with a narrative reflecting only sensing
+    data strictly before the EMA timestamp (no temporal leakage).
+    Yesterday's full-day summary is included as context.
+    """
+    study_id = int(pid)
+    platform = detect_platform(pid)
+
+    # Load all hourly modality data
+    hourly = {
+        "motion": load_hourly(pid, "motion"),
+        "screen": load_hourly(pid, "screen"),
+        "keyboard": load_hourly(pid, "keyinput"),
+        "light": load_hourly(pid, "light") if platform == "android" else None,
+        "music": load_hourly(pid, "mus"),
+    }
+
+    # Ensure hour_local is datetime for all modalities
+    for mod in hourly:
+        df = hourly[mod]
+        if df is not None and "hour_local" in df.columns:
+            df["hour_local"] = pd.to_datetime(df["hour_local"])
+
+    # Get EMA entries for this user
+    all_ema = load_all_ema_entries()
+    user_ema = all_ema[all_ema["Study_ID"] == study_id].sort_values("timestamp_local")
+
+    if user_ema.empty:
+        logger.warning(f"No EMA entries for user {pid}")
+        return None
+
+    # Detect available modalities
+    available_mods = ["motion", "screen"]
+    if hourly["keyboard"] is not None and not hourly["keyboard"].empty:
+        available_mods.append("keyboard")
+    if platform == "android":
+        s = hourly["screen"]
+        if s is not None and "app_total_min" in s.columns and s["app_total_min"].notna().any():
+            available_mods.append("app")
+        if hourly["light"] is not None and not hourly["light"].empty:
+            available_mods.append("light")
+    if hourly["music"] is not None and not hourly["music"].empty:
+        available_mods.append("music")
+
+    rows = []
+    for _, ema_entry in user_ema.iterrows():
+        ema_ts = ema_entry["timestamp_local"]
+        ema_date = ema_entry["date_local"]
+        yesterday_date = ema_date - timedelta(days=1)
+
+        # Filter today's data: bins fully before EMA
+        today = {mod: _filter_hourly_before_ema(df, ema_ts, ema_date)
+                 for mod, df in hourly.items()}
+
+        # Filter yesterday: full day (no leakage — entirely in the past)
+        yest = {mod: _filter_hourly_yesterday(df, yesterday_date)
+                for mod, df in hourly.items()}
+
+        # Aggregate
+        today_row = _agg_to_row(
+            today["motion"], today["screen"], today["keyboard"],
+            today["light"], today["music"], platform, ema_date,
+        )
+        yesterday_row = _agg_to_row(
+            yest["motion"], yest["screen"], yest["keyboard"],
+            yest["light"], yest["music"], platform, yesterday_date,
+        )
+
+        # Generate combined narrative
+        narrative = _generate_ema_narrative(today_row, yesterday_row, platform, ema_ts)
+
+        # Build output row
+        row_data = {
+            "date_local": ema_date,
+            "ema_timestamp": str(ema_ts),
+            "platform": platform,
+            "modalities_available": ",".join(available_mods),
+            "narrative": narrative,
+        }
+
+        # Add today's feature columns for downstream use
+        if today_row is not None:
+            for col in today_row.index:
+                if col != "date_local":
+                    row_data[col] = today_row[col]
+
+        rows.append(row_data)
+
+    if not rows:
+        return None
+
+    return pd.DataFrame(rows)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Build filtered daily behavioral data")
-    parser.add_argument("--users", type=str, default=None, help="Comma-separated user IDs (default: all)")
+    parser = argparse.ArgumentParser(description="Build filtered per-EMA behavioral data")
+    parser.add_argument("--users", type=str, default=None, help="Comma-separated user IDs (default: all with EMA entries)")
     parser.add_argument("--output-dir", type=str, default=str(OUTPUT_DIR))
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Discover all users from ALL modality directories (not just screen)
+    # Load EMA entries to discover which users need processing
+    all_ema = load_all_ema_entries()
+
     if args.users:
         user_ids = [int(u.strip()) for u in args.users.split(",")]
     else:
-        all_pids = set()
-        for modality in ["screen", "motion", "keyinput", "light", "mus"]:
-            mod_dir = HOURLY_DIR / modality
-            if mod_dir.exists():
-                for f in mod_dir.glob("*_hourly.parquet"):
-                    try:
-                        pid = int(f.stem.split("_")[0])
-                        all_pids.add(pid)
-                    except ValueError:
-                        pass
-        user_ids = sorted(all_pids)
+        user_ids = sorted(all_ema["Study_ID"].unique())
 
     logger.info(f"Processing {len(user_ids)} users → {output_dir}")
 
-    stats = {"android": 0, "ios": 0, "total_days": 0, "skipped": 0}
+    stats = {"android": 0, "ios": 0, "total_entries": 0, "skipped": 0}
 
     for uid in user_ids:
         pid = str(uid).zfill(3)
-        daily = build_filtered_for_user(pid)
+        result = build_filtered_for_user(pid)
 
-        if daily is None or daily.empty:
+        if result is None or result.empty:
             stats["skipped"] += 1
             continue
 
-        platform = daily["platform"].iloc[0]
+        platform = result["platform"].iloc[0]
         stats[platform] += 1
-        stats["total_days"] += len(daily)
+        stats["total_entries"] += len(result)
 
         out_path = output_dir / f"{pid}_daily_filtered.parquet"
-        # Convert list columns to string for parquet compatibility
-        daily["modalities_available"] = daily["modalities_available"].apply(lambda x: ",".join(x) if isinstance(x, list) else x)
-        daily.to_parquet(out_path, index=False)
+        result.to_parquet(out_path, index=False)
+        logger.info(f"  {pid}: {len(result)} EMA entries ({platform})")
 
-    logger.info(f"Done. Android={stats['android']}, iOS={stats['ios']}, "
-                f"skipped={stats['skipped']}, total_days={stats['total_days']}")
+    logger.info(
+        f"Done. Android={stats['android']}, iOS={stats['ios']}, "
+        f"skipped={stats['skipped']}, total_entries={stats['total_entries']}"
+    )
 
     # Print sample narratives for pilot users
     pilot = [71, 119, 164, 310, 458]
@@ -504,7 +647,10 @@ def main():
         if f.exists():
             df = pd.read_parquet(f)
             sample = df.iloc[len(df) // 2]  # middle of the study
-            logger.info(f"\n--- User {uid} ({sample['platform']}) sample day {sample['date_local']} ---")
+            logger.info(
+                f"\n--- User {uid} ({sample['platform']}) "
+                f"EMA {sample.get('ema_timestamp', '?')} ---"
+            )
             logger.info(f"\n{sample['narrative']}")
 
 

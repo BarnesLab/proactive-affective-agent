@@ -736,12 +736,28 @@ class AgenticCCAgent:
     # Private: prompt building
     # ------------------------------------------------------------------
 
-    def _get_filtered_narrative(self, ema_date: str) -> str | None:
-        """Look up the pre-computed filtered narrative for a given date."""
+    def _get_filtered_narrative(self, ema_date: str, ema_timestamp: str | None = None) -> str | None:
+        """Look up the pre-computed filtered narrative for a given (date, timestamp).
+
+        With per-EMA narratives, each EMA entry has its own narrative reflecting
+        only data before that EMA's timestamp. Multiple EMAs on the same day
+        will have different narratives.
+        """
         if self._filtered_df is None:
             return None
-        # Compare as strings to avoid date/datetime type mismatches
-        match = self._filtered_df[self._filtered_df["date_local"].astype(str) == str(ema_date)]
+
+        if ema_timestamp and "ema_timestamp" in self._filtered_df.columns:
+            # Match by both date and ema_timestamp (per-EMA narratives)
+            match = self._filtered_df[
+                (self._filtered_df["date_local"].astype(str) == str(ema_date))
+                & (self._filtered_df["ema_timestamp"].astype(str) == str(ema_timestamp))
+            ]
+        else:
+            # Fallback: match by date only (legacy daily narratives)
+            match = self._filtered_df[
+                self._filtered_df["date_local"].astype(str) == str(ema_date)
+            ]
+
         if match.empty:
             return None
         narrative = match.iloc[0].get("narrative", "")
@@ -771,7 +787,7 @@ class AgenticCCAgent:
         # Filtered narrative section (V5/V6)
         narrative_section = ""
         if self.mode in ("filtered_sensing", "filtered_multimodal"):
-            narrative = self._get_filtered_narrative(ema_date)
+            narrative = self._get_filtered_narrative(ema_date, ema_timestamp)
             if narrative:
                 narrative_section = f"\n## Daily Behavioral Narrative (pre-computed summary for {ema_date})\n{narrative}\n"
             else:

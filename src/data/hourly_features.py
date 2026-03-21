@@ -465,10 +465,19 @@ class HourlyFeatureLoader:
         window_start: datetime,
         window_end: datetime,
     ) -> pd.DataFrame:
-        """Slice a Parquet DataFrame to rows whose hour_start falls in [start, end)."""
+        """Slice a Parquet DataFrame to hourly bins fully contained in [start, end).
+
+        A bin [hour_start, hour_start+1h) is included only if its entire span
+        is before window_end (the EMA timestamp).  This prevents temporal data
+        leakage: if EMA is at 13:37, the 13:00 bin (covering 13:00-14:00) is
+        excluded because it contains 23 minutes of post-EMA data.
+        """
         if df.empty or "hour_start" not in df.columns:
             return df
-        mask = (df["hour_start"] >= window_start) & (df["hour_start"] < window_end)
+        # Only include bins whose end (hour_start + 1h) <= window_end
+        mask = (df["hour_start"] >= window_start) & (
+            df["hour_start"] + pd.Timedelta(hours=1) <= window_end
+        )
         return df[mask]
 
     def _build_window(
@@ -526,10 +535,10 @@ class HourlyFeatureLoader:
             ts = ts.tz_localize(None)
 
         ema_dt = ts.to_pydatetime()
-        # Use the actual EMA timestamp as window_end (not truncated to hour
-        # boundary) so we don't lose up to 59 min of valid pre-EMA data.
-        # The slice filter uses strict less-than (hour_start < window_end),
-        # which correctly includes any hour bucket that started before the EMA.
+        # Use the actual EMA timestamp as window_end.  The slice filter
+        # includes only bins whose entire span is before EMA: hour_start+1h
+        # <= window_end.  E.g. EMA at 13:37 → last included bin is 12:00-13:00.
+        # The partial bin 13:00-14:00 is excluded (contains post-EMA data).
         window_end = ema_dt
         window_start = ema_dt.replace(minute=0, second=0, microsecond=0) - timedelta(hours=lookback_hours)
 
@@ -549,9 +558,9 @@ class HourlyFeatureLoader:
             else:
                 modality_dfs[modality] = pd.DataFrame()
 
-        # Build one window per hour
+        # Build one window per hour (only bins whose entire span is before EMA)
         current = window_start
-        while current < window_end:
+        while current + timedelta(hours=1) <= window_end:
             hour_rows: dict[str, pd.Series | None] = {}
             for modality, df in modality_dfs.items():
                 if df.empty or "hour_start" not in df.columns:
