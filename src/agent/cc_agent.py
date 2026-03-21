@@ -473,7 +473,11 @@ class AgenticCCAgent:
             "--mcp-config", mcp_config_path,
             "--append-system-prompt", system_prompt,
             "--no-session-persistence",
-            "--disallowed-tools", "Bash,Edit,Write,Read,Glob,Grep,Task",
+            "--allowedTools",
+            "ToolSearch,mcp__sensing__get_daily_summary,mcp__sensing__get_behavioral_timeline,"
+            "mcp__sensing__query_sensing,mcp__sensing__compare_to_baseline,"
+            "mcp__sensing__find_similar_days,mcp__sensing__find_peer_cases,"
+            "mcp__sensing__get_receptivity_history,mcp__sensing__query_raw_events",
         ]
 
         # Strip nested-session guards so claude --print can be launched as subprocess
