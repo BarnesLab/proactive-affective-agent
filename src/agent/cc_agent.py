@@ -463,7 +463,9 @@ class AgenticCCAgent:
         ]
 
         # Strip nested-session guards so claude --print can be launched as subprocess
-        _blocked = {"CLAUDECODE", "CLAUDE_CODE", "CLAUDE_CODE_SESSION_ID"}
+        # Strip ALL Claude Code env vars to prevent nested session interference
+        # (CLAUDE_CODE_ENTRYPOINT was causing MCP servers to not load)
+        _blocked = {k for k in os.environ if k.startswith("CLAUDE")}
         env = {k: v for k, v in os.environ.items() if k not in _blocked}
         env["PYTHONPATH"] = str(PROJECT_ROOT)
 
@@ -479,6 +481,13 @@ class AgenticCCAgent:
         try:
             while True:
                 try:
+                    # Debug: log MCP config and command for diagnosis
+                    logger.debug(f"{tag} CMD: {' '.join(cmd[:8])}...")
+                    logger.debug(f"{tag} MCP config: {mcp_config_path}")
+                    logger.debug(f"{tag} CWD: {PROJECT_ROOT}")
+                    with open(mcp_config_path) as _mcf:
+                        logger.debug(f"{tag} MCP content: {_mcf.read()[:300]}")
+
                     result = subprocess.run(
                         cmd,
                         input=prompt,
@@ -488,6 +497,9 @@ class AgenticCCAgent:
                         env=env,
                         cwd=str(PROJECT_ROOT),
                     )
+                    # Log stderr for MCP connection issues
+                    if result.stderr:
+                        logger.debug(f"{tag} stderr: {result.stderr[:500]}")
 
                     if result.returncode == 0:
                         output = self._unwrap_json_output(result.stdout.strip(), tag)
