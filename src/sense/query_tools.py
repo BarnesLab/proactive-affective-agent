@@ -625,6 +625,12 @@ class SensingQueryEngine:
         header = f"[{modality.title()}: {hours_before_ema}h before EMA]"
         df = self._get_window(study_id, modality, window_start, window_end)
 
+        # Temporal safety: exclude any hourly bin not fully before ema_dt.
+        # A bin starting at hour H covers [H, H+1h). If ema_dt falls within
+        # that interval, the bin contains post-EMA data and must be excluded.
+        if not df.empty and "hour_start" in df.columns:
+            df = df[df["hour_start"] + pd.Timedelta(hours=1) <= ema_dt]
+
         if df.empty:
             start_str = window_start.strftime("%H:%M")
             end_str = window_end.strftime("%H:%M")
@@ -645,11 +651,20 @@ class SensingQueryEngine:
         # Hourly granularity — one line per hour
         lines = [header]
         n_missing = 0
+
+        # Cap the iteration to only include hourly bins fully before ema_dt.
+        # A bin at hour H covers [H, H+1h). If ema_dt falls within that bin,
+        # the bin contains post-EMA data and must be excluded entirely.
+        ema_hour_floor = ema_dt.replace(minute=0, second=0, microsecond=0)
+        loop_end = min(window_end, ema_hour_floor)
+        # If ema_dt is exactly on the hour, that hour is fully post-EMA
+        if ema_dt == ema_hour_floor:
+            loop_end = min(loop_end, ema_hour_floor)
         total_hours = max(hours_duration, 1)
 
         # Floor to the hour so we align with parquet hour_start values
         current = window_start.replace(minute=0, second=0, microsecond=0)
-        while current < window_end:
+        while current < loop_end:
             hour_end = current + timedelta(hours=1)
             match = df[df["hour_start"] == current]
             start_str = current.strftime("%H:%M")
@@ -714,13 +729,20 @@ class SensingQueryEngine:
 
         return pd.Series(result)
 
-    def get_daily_summary(self, study_id: int, date_str: str, lookback_days: int = 0) -> str:
+    def get_daily_summary(
+        self,
+        study_id: int,
+        date_str: str,
+        lookback_days: int = 0,
+        ema_timestamp: str | datetime | None = None,
+    ) -> str:
         """Return a natural language summary of a full day's sensing across modalities.
 
         Args:
             study_id: Participant's Study_ID.
             date_str: Date in "YYYY-MM-DD" format.
             lookback_days: Also include N prior days for trend context (max 7).
+            ema_timestamp: EMA timestamp for temporal cutoff (prevents future leakage).
 
         Returns:
             Multi-paragraph natural language string.
@@ -729,13 +751,20 @@ class SensingQueryEngine:
         if target is None:
             return f"[Daily Summary: {date_str}]\nInvalid date format. Use YYYY-MM-DD."
 
+        ema_dt = _normalize_ts(ema_timestamp) if ema_timestamp is not None else None
+
         lookback_days = min(lookback_days, 7)
         sections: list[str] = []
 
         for offset in range(lookback_days, -1, -1):
             d = target - timedelta(days=offset)
             label = "TODAY" if d == target else f"{offset}d ago ({d})"
-            sections.append(self._summarize_one_day(study_id, d, label))
+            # Only apply temporal cutoff on the EMA date itself;
+            # lookback days are fully in the past so show the whole day.
+            day_cutoff = None
+            if ema_dt is not None and d == ema_dt.date():
+                day_cutoff = ema_dt
+            sections.append(self._summarize_one_day(study_id, d, label, cutoff=day_cutoff))
 
         return "\n\n".join(sections)
 
@@ -784,20 +813,37 @@ class SensingQueryEngine:
         current = day_start
         while current < cutoff:
             segment_end = min(current + timedelta(hours=segment_hours), cutoff)
-            lines.append(self._render_timeline_segment(study_id, current, segment_end))
+            lines.append(self._render_timeline_segment(
+                study_id, current, segment_end, ema_cutoff=ema_dt
+            ))
             current = segment_end
 
         return "\n".join(lines)
 
-    def _summarize_one_day(self, study_id: int, d: date, label: str) -> str:
+    def _summarize_one_day(
+        self,
+        study_id: int,
+        d: date,
+        label: str,
+        cutoff: datetime | None = None,
+    ) -> str:
         day_start = datetime(d.year, d.month, d.day)
         day_end = day_start + timedelta(days=1)
+
+        # If a temporal cutoff is provided (EMA timestamp on this date),
+        # restrict all queries to hourly bins fully before the cutoff.
+        if cutoff is not None and cutoff < day_end:
+            day_end = cutoff
+
         header = f"[Daily Summary: {d} ({label})]"
         lines = [header]
 
         # Sleep (inferred from accelerometer 00:00-08:00)
-        sleep_window_end = day_start + timedelta(hours=8)
+        sleep_window_end = min(day_start + timedelta(hours=8), day_end)
         accel_df = self._get_window(study_id, "accelerometer", day_start, sleep_window_end)
+        # Apply strict temporal cutoff: only bins fully before cutoff
+        if cutoff is not None and not accel_df.empty and "hour_start" in accel_df.columns:
+            accel_df = accel_df[accel_df["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
         lines.append(f"Sleep: {self._infer_sleep(accel_df)}")
 
         # Time-of-day breakdowns
@@ -807,32 +853,33 @@ class SensingQueryEngine:
             ("Evening (6pm-11pm)", day_start + timedelta(hours=18), day_start + timedelta(hours=23)),
         ]
         for period_name, p_start, p_end in periods:
+            # Skip periods entirely after the cutoff
+            if p_start >= day_end:
+                lines.append(f"{period_name}: no data (after EMA cutoff)")
+                continue
+            # Clamp the period end to the cutoff
+            effective_p_end = min(p_end, day_end)
             parts: list[str] = []
-            motion_df = self._get_window(study_id, "motion", p_start, p_end)
-            if not motion_df.empty:
-                s = self._summarize_motion(motion_df)
-                if s:
-                    parts.append(s)
-            gps_df = self._get_window(study_id, "gps", p_start, p_end)
-            if not gps_df.empty:
-                s = self._summarize_gps(gps_df)
-                if s:
-                    parts.append(s)
-            screen_df = self._get_window(study_id, "screen", p_start, p_end)
-            if not screen_df.empty:
-                s = self._summarize_screen(screen_df)
-                if s:
-                    parts.append(s)
-            key_df = self._get_window(study_id, "keyboard", p_start, p_end)
-            if not key_df.empty:
-                s = self._summarize_keyboard(key_df)
-                if s:
-                    parts.append(s)
+            for modality, summarizer in [
+                ("motion", self._summarize_motion),
+                ("gps", self._summarize_gps),
+                ("screen", self._summarize_screen),
+                ("keyboard", self._summarize_keyboard),
+            ]:
+                mod_df = self._get_window(study_id, modality, p_start, effective_p_end)
+                if cutoff is not None and not mod_df.empty and "hour_start" in mod_df.columns:
+                    mod_df = mod_df[mod_df["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
+                if not mod_df.empty:
+                    s = summarizer(mod_df)
+                    if s:
+                        parts.append(s)
             lines.append(f"{period_name}: {'; '.join(parts) if parts else 'no data'}")
 
-        # Overall day summary
+        # Overall day summary (only pre-cutoff data)
         overall_parts: list[str] = []
         all_motion = self._get_window(study_id, "motion", day_start, day_end)
+        if cutoff is not None and not all_motion.empty and "hour_start" in all_motion.columns:
+            all_motion = all_motion[all_motion["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
         if not all_motion.empty:
             walk = self._col_sum(all_motion, ["motion_walking_min", "walking_min"])
             stat = self._col_sum(all_motion, ["motion_stationary_min", "stationary_min"])
@@ -843,6 +890,8 @@ class SensingQueryEngine:
                 overall_parts.append("low-mobility day (mostly stationary)")
 
         all_screen = self._get_window(study_id, "screen", day_start, day_end)
+        if cutoff is not None and not all_screen.empty and "hour_start" in all_screen.columns:
+            all_screen = all_screen[all_screen["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
         if not all_screen.empty:
             total_screen = self._col_sum(all_screen, ["screen_on_min"])
             if total_screen is not None:
@@ -850,6 +899,8 @@ class SensingQueryEngine:
                 overall_parts.append(f"{screen_label} screen activity ({total_screen:.0f}min)")
 
         all_key = self._get_window(study_id, "keyboard", day_start, day_end)
+        if cutoff is not None and not all_key.empty and "hour_start" in all_key.columns:
+            all_key = all_key[all_key["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
         if not all_key.empty:
             neg_prop = self._col_mean(all_key, ["key_prop_neg", "prop_word_neg_day_allapps"])
             if neg_prop is not None and neg_prop > 0.15:
@@ -865,15 +916,22 @@ class SensingQueryEngine:
         study_id: int,
         segment_start: datetime,
         segment_end: datetime,
+        ema_cutoff: datetime | None = None,
     ) -> str:
         duration_min = max((segment_end - segment_start).total_seconds() / 60.0, 1.0)
         observed_parts: list[str] = []
 
-        motion_df = self._get_window(study_id, "motion", segment_start, segment_end)
-        gps_df = self._get_window(study_id, "gps", segment_start, segment_end)
-        screen_df = self._get_window(study_id, "screen", segment_start, segment_end)
-        key_df = self._get_window(study_id, "keyboard", segment_start, segment_end)
-        light_df = self._get_window(study_id, "light", segment_start, segment_end)
+        def _safe_get(modality: str) -> pd.DataFrame:
+            df = self._get_window(study_id, modality, segment_start, segment_end)
+            if ema_cutoff is not None and not df.empty and "hour_start" in df.columns:
+                df = df[df["hour_start"] + pd.Timedelta(hours=1) <= ema_cutoff]
+            return df
+
+        motion_df = _safe_get("motion")
+        gps_df = _safe_get("gps")
+        screen_df = _safe_get("screen")
+        key_df = _safe_get("keyboard")
+        light_df = _safe_get("light")
 
         if not motion_df.empty:
             motion_text = self._summarize_motion(motion_df)
@@ -1097,10 +1155,12 @@ class SensingQueryEngine:
         if df.empty or "hour_start" not in df.columns:
             return {}
 
-        # Temporal cutoff: only use data strictly before the EMA timestamp
+        # Temporal cutoff: only use hourly bins fully before the EMA timestamp
         # to prevent future-data leakage into the baseline z-score.
+        # A bin at hour_start covers [hour_start, hour_start+1h), so we require
+        # the bin's END (hour_start + 1h) <= before_timestamp.
         if before_timestamp is not None:
-            df = df[df["hour_start"] < before_timestamp]
+            df = df[df["hour_start"] + pd.Timedelta(hours=1) <= before_timestamp]
         if df.empty:
             return {}
 
@@ -1261,6 +1321,7 @@ class SensingQueryEngine:
         study_id: int,
         reference_date: str,
         n: int = 5,
+        ema_timestamp: str | datetime | None = None,
     ) -> str:
         """Find past days with similar behavioral fingerprints via cosine similarity.
 
@@ -1268,12 +1329,14 @@ class SensingQueryEngine:
             [accel_activity_counts, screen_on_min, gps_distance_km,
              motion_walking_min, key_chars_typed, motion_stationary_min]
 
-        Only days with EMA data are included.
+        Only days with EMA data are included. Only days STRICTLY before the
+        EMA date are considered as candidates (prevents future leakage).
 
         Args:
             study_id: Participant's Study_ID.
             reference_date: Reference date as "YYYY-MM-DD".
             n: Number of similar days to return.
+            ema_timestamp: EMA timestamp for temporal cutoff.
 
         Returns:
             Natural language ranking with mood outcomes.
@@ -1284,7 +1347,13 @@ class SensingQueryEngine:
         except Exception:
             return f"{header}\nInvalid date format."
 
-        ref_vector, labels = self._build_daily_fingerprint(study_id, ref_date)
+        ema_dt = _normalize_ts(ema_timestamp) if ema_timestamp is not None else None
+
+        # For the reference date (EMA date), build fingerprint using only
+        # data from hourly bins fully before the EMA timestamp.
+        ref_vector, labels = self._build_daily_fingerprint(
+            study_id, ref_date, cutoff=ema_dt
+        )
         if ref_vector is None:
             return (
                 f"{header}\n"
@@ -1295,9 +1364,12 @@ class SensingQueryEngine:
         if user_ema.empty:
             return f"{header}\nNo EMA history available to compare against."
 
+        # Temporal safety: only use days STRICTLY before the EMA date
+        ema_date = ema_dt.date() if ema_dt is not None else ref_date
         user_ema["date_local"] = user_ema["timestamp_local"].dt.date
         past_days = [
-            d for d in user_ema["date_local"].unique() if d != ref_date and d < ref_date
+            d for d in user_ema["date_local"].unique()
+            if d != ref_date and d < ema_date
         ]
 
         similarities: list[tuple[float, Any, dict[str, Any]]] = []
@@ -1362,22 +1434,46 @@ class SensingQueryEngine:
         return "\n".join(lines)
 
     def _build_daily_fingerprint(
-        self, study_id: int, target_date: Any
+        self,
+        study_id: int,
+        target_date: Any,
+        cutoff: datetime | None = None,
     ) -> tuple[np.ndarray | None, list[str]]:
-        """Build normalized daily feature vector for cosine similarity."""
+        """Build normalized daily feature vector for cosine similarity.
+
+        Args:
+            study_id: Participant's Study_ID.
+            target_date: Date to build fingerprint for.
+            cutoff: If provided, only include hourly bins fully before this
+                    timestamp (prevents future leakage on the EMA date).
+        """
         if not hasattr(target_date, "year"):
             target_date = pd.to_datetime(str(target_date)).date()
         day_start = datetime(target_date.year, target_date.month, target_date.day)
         day_end = day_start + timedelta(days=1)
+
+        # Apply temporal cutoff if the cutoff falls on this date
+        effective_end = day_end
+        if cutoff is not None and cutoff.date() == target_date and cutoff < day_end:
+            effective_end = cutoff
+
         labels = [
             "accel_activity_counts", "screen_on_min", "gps_distance_km",
             "motion_walking_min", "key_chars_typed", "motion_stationary_min",
         ]
-        accel_df = self._get_window(study_id, "accelerometer", day_start, day_end)
-        screen_df = self._get_window(study_id, "screen", day_start, day_end)
-        gps_df = self._get_window(study_id, "gps", day_start, day_end)
-        motion_df = self._get_window(study_id, "motion", day_start, day_end)
-        key_df = self._get_window(study_id, "keyboard", day_start, day_end)
+
+        def _safe_window(modality: str) -> pd.DataFrame:
+            df = self._get_window(study_id, modality, day_start, effective_end)
+            # Only include hourly bins fully before the cutoff
+            if cutoff is not None and not df.empty and "hour_start" in df.columns:
+                df = df[df["hour_start"] + pd.Timedelta(hours=1) <= cutoff]
+            return df
+
+        accel_df = _safe_window("accelerometer")
+        screen_df = _safe_window("screen")
+        gps_df = _safe_window("gps")
+        motion_df = _safe_window("motion")
+        key_df = _safe_window("keyboard")
 
         values = [
             self._col_sum(accel_df, ["accel_activity_counts", "activity_counts"]) or 0.0,
@@ -1574,6 +1670,7 @@ class SensingQueryEngine:
                     study_id=study_id,
                     date_str=tool_input["date"],
                     lookback_days=tool_input.get("lookback_days", 0),
+                    ema_timestamp=ema_timestamp,
                 )
             if tool_name == "get_behavioral_timeline":
                 return self.get_behavioral_timeline(
@@ -1604,6 +1701,7 @@ class SensingQueryEngine:
                     study_id=study_id,
                     reference_date=ref_date,
                     n=tool_input.get("n", 5),
+                    ema_timestamp=ema_timestamp,
                 )
             if tool_name == "query_raw_events":
                 return self.query_raw_events(
