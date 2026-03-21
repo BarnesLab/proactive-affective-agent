@@ -1520,6 +1520,36 @@ class SensingQueryEngine:
         Returns:
             String result to feed back as the tool_result block.
         """
+        result = self._call_tool_inner(tool_name, tool_input, study_id, ema_timestamp)
+        # Log tool call to JSONL for analysis
+        self._log_tool_call(tool_name, tool_input, study_id, ema_timestamp, result)
+        return result
+
+    def _log_tool_call(self, tool_name, tool_input, study_id, ema_timestamp, result):
+        """Write tool call record to outputs/pilot_v2/tool_logs/."""
+        import json as _json, time as _time
+        from pathlib import Path as _Path
+        try:
+            log_dir = _Path(__file__).resolve().parent.parent.parent / "outputs" / "pilot_v2" / "tool_logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            ema_date = str(ema_timestamp)[:10]
+            log_file = log_dir / f"user{study_id}_{ema_date}.jsonl"
+            record = {
+                "ts": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "study_id": study_id,
+                "ema_date": ema_date,
+                "ema_timestamp": str(ema_timestamp),
+                "tool": tool_name,
+                "inputs": tool_input,
+                "result_length": len(str(result)),
+                "result_preview": str(result)[:500],
+            }
+            with open(log_file, "a") as f:
+                f.write(_json.dumps(record) + "\n")
+        except Exception:
+            pass
+
+    def _call_tool_inner(self, tool_name, tool_input, study_id, ema_timestamp):
         try:
             if tool_name == "query_sensing":
                 return self.query_sensing(

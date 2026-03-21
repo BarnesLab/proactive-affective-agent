@@ -60,24 +60,22 @@ _TOOL_LOG_DIR = PROJECT_ROOT / "outputs" / "pilot_v2" / "tool_logs"
 _TOOL_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _log_tool_call(tool_name: str, inputs: dict, result_preview: str) -> None:
+def _log_tool_call(tool_name: str, inputs: dict, result_preview) -> None:
     """Append a tool call record to the per-session JSONL log."""
-    try:
-        log_file = _TOOL_LOG_DIR / f"user{_study_id}_{_ema_date}.jsonl"
-        record = {
-            "ts": _time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "study_id": _study_id,
-            "ema_date": _ema_date,
-            "ema_timestamp": _ema_timestamp,
-            "tool": tool_name,
-            "inputs": inputs,
-            "result_length": len(result_preview),
-            "result_preview": result_preview[:500],
-        }
-        with open(log_file, "a") as f:
-            f.write(_json.dumps(record) + "\n")
-    except Exception:
-        pass  # best-effort logging, never break the tool
+    log_file = _TOOL_LOG_DIR / f"user{_study_id}_{_ema_date}.jsonl"
+    result_str = str(result_preview) if result_preview is not None else ""
+    record = {
+        "ts": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "study_id": _study_id,
+        "ema_date": _ema_date,
+        "ema_timestamp": _ema_timestamp,
+        "tool": tool_name,
+        "inputs": inputs,
+        "result_length": len(result_str),
+        "result_preview": result_str[:500],
+    }
+    with open(log_file, "a") as f:
+        f.write(_json.dumps(record) + "\n")
 
 
 import functools as _functools
@@ -125,17 +123,9 @@ except Exception:
 
 _engine = SensingQueryEngine(processed_dir=_data_dir, ema_df=_ema_df)
 
-# Monkey-patch call_tool to log every MCP tool invocation
-_original_call_tool = _engine.call_tool
+# Tool call logging is handled inside SensingQueryEngine.call_tool (query_tools.py)
+# AND via inline _log_tool_call() in each tool function above (belt + suspenders)
 
-
-def _logging_call_tool(tool_name, tool_input, study_id=None, ema_timestamp=None, **kwargs):
-    result = _original_call_tool(tool_name, tool_input, study_id=study_id, ema_timestamp=ema_timestamp, **kwargs)
-    _log_tool_call(tool_name, tool_input, str(result))
-    return result
-
-
-_engine.call_tool = _logging_call_tool
 
 # ---------------------------------------------------------------------------
 # Peer database for cross-user search (loaded once at startup)
@@ -243,7 +233,7 @@ def query_sensing(
         hours_duration: Duration of window in hours (default 1, max 24)
         granularity: hourly or daily
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="query_sensing",
         tool_input={
             "modality": modality,
@@ -254,6 +244,8 @@ def query_sensing(
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("query_sensing", {"modality": modality, "hours_before_ema": hours_before_ema, "hours_duration": hours_duration}, result)
+    return result
 
 
 @mcp.tool()
@@ -264,7 +256,7 @@ def get_daily_summary(date: str = "", lookback_days: int = 0) -> str:
         date: Date in YYYY-MM-DD format (defaults to EMA date)
         lookback_days: Also return summaries for N prior days (0-7, default 0)
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="get_daily_summary",
         tool_input={
             "date": date or _ema_date,
@@ -273,6 +265,8 @@ def get_daily_summary(date: str = "", lookback_days: int = 0) -> str:
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("get_daily_summary", {"date": date or _ema_date, "lookback_days": lookback_days}, result)
+    return result
 
 
 @mcp.tool()
@@ -283,7 +277,7 @@ def get_behavioral_timeline(date: str = "", segment_hours: int = 3) -> str:
         date: Date in YYYY-MM-DD format (defaults to EMA date)
         segment_hours: Width of each segment in hours (default 3, max 6)
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="get_behavioral_timeline",
         tool_input={
             "date": date or _ema_date,
@@ -292,6 +286,8 @@ def get_behavioral_timeline(date: str = "", segment_hours: int = 3) -> str:
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("get_behavioral_timeline", {"date": date or _ema_date, "segment_hours": segment_hours}, result)
+    return result
 
 
 @mcp.tool()
@@ -303,7 +299,7 @@ def compare_to_baseline(modality: str, feature: str, current_value: float) -> st
         feature: Feature name (e.g., screen_on_min, gps_distance_km, motion_walking_min)
         current_value: The value to compare against the personal baseline
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="compare_to_baseline",
         tool_input={
             "modality": modality,
@@ -313,6 +309,8 @@ def compare_to_baseline(modality: str, feature: str, current_value: float) -> st
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("compare_to_baseline", {"modality": modality, "feature": feature, "current_value": current_value}, result)
+    return result
 
 
 @mcp.tool()
@@ -322,12 +320,14 @@ def get_receptivity_history(lookback_days: int = 14) -> str:
     Args:
         lookback_days: How many days of history to retrieve (default 14, max 30)
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="get_receptivity_history",
         tool_input={"n_days": lookback_days},
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("get_receptivity_history", {"lookback_days": lookback_days}, result)
+    return result
 
 
 @mcp.tool()
@@ -337,12 +337,14 @@ def find_similar_days(top_k: int = 3) -> str:
     Args:
         top_k: Number of similar days to return (default 3, max 10)
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="find_similar_days",
         tool_input={"n": top_k},
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("find_similar_days", {"top_k": top_k}, result)
+    return result
 
 
 @mcp.tool()
@@ -367,7 +369,7 @@ def query_raw_events(
         hours_duration: Duration of window in hours (default 4)
         max_events: Maximum number of events to return (default 30, max 100)
     """
-    return _engine.call_tool(
+    result = _engine.call_tool(
         tool_name="query_raw_events",
         tool_input={
             "modality": modality,
@@ -378,6 +380,8 @@ def query_raw_events(
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
+    _log_tool_call("query_raw_events", {"modality": modality, "hours_before_ema": hours_before_ema}, result)
+    return result
 
 
 @mcp.tool()
