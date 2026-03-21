@@ -10,11 +10,14 @@ touch "$STATE_FILE"
 
 send_telegram() {
     local msg="$1"
+    local bot_token="${TELEGRAM_BOT_TOKEN:-}"
+    local chat_id="${TELEGRAM_CHAT_ID:-7542082932}"
+    if [ -z "$bot_token" ]; then return; fi
     python3 -c "
 import json, subprocess
-data = json.dumps({'chat_id': 7542082932, 'text': '''$msg'''})
+data = json.dumps({'chat_id': $chat_id, 'text': '''$msg'''})
 subprocess.run(['curl', '-s', '-X', 'POST',
-    'https://api.telegram.org/bot7740709485:AAF35LkeavJ5-F4C6hcG5PC_7RdC9AeI8lI/sendMessage',
+    'https://api.telegram.org/bot${bot_token}/sendMessage',
     '-H', 'Content-Type: application/json', '-d', data],
     capture_output=True)
 " 2>/dev/null

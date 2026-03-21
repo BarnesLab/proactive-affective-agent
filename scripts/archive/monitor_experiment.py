@@ -6,13 +6,14 @@ and sends a consolidated Telegram message.
 """
 
 import json
+import os
 import re
 import time
 import urllib.request
 from pathlib import Path
 
-BOT_TOKEN = "7740709485:AAF35LkeavJ5-F4C6hcG5PC_7RdC9AeI8lI"
-CHAT_ID = 7542082932
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID", "7542082932"))
 INTERVAL = 300  # 5 minutes
 
 AGENTS = {

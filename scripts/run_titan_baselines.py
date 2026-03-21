@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -32,8 +33,8 @@ MAX_GPU_MEM_MB = 30_000    # 30GB on A6000 (user limit)
 GPU_DEVICE = "1"           # A6000
 
 # Telegram
-TELEGRAM_BOT_TOKEN = "7740709485:AAF35LkeavJ5-F4C6hcG5PC_7RdC9AeI8lI"
-TELEGRAM_CHAT_ID = "7542082932"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "7542082932")
 
 LOCAL_PROJECT = Path(__file__).resolve().parent.parent
 

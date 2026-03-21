@@ -131,13 +131,16 @@ def main():
                 log.info(f"ALL DONE! {len(done)}/50 users complete.")
                 # Notify
                 import subprocess as sp
-                sp.run([
-                    "curl", "-s", "-X", "POST",
-                    "https://api.telegram.org/bot7740709485:AAEjgKqMwgq0HmIgW7zgze_983ZMER5kEFM/sendMessage",
-                    "-H", "Content-Type: application/json",
-                    "-d", json.dumps({"chat_id": 7542082932,
-                        "text": f"[PAA] V4 rerun COMPLETE! {len(done)}/50 users done with fixed MCP."})
-                ], capture_output=True)
+                bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+                chat_id = os.environ.get("TELEGRAM_CHAT_ID", "7542082932")
+                if bot_token:
+                    sp.run([
+                        "curl", "-s", "-X", "POST",
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        "-H", "Content-Type: application/json",
+                        "-d", json.dumps({"chat_id": int(chat_id),
+                            "text": f"[PAA] V4 rerun COMPLETE! {len(done)}/50 users done with fixed MCP."})
+                    ], capture_output=True)
                 break
 
             time.sleep(30)

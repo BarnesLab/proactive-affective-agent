@@ -152,13 +152,17 @@ def run_task(version: str, user_id: int, output_dir: Path, model: str) -> int:
 
 def send_telegram(msg: str) -> None:
     """Send Telegram notification via Boo bot."""
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "7542082932")
+    if not bot_token:
+        return
     try:
         subprocess.run(
             [
                 "curl", "-s", "-X", "POST",
-                "https://api.telegram.org/bot7740709485:AAF35LkeavJ5-F4C6hcG5PC_7RdC9AeI8lI/sendMessage",
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 "-H", "Content-Type: application/json",
-                "-d", json.dumps({"chat_id": 7542082932, "text": msg}),
+                "-d", json.dumps({"chat_id": int(chat_id), "text": msg}),
             ],
             capture_output=True,
             timeout=10,

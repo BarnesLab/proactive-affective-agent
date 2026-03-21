@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 
 logger = logging.getLogger(__name__)
 
 # Telegram Boo bot for user notifications
-_BOT_TOKEN = "7740709485:AAF35LkeavJ5-F4C6hcG5PC_7RdC9AeI8lI"
-_CHAT_ID = "7542082932"
+_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "7542082932")
 
 
 class RateLimitType:
