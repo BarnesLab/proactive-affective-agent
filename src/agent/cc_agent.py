@@ -398,7 +398,7 @@ class AgenticCCAgent:
 
         logger.info(
             f"{tag} User {self.study_id} done | "
-            f"{len(parsed_tool_calls)} tools | "
+            f"{prediction.get('_n_tool_calls', 0)} tools | "
             f"confidence={prediction.get('confidence', '?')}"
         )
         return prediction
