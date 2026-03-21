@@ -1,7 +1,7 @@
 import os, glob, re, json
 from collections import defaultdict
 
-base = '/Users/zwang/Documents/proactive-affective-agent'
+base = '/Users/zwang/projects/proactive-affective-agent'
 versions = ['callm','v1','v2','v3','v4','v5','v6']
 
 # 1) Sonnet (Claude) progress - outputs/pilot and outputs/pilot_v2

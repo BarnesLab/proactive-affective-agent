@@ -1,7 +1,7 @@
 import os, glob, re, subprocess
 from collections import defaultdict
 
-base = '/Users/zwang/Documents/proactive-affective-agent'
+base = '/Users/zwang/projects/proactive-affective-agent'
 versions = ['callm','v1','v2','v3','v4','v5','v6']
 
 def count_records(pattern):

@@ -3,7 +3,7 @@
 # Motion runs first (sequential) because screen and keyinput may cross-reference
 # its output for the device_missing flag.  The remaining four run in parallel.
 set -e
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 
 echo "=============================================="
 echo "Phase 1 — Offline batch processing"

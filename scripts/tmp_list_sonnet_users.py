@@ -1,5 +1,5 @@
 import os,glob,re,collections
-base='/Users/zwang/Documents/proactive-affective-agent'
+base='/Users/zwang/projects/proactive-affective-agent'
 roots=[os.path.join(base,'outputs/pilot'), os.path.join(base,'outputs/pilot_v2')]
 seen=collections.defaultdict(set)
 for root in roots:

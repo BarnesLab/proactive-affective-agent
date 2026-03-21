@@ -3,7 +3,7 @@
 # Splits into 2 batches of 5 users, each batch runs 7 versions in parallel.
 # Checkpoint-based: safe to re-run if interrupted.
 set -euo pipefail
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 source .venv/bin/activate
 
 MODEL="gpt-5.1-codex-mini"

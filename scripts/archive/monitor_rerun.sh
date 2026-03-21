@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Monitor V2/V4 re-run progress, send Telegram at milestones
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 
 MONITOR_LOG="outputs/pilot/logs/monitor.log"
 STATE_FILE="outputs/pilot/logs/monitor_state.txt"

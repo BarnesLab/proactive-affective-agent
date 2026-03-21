@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 source .venv/bin/activate
 OUT="outputs/pilot_gpt54_parallel_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUT/logs"

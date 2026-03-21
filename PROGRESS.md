@@ -163,7 +163,7 @@ Fill in missing version coverage for the 18-user primary set:
 - **V3**: 8 more users needed (10 → 18) — biggest gap
 
 ```bash
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 python3 scripts/queue_runner.py --dry-run   # verify pending tasks
 python3 scripts/queue_runner.py --workers 5  # execute
 ```

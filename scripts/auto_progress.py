@@ -3,7 +3,7 @@
 import os, glob, re, subprocess, json, sys
 from collections import defaultdict
 
-base = '/Users/zwang/Documents/proactive-affective-agent'
+base = '/Users/zwang/projects/proactive-affective-agent'
 workspace = '/Users/zwang/.openclaw/workspace'
 versions = ['callm','v1','v2','v3','v4','v5','v6']
 gpt_versions = ['gpt-' + v for v in versions]
