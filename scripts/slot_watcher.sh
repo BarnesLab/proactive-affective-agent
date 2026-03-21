@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /Users/zwang/Documents/proactive-affective-agent
+cd /Users/zwang/projects/proactive-affective-agent
 source .venv/bin/activate
 
 MAX_PARALLEL=15
