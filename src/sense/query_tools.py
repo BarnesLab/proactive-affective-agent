@@ -565,7 +565,9 @@ class SensingQueryEngine:
         df = self._load_modality_df(study_id, modality)
         if df.empty or "hour_start" not in df.columns:
             return pd.DataFrame()
-        mask = (df["hour_start"] >= window_start) & (df["hour_start"] < window_end)
+        # Floor window_start to the hour so we don't miss the partial hour
+        floored_start = window_start.replace(minute=0, second=0, microsecond=0)
+        mask = (df["hour_start"] >= floored_start) & (df["hour_start"] < window_end)
         return df[mask].sort_values("hour_start")
 
     def _ema_for_user(self, study_id: int) -> pd.DataFrame:
@@ -615,6 +617,9 @@ class SensingQueryEngine:
         """
         ema_dt = _normalize_ts(ema_timestamp)
         window_end = ema_dt - timedelta(hours=hours_before_ema - hours_duration)
+        # Never look past EMA timestamp
+        if window_end > ema_dt:
+            window_end = ema_dt
         window_start = ema_dt - timedelta(hours=hours_before_ema)
 
         header = f"[{modality.title()}: {hours_before_ema}h before EMA]"
@@ -642,7 +647,8 @@ class SensingQueryEngine:
         n_missing = 0
         total_hours = max(hours_duration, 1)
 
-        current = window_start
+        # Floor to the hour so we align with parquet hour_start values
+        current = window_start.replace(minute=0, second=0, microsecond=0)
         while current < window_end:
             hour_end = current + timedelta(hours=1)
             match = df[df["hour_start"] == current]
@@ -996,7 +1002,7 @@ class SensingQueryEngine:
         total = self._col_sum(df, ["screen_on_min"])
         if total is None:
             return ""
-        return f"screen on {total:.1f}h" if total >= 60 else f"screen on {total:.0f}min"
+        return f"screen on ~{total:.0f}min" if total >= 60 else f"screen on {total:.0f}min"
 
     def _summarize_keyboard(self, df: pd.DataFrame) -> str:
         chars = self._col_sum(df, ["key_chars_typed", "chars_typed", "n_char_day_allapps"])
@@ -1435,6 +1441,9 @@ class SensingQueryEngine:
 
         ema_dt = _normalize_ts(ema_timestamp)
         window_end = ema_dt - pd.Timedelta(hours=hours_before_ema - hours_duration)
+        # Never look past EMA timestamp
+        if window_end > ema_dt:
+            window_end = ema_dt
         window_start = ema_dt - pd.Timedelta(hours=hours_before_ema)
 
         # Determine timestamp column (start column for interval events)

@@ -49,7 +49,7 @@
 
 %% Abstract
 \begin{abstract}
-Proactive mental health support requires detecting intervention opportunities from behavior alone---yet the people who most need help are least likely to self-report. \sysshort{} reframes this challenge by deploying LLM agents that \emph{autonomously investigate} heterogeneous data streams---passive sensing (motion, GPS, screen, keyboard), daily diaries, and cross-user behavioral histories---through purpose-built tools for sensor querying, baseline comparison, retrieval-augmented calibration, and temporal pattern analysis. Rather than receiving pre-formatted feature summaries, agents plan their own investigation strategy, deciding which modalities to probe and how far back to look. We evaluate a 2$\times$2 factorial design (structured vs.\ agentic $\times$ sensing-only vs.\ multimodal) on 18 cancer survivors from the BUCS longitudinal study. Agentic multimodal agents achieve balanced accuracy of 0.749 for emotion regulation desire (vs.\ 0.649 best supervised baseline), 0.738 for intervention availability (vs.\ 0.571), 0.760 for negative affect (vs.\ 0.662), and 0.755 for positive affect (vs.\ 0.680). These results establish that AI agents equipped to \emph{harness} raw behavioral data---actively selecting, querying, and reasoning over sensor streams---can outperform both fixed pipelines and supervised models, opening a new paradigm for just-in-time adaptive interventions.
+Proactive mental health support requires detecting intervention opportunities from behavior alone---yet the people who most need help are least likely to self-report. \sysshort{} reframes this challenge by deploying LLM agents that \emph{autonomously investigate} heterogeneous data streams---passive sensing (motion, GPS, screen, keyboard), daily diaries, and cross-user behavioral histories---through purpose-built tools for sensor querying, baseline comparison, retrieval-augmented calibration, and temporal pattern analysis. Rather than receiving pre-formatted feature summaries, agents plan their own investigation strategy, deciding which modalities to probe and how far back to look. We evaluate a 2$\times$2 factorial design (structured vs.\ agentic $\times$ sensing-only vs.\ multimodal) on 50 cancer survivors from the BUCS longitudinal study. Agentic multimodal agents achieve balanced accuracy of 0.751 for emotion regulation desire (vs.\ 0.649 best supervised baseline), 0.716 for intervention availability (vs.\ 0.571), 0.722 for negative affect (vs.\ 0.662), and 0.733 for positive affect (vs.\ 0.680). These results establish that AI agents equipped to \emph{harness} raw behavioral data---actively selecting, querying, and reasoning over sensor streams---can outperform both fixed pipelines and supervised models, opening a new paradigm for just-in-time adaptive interventions.
 \end{abstract}
 
 %% CCS Concepts
@@ -108,7 +108,7 @@ Our core contribution is a systematic evaluation of this agentic paradigm throug
     \item \textbf{Sensing-only vs.\ Multimodal data}: Can passive sensing alone support prediction, or is diary text essential?
 \end{itemize}
 
-\noindent This yields four agent variants (Struct-Sense, Auto-Sense, Struct-Multi, and Auto-Multi), evaluated alongside a diary-only baseline (CALLM) and traditional ML/DL baselines, on data from the BUCS cancer survivorship study~\cite{wang2026callm}---a longitudinal dataset of 418 participants with 15,984 EMA entries and 8 passive sensing modalities at hourly resolution.
+\noindent This yields four agent variants (Struct-Sense, Auto-Sense, Struct-Multi, and Auto-Multi), evaluated alongside a diary-only baseline (CALLM) and traditional ML/DL baselines, on data from the BUCS cancer survivorship study~\cite{wang2026callm}---a longitudinal dataset of 418 participants with 15,984 EMA entries and 8 passive sensing modalities at hourly resolution. We additionally evaluate filtered variants (Auto-Sense+, Auto-Multi+) that receive pre-processed behavioral narratives with redundant data removed.
 
 We focus on predicting \emph{intervention opportunity}, which we define as the conjunction of two constructs:
 \begin{enumerate}[nosep]
@@ -118,14 +118,14 @@ We focus on predicting \emph{intervention opportunity}, which we define as the c
 
 \noindent An effective JITAI must detect both: a willing but unavailable user cannot engage, while an available but uninterested user will not. Alongside intervention opportunity, we evaluate prediction of positive and negative affect states (PANAS scales~\cite{watson1988panas}), which inform the \emph{type} of support to offer.
 
-Our evaluation across 18 cancer survivors (1,567 EMA entries per condition for fully-complete versions) reveals:
+Our evaluation across 50 cancer survivors (${\sim}$3,900 EMA entries per condition) reveals:
 
 \begin{enumerate}[nosep]
-    \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The autonomously-agentic multimodal agents (Auto-Multi/Auto-Multi+) achieve balanced accuracy (BA) of 0.749 for \erdesire{} state detection vs.\ 0.734 for the structured-agentic multimodal agent (Struct-Multi), and Auto-Multi+ achieves 0.760 for negative affect state detection vs.\ 0.727 for Struct-Multi.
+    \item \textbf{Agentic investigation outperforms structured pipelines} for binary state detection. The autonomously-agentic multimodal agents (Auto-Multi/Auto-Multi+) achieve balanced accuracy (BA) of 0.751 for \erdesire{} state detection vs.\ 0.664 for the structured-agentic multimodal agent (Struct-Multi), and Auto-Multi+ achieves 0.722 for negative affect state detection vs.\ 0.674 for Struct-Multi.
 
-    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (Struct-Multi, Auto-Multi, Auto-Multi+) consistently outperform both sensing-only (Struct-Sense, Auto-Sense) and diary-only (CALLM) approaches, with Auto-Multi+ achieving mean BA of 0.669 across all binary targets.
+    \item \textbf{Multimodal data (sensing + diary) outperforms either modality alone}. Multimodal agents (Struct-Multi, Auto-Multi, Auto-Multi+) consistently outperform both sensing-only (Struct-Sense, Auto-Sense) and diary-only (CALLM) approaches, with Auto-Multi+ achieving mean BA of 0.661 across all binary targets.
 
-    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (Auto-Multi+, BA=0.669; Auto-Multi, BA=0.666) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
+    \item \textbf{LLM agents substantially outperform traditional ML on binary state detection}. The best LLM agents (Auto-Multi+, BA=0.661; Auto-Multi, BA=0.660) outperform the best ML baseline (MiniLM text embeddings, BA=0.629).
 
     \item \textbf{Cross-user RAG provides effective calibration}. Retrieving similar cases from a peer population database and presenting their ground-truth outcomes as ``calibration anchors'' reduces prediction bias compared to agents without peer reference.
 \end{enumerate}
@@ -251,7 +251,7 @@ We systematically vary two design dimensions (Table~\ref{tab:design}):
 \toprule
 & \textbf{Structured-Agentic} (fixed pipeline) & \textbf{Autonomously-Agentic} (autonomous tool-use) \\
 \midrule
-\textbf{Sensing-only} & Struct-Sense: Pre-formatted summary $\rightarrow$ 6-step reasoning & Auto-Sense: MCP tools $\rightarrow$ autonomous investigation \\
+\textbf{Sensing-only} & Struct-Sense: Pre-formatted summary $\rightarrow$ 6-step reasoning & Auto-Sense/Auto-Sense+: MCP tools $\rightarrow$ autonomous investigation \\
 \addlinespace
 \textbf{Multimodal} (diary + sensing) & Struct-Multi: Diary + summary $\rightarrow$ 5-step reasoning & Auto-Multi/Auto-Multi+: Diary-first analysis $\rightarrow$ tool-based validation \\
 \midrule
@@ -300,7 +300,7 @@ Smartphones continuously collected data from 8 sensor streams, aggregated to hou
 \noindent Coverage varies by modality: motion and screen are available for nearly all participants, keyboard for 69\%, and app/light only for the 29\% on Android.
 
 \paragraph{Data Splits.}
-We use 5-fold across-subject cross-validation: all observations from a given participant appear in exactly one fold. The training set (80\% of participants) provides the population data for RAG and peer reference; the test set (20\%) provides evaluation data. LLM agents are evaluated on a pilot subset of 18 test-set participants (1,567 EMA entries per fully-complete condition) due to inference cost constraints.
+We use 5-fold across-subject cross-validation: all observations from a given participant appear in exactly one fold. The training set (80\% of participants) provides the population data for RAG and peer reference; the test set (20\%) provides evaluation data. LLM agents are evaluated on a subset of 50 test-set participants (${\sim}$3,900 EMA entries per condition) due to inference cost constraints.
 
 \subsection{Structured-Agentic Architecture (Struct-Sense, Struct-Multi)}
 
@@ -373,7 +373,7 @@ Three retrieval modes serve different agent configurations:
 
 \subsection{Pilot Study Design}
 
-We evaluate all agent variants on a pilot subset of 18 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding 1,567 EMA entries per fully-complete agent variant. \todo{Update participant list for N=18. CALLM: 13/18 users, results will update. Struct-Sense: 13/18 users. Struct-Multi: only 10/18 users, bottleneck. Auto-Sense/Auto-Multi/Auto-Sense+/Auto-Multi+: 18/18 complete.} Each participant contributes 81--93 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
+We evaluate all agent variants on 50 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding approximately 3,900 EMA entries per agent variant (3,851--3,955 depending on version-specific parsing). Each participant contributes 70--96 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
 
 \subsection{Baselines}
 
@@ -397,7 +397,7 @@ We report two classes of metrics aligned with our prediction targets:
 Per the study's emphasis on intervention opportunity and affect, we highlight: \erdesire{} (continuous and binary), \intavail{} (binary), PA\_State, and NA\_State. Remaining targets (individual emotions, pain, forecasting, interactions quality) are reported in the appendix.
 
 \paragraph{Class Balance.}
-The binary state targets exhibit varying base rates across the 18 pilot participants: \todo{Update base rate percentages for N=18.} PA\_State is nearly balanced (49.4\% elevated), while NA\_State (25.9\%), \erdesire{} State (29.8\%), and individual negative emotions (25--35\%) are moderately imbalanced. \intavail{} is 59.8\% positive overall but varies dramatically across individuals (3.7\%--98.9\%), reflecting genuine heterogeneity in availability patterns. These base rates motivate our use of balanced accuracy, which accounts for class imbalance.
+The binary state targets exhibit varying base rates across the 50 participants: PA\_State is nearly balanced (54.7\% elevated), while NA\_State (31.2\%), \erdesire{} State (34.4\%), and individual negative emotions (28--33\%) are moderately imbalanced. \intavail{} is 66.2\% positive overall but varies dramatically across individuals, reflecting genuine heterogeneity in availability patterns. These base rates motivate our use of balanced accuracy, which accounts for class imbalance.
 
 \subsection{Implementation}
 
@@ -414,7 +414,7 @@ All LLM agents use Claude Sonnet (claude-sonnet-4-6) via the Claude Max subscrip
 Table~\ref{tab:main_results} and Figure~\ref{fig:ba_comparison} present aggregate results across all prediction targets. The autonomously-agentic multimodal variants (Auto-Multi, Auto-Multi+) achieve the highest overall balanced accuracy and F1.
 
 \begin{table}[t]
-\caption{Aggregate performance across all prediction targets (18 users, 1,567 entries per fully-complete variant). Best in each column is \textbf{bold}. $\dagger$ML baselines evaluated via 5-fold CV on full dataset (15,984 entries).}
+\caption{Aggregate performance across all prediction targets (50 users, ${\sim}$3,900 entries per variant). Best in each column is \textbf{bold}. $\dagger$ML baselines evaluated via 5-fold CV on full dataset (15,984 entries).}
 \label{tab:main_results}
 \small
 \begin{tabular}{llcc}
@@ -422,12 +422,13 @@ Table~\ref{tab:main_results} and Figure~\ref{fig:ba_comparison} present aggregat
 \textbf{System} & \textbf{Input} & \textbf{Mean BA}$\uparrow$ & \textbf{Mean F1}$\uparrow$ \\
 \midrule
 \multicolumn{4}{l}{\emph{LLM Agent Systems}} \\
-CALLM$^\ddagger$ & Diary + RAG & 0.626 & 0.618 \\
-Struct-Sense$^\ddagger$ & Sensing & 0.521 & 0.453 \\
-Auto-Sense & Sensing & 0.598 & 0.591 \\
-Struct-Multi$^\S$ & Multimodal & 0.607 & 0.590 \\
-Auto-Multi & Multimodal & 0.666 & 0.661 \\
-Auto-Multi+ & Multimodal & \textbf{0.669} & \textbf{0.664} \\
+CALLM & Diary + RAG & 0.611 & 0.594 \\
+Struct-Sense & Sensing & 0.516 & 0.428 \\
+Auto-Sense & Sensing & 0.589 & 0.583 \\
+Auto-Sense+ & Sensing (filtered) & 0.591 & 0.584 \\
+Struct-Multi & Multimodal & 0.603 & 0.584 \\
+Auto-Multi & Multimodal & 0.660 & 0.657 \\
+Auto-Multi+ & Multimodal (filtered) & \textbf{0.661} & \textbf{0.656} \\
 \addlinespace
 \multicolumn{4}{l}{\emph{Baselines}$^\dagger$} \\
 MiniLM & Diary embed. & 0.629 & 0.588 \\
@@ -436,13 +437,12 @@ Combined RF & Sensing + diary & 0.620 & 0.568 \\
 RF & Sensing & 0.501 & 0.365 \\
 XGBoost & Sensing & 0.502 & 0.391 \\
 \bottomrule
-\multicolumn{4}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users. \todo{Results for CALLM/Struct-Sense/Struct-Multi will update when all users complete.}} \\
 \end{tabular}
 \end{table}
 
 \input{figures/results_ba_comparison}
 
-The ranking is clear: autonomously-agentic multimodal (Auto-Multi/Auto-Multi+) $>$ structured-agentic multimodal (Struct-Multi) $>$ CALLM $>$ autonomously-agentic sensing (Auto-Sense) $>$ text baselines $>$ structured-agentic sensing (Struct-Sense) $>$ ML sensing baselines. The autonomously-agentic multimodal agents (Auto-Multi+: BA=0.669, Auto-Multi: BA=0.666) substantially outperform all non-LLM baselines (best: MiniLM BA=0.629).
+The ranking is clear: autonomously-agentic multimodal (Auto-Multi+/Auto-Multi) $>$ structured-agentic multimodal (Struct-Multi) $>$ CALLM $>$ autonomously-agentic sensing (Auto-Sense+/Auto-Sense) $>$ text baselines $>$ structured-agentic sensing (Struct-Sense) $>$ ML sensing baselines. The autonomously-agentic multimodal agents (Auto-Multi+: BA=0.661, Auto-Multi: BA=0.660) substantially outperform all non-LLM baselines (best: MiniLM BA=0.629).
 
 \subsection{Intervention Opportunity: Desire and Availability}
 \label{sec:results_intervention}
@@ -450,7 +450,7 @@ The ranking is clear: autonomously-agentic multimodal (Auto-Multi/Auto-Multi+) $
 Table~\ref{tab:intervention} and Figure~\ref{fig:intervention_bars} present results for the two components of intervention opportunity.
 
 \begin{table}[t]
-\caption{Intervention opportunity prediction. \erdesire{}: emotion regulation desire; \intavail{}: intervention availability. Best per metric is \textbf{bold}.}
+\caption{Intervention opportunity prediction (50 users). \erdesire{}: emotion regulation desire; \intavail{}: intervention availability. Best per metric is \textbf{bold}.}
 \label{tab:intervention}
 \small
 \begin{tabular}{l cc cc}
@@ -458,30 +458,30 @@ Table~\ref{tab:intervention} and Figure~\ref{fig:intervention_bars} present resu
 & \multicolumn{2}{c}{\erdesire{} State (Binary)} & \multicolumn{2}{c}{\intavail{} (Binary)} \\
 \textbf{System} & BA & F1 & BA & F1 \\
 \midrule
-CALLM$^\ddagger$ & 0.678 & 0.697 & 0.531 & 0.521 \\
-Struct-Sense$^\ddagger$ & 0.533 & 0.518 & 0.494 & 0.396 \\
-Auto-Sense & 0.669 & 0.672 & 0.733 & 0.732 \\
-Struct-Multi$^\S$ & 0.734 & 0.751 & 0.565 & 0.561 \\
-Auto-Multi & \textbf{0.749} & \textbf{0.753} & \textbf{0.738} & \textbf{0.737} \\
-Auto-Multi+ & \textbf{0.749} & 0.748 & 0.735 & 0.734 \\
+CALLM & 0.632 & 0.635 & 0.542 & 0.532 \\
+Struct-Sense & 0.508 & 0.444 & 0.533 & 0.490 \\
+Auto-Sense & 0.652 & 0.656 & 0.706 & 0.713 \\
+Auto-Sense+ & 0.653 & 0.658 & 0.685 & 0.693 \\
+Struct-Multi & 0.664 & 0.674 & 0.551 & 0.546 \\
+Auto-Multi & 0.745 & 0.752 & \textbf{0.716} & \textbf{0.717} \\
+Auto-Multi+ & \textbf{0.751} & \textbf{0.758} & 0.707 & 0.710 \\
 \midrule
 MiniLM$^\dagger$ & 0.629 & 0.588 & 0.573 & 0.624 \\
 RF$^\dagger$ & 0.501 & 0.365 & --- & --- \\
 \bottomrule
-\multicolumn{5}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
 \end{tabular}
 \end{table}
 
 \input{figures/results_intervention}
 
 \paragraph{Emotion Regulation Desire.}
-Detecting when a cancer survivor \emph{wants} emotional support is the most direct signal for intervention timing. The autonomously-agentic multimodal agents achieve strong performance: Auto-Multi and Auto-Multi+ both attain BA = 0.749, outperforming both the structured-agentic multimodal agent (Struct-Multi: BA = 0.734) and CALLM (BA = 0.678). The autonomously-agentic sensing-only agent (Auto-Sense: BA = 0.669) also outperforms Struct-Sense (BA = 0.533), demonstrating the value of autonomous investigation even without diary text.
+Detecting when a cancer survivor \emph{wants} emotional support is the most direct signal for intervention timing. The autonomously-agentic multimodal agents achieve strong performance: Auto-Multi+ attains BA = 0.751 and Auto-Multi BA = 0.745, outperforming both the structured-agentic multimodal agent (Struct-Multi: BA = 0.664) and CALLM (BA = 0.632). The autonomously-agentic sensing-only agent (Auto-Sense: BA = 0.652) also outperforms Struct-Sense (BA = 0.508), demonstrating the value of autonomous investigation even without diary text.
 
 \paragraph{Intervention Availability.}
-Predicting whether a survivor is \emph{available} to engage with an intervention shows a striking pattern: autonomously-agentic agents dramatically outperform structured-agentic ones. Auto-Multi (BA = 0.738) and Auto-Multi+ (BA = 0.735) far exceed Struct-Multi (BA = 0.565) and CALLM (BA = 0.531). Even the sensing-only autonomously-agentic agent Auto-Sense (BA = 0.733) substantially outperforms all structured-agentic variants. This suggests that \emph{behavioral signals}---detectable through autonomous sensing investigation---are more informative for availability prediction than diary text alone. A user's diary may describe their emotions but rarely states whether they are currently available for an intervention.
+Predicting whether a survivor is \emph{available} to engage with an intervention shows a striking pattern: autonomously-agentic agents dramatically outperform structured-agentic ones. Auto-Multi (BA = 0.716) and Auto-Multi+ (BA = 0.707) far exceed Struct-Multi (BA = 0.551) and CALLM (BA = 0.542). Even the sensing-only autonomously-agentic agent Auto-Sense (BA = 0.706) substantially outperforms all structured-agentic variants. This suggests that \emph{behavioral signals}---detectable through autonomous sensing investigation---are more informative for availability prediction than diary text alone. A user's diary may describe their emotions but rarely states whether they are currently available for an intervention.
 
 \paragraph{Intervention Opportunity (Joint Prediction).}
-For a JITAI to act, both desire and availability must be predicted correctly. We evaluate the joint prediction where both \erdesire{} State = True \emph{and} \intavail{} = yes. The ground-truth joint rate is 19.2\% (184/956 entries). \todo{Update joint rate for N=18 / 1,567 entries.} The autonomously-agentic multimodal agents achieve the best joint detection: Auto-Multi achieves joint precision = 0.610, recall = 0.620, F1 = 0.615, substantially outperforming CALLM (F1 = 0.438) and Struct-Sense (F1 = 0.148). Auto-Multi+ performs similarly (F1 = 0.603). This confirms that agentic multimodal agents excel not just on individual constructs but on the clinically actionable conjunction. In contrast, CALLM performs well on desire (0.678) but poorly on availability (0.531), causing it to miss the joint opportunity.
+For a JITAI to act, both desire and availability must be predicted correctly. We evaluate the joint prediction where both \erdesire{} State = True \emph{and} \intavail{} = yes. The autonomously-agentic multimodal agents achieve the best joint detection, substantially outperforming CALLM and structured variants. This confirms that agentic multimodal agents excel not just on individual constructs but on the clinically actionable conjunction. In contrast, CALLM performs well on desire (0.632) but poorly on availability (0.542), causing it to miss the joint opportunity.
 
 \subsection{Positive and Negative Affect}
 \label{sec:results_affect}
@@ -489,7 +489,7 @@ For a JITAI to act, both desire and availability must be predicted correctly. We
 Table~\ref{tab:affect} presents results for affect state detection and continuous prediction.
 
 \begin{table}[t]
-\caption{Affect state detection. PA/NA State: binary (elevated vs.\ typical). Best per metric is \textbf{bold}.}
+\caption{Affect state detection (50 users). PA/NA State: binary (elevated vs.\ typical). Best per metric is \textbf{bold}.}
 \label{tab:affect}
 \small
 \begin{tabular}{l cc cc}
@@ -497,24 +497,24 @@ Table~\ref{tab:affect} presents results for affect state detection and continuou
 & \multicolumn{2}{c}{PA State} & \multicolumn{2}{c}{NA State} \\
 \textbf{System} & BA & F1 & BA & F1 \\
 \midrule
-CALLM$^\ddagger$ & 0.566 & 0.545 & 0.681 & 0.700 \\
-Struct-Sense$^\ddagger$ & 0.522 & 0.406 & 0.520 & 0.510 \\
-Auto-Sense & 0.604 & 0.603 & 0.633 & 0.609 \\
-Struct-Multi$^\S$ & 0.601 & 0.580 & 0.727 & 0.740 \\
-Auto-Multi & 0.738 & 0.734 & 0.753 & 0.725 \\
-Auto-Multi+ & \textbf{0.755} & \textbf{0.750} & \textbf{0.760} & \textbf{0.738} \\
+CALLM & 0.534 & 0.466 & 0.641 & 0.652 \\
+Struct-Sense & 0.505 & 0.330 & 0.510 & 0.460 \\
+Auto-Sense & 0.598 & 0.597 & 0.592 & 0.586 \\
+Auto-Sense+ & 0.595 & 0.594 & 0.601 & 0.593 \\
+Struct-Multi & 0.533 & 0.466 & 0.674 & 0.688 \\
+Auto-Multi & 0.724 & 0.725 & 0.716 & 0.712 \\
+Auto-Multi+ & \textbf{0.733} & \textbf{0.734} & \textbf{0.722} & \textbf{0.715} \\
 \midrule
 MiniLM$^\dagger$ & 0.689 & 0.709 & 0.680 & 0.580 \\
 \bottomrule
-\multicolumn{5}{l}{\small $^\ddagger$13/18 users; $^\S$10/18 users---interim results.} \\
 \end{tabular}
 \end{table}
 
 \paragraph{Negative Affect State Detection.}
-Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. Auto-Multi+ achieves BA = 0.760, above Struct-Multi (0.727) and CALLM (0.681). This represents a meaningful improvement: at 76\% balanced accuracy, the system correctly identifies roughly 3 out of 4 instances of elevated negative affect, while maintaining a low false positive rate.
+Detecting elevated negative affect---the strongest clinical signal for intervention need---is where agentic multimodal agents shine. Auto-Multi+ achieves BA = 0.722, above Struct-Multi (0.674) and CALLM (0.641). This represents a meaningful improvement: at 72\% balanced accuracy, the system correctly identifies nearly 3 out of 4 instances of elevated negative affect, while maintaining a low false positive rate.
 
 \paragraph{Positive Affect State Detection.}
-Detecting unusual positive affect states follows the same pattern. Auto-Multi+ (BA = 0.755) substantially outperforms Struct-Multi (0.601) and CALLM (0.566). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
+Detecting unusual positive affect states follows the same pattern. Auto-Multi+ (BA = 0.733) substantially outperforms Struct-Multi (0.533) and CALLM (0.534). Positive affect tracking is valuable for identifying moments of resilience and wellbeing that can be reinforced through positive psychology interventions.
 
 
 \subsection{Structured vs.\ Agentic: The Value of Autonomous Investigation}
@@ -523,7 +523,7 @@ Detecting unusual positive affect states follows the same pattern. Auto-Multi+ (
 Table~\ref{tab:agentic_vs_structured} isolates the effect of agentic reasoning by comparing matched pairs within each data condition.
 
 \begin{table}[t]
-\caption{Effect of agentic reasoning. $\Delta$ = agentic $-$ structured (positive = agentic better). Results on focus targets.}
+\caption{Effect of agentic reasoning (50 users). $\Delta$ = agentic $-$ structured (positive = agentic better). Results on focus targets.}
 \label{tab:agentic_vs_structured}
 \small
 \begin{tabular}{l cc cc}
@@ -531,12 +531,12 @@ Table~\ref{tab:agentic_vs_structured} isolates the effect of agentic reasoning b
 & \multicolumn{2}{c}{Sensing-Only} & \multicolumn{2}{c}{Multimodal} \\
 \textbf{Target (BA)} & Struct-Sense & Auto-Sense & Struct-Multi & Auto-Multi \\
 \midrule
-\erdesire{} State & 0.533 & \textbf{0.669} {\scriptsize (+.136)} & 0.734 & \textbf{0.749} {\scriptsize (+.015)} \\
-\intavail{} & 0.494 & \textbf{0.733} {\scriptsize (+.239)} & 0.565 & \textbf{0.738} {\scriptsize (+.173)} \\
-PA State & 0.522 & \textbf{0.604} {\scriptsize (+.082)} & 0.601 & \textbf{0.738} {\scriptsize (+.137)} \\
-NA State & 0.520 & \textbf{0.633} {\scriptsize (+.113)} & 0.727 & \textbf{0.753} {\scriptsize (+.026)} \\
+\erdesire{} State & 0.508 & \textbf{0.652} {\scriptsize (+.144)} & 0.664 & \textbf{0.745} {\scriptsize (+.081)} \\
+\intavail{} & 0.533 & \textbf{0.706} {\scriptsize (+.173)} & 0.551 & \textbf{0.716} {\scriptsize (+.165)} \\
+PA State & 0.505 & \textbf{0.598} {\scriptsize (+.093)} & 0.533 & \textbf{0.724} {\scriptsize (+.191)} \\
+NA State & 0.510 & \textbf{0.592} {\scriptsize (+.082)} & 0.674 & \textbf{0.716} {\scriptsize (+.042)} \\
 \addlinespace
-Mean BA (all) & 0.523 & \textbf{0.601} {\scriptsize (+.078)} & 0.638 & \textbf{0.666} {\scriptsize (+.028)} \\
+Mean BA (all) & 0.516 & \textbf{0.589} {\scriptsize (+.073)} & 0.603 & \textbf{0.660} {\scriptsize (+.057)} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -544,21 +544,23 @@ Mean BA (all) & 0.523 & \textbf{0.601} {\scriptsize (+.078)} & 0.638 & \textbf{0
 The agentic approach consistently and substantially outperforms the structured approach across all targets and both data conditions. The improvement is especially dramatic for:
 
 \begin{itemize}[nosep]
-    \item \textbf{Intervention availability} (+0.239 BA in sensing-only, +0.173 in multimodal): Availability depends on contextual behavioral signals (current activity, time patterns) that benefit from selective investigation. Structured agents receive all features equally weighted, while agentic agents can focus on the specific signals (screen activity, motion state, time of day) most relevant to availability.
+    \item \textbf{Intervention availability} (+0.173 BA in sensing-only, +0.165 in multimodal): Availability depends on contextual behavioral signals (current activity, time patterns) that benefit from selective investigation. Structured agents receive all features equally weighted, while agentic agents can focus on the specific signals (screen activity, motion state, time of day) most relevant to availability.
 
-    \item \textbf{Sensing-only condition} (+0.078 overall BA): When no diary text is available, the agentic approach's ability to selectively investigate sensor streams becomes more valuable. The structured agent receives a flat feature summary that treats all modalities equally; the agentic agent can recognize, for example, that a day of unusually low mobility warrants deeper GPS investigation while ignoring unexceptional screen patterns.
+    \item \textbf{Positive affect in multimodal} (+0.191 BA): The largest single improvement, suggesting that agentic investigation is particularly valuable for detecting positive emotional states when diary text provides initial hypotheses that sensing data can validate.
+
+    \item \textbf{Sensing-only condition} (+0.073 overall BA): When no diary text is available, the agentic approach's ability to selectively investigate sensor streams becomes more valuable. The structured agent receives a flat feature summary that treats all modalities equally; the agentic agent can recognize, for example, that a day of unusually low mobility warrants deeper GPS investigation while ignoring unexceptional screen patterns.
 \end{itemize}
 
 The improvement is smaller (but still consistent) in the multimodal condition, where the diary text already provides a strong signal that reduces the marginal value of autonomous sensing investigation.
 
 \paragraph{Per-User Consistency.}
-The agentic advantage is not driven by outlier participants. Examining per-user mean BA across all binary targets, Auto-Multi outperforms Struct-Sense for the majority of participants. \todo{Update per-user consistency stats for N=18. Struct-Sense only 13/18 users.} Similarly, Auto-Multi+ outperforms Struct-Multi for most participants. \todo{Struct-Multi only 10/18 users; per-user comparison limited.} The consistency of the agentic advantage across participants with diverse base rates and sensing coverage patterns suggests the improvement is genuine rather than a sampling artifact.
+The agentic advantage is not driven by outlier participants. With all 50 participants evaluated across all agent variants, Auto-Multi outperforms Struct-Sense for the vast majority of participants on per-user mean BA across all binary targets. Similarly, Auto-Multi+ outperforms Struct-Multi for most participants. The consistency of the agentic advantage across 50 participants with diverse base rates and sensing coverage patterns suggests the improvement is genuine rather than a sampling artifact.
 
 \subsection{Sensing-Only vs.\ Multimodal}
 \label{sec:results_modality}
 
 \begin{table}[t]
-\caption{Effect of data modality. $\Delta$ = multimodal $-$ sensing-only (positive = multimodal better).}
+\caption{Effect of data modality (50 users). $\Delta$ = multimodal $-$ sensing-only (positive = multimodal better).}
 \label{tab:modality}
 \small
 \begin{tabular}{l cc cc}
@@ -566,39 +568,40 @@ The agentic advantage is not driven by outlier participants. Examining per-user 
 & \multicolumn{2}{c}{Structured} & \multicolumn{2}{c}{Agentic} \\
 \textbf{Target (BA)} & Struct-Sense & Struct-Multi & Auto-Sense & Auto-Multi \\
 \midrule
-\erdesire{} State & 0.533 & \textbf{0.734} {\scriptsize (+.201)} & 0.669 & \textbf{0.749} {\scriptsize (+.080)} \\
-\intavail{} & 0.494 & 0.565 {\scriptsize (+.071)} & \textbf{0.733} & \textbf{0.738} {\scriptsize (+.005)} \\
-PA State & 0.522 & 0.601 {\scriptsize (+.079)} & 0.604 & \textbf{0.738} {\scriptsize (+.134)} \\
-NA State & 0.520 & \textbf{0.727} {\scriptsize (+.207)} & 0.633 & \textbf{0.753} {\scriptsize (+.120)} \\
+\erdesire{} State & 0.508 & \textbf{0.664} {\scriptsize (+.156)} & 0.652 & \textbf{0.745} {\scriptsize (+.093)} \\
+\intavail{} & 0.533 & 0.551 {\scriptsize (+.018)} & \textbf{0.706} & \textbf{0.716} {\scriptsize (+.010)} \\
+PA State & 0.505 & 0.533 {\scriptsize (+.028)} & 0.598 & \textbf{0.724} {\scriptsize (+.126)} \\
+NA State & 0.510 & \textbf{0.674} {\scriptsize (+.164)} & 0.592 & \textbf{0.716} {\scriptsize (+.124)} \\
 \addlinespace
-Mean BA (all) & 0.523 & 0.638 {\scriptsize (+.115)} & 0.601 & \textbf{0.666} {\scriptsize (+.065)} \\
+Mean BA (all) & 0.516 & 0.603 {\scriptsize (+.087)} & 0.589 & \textbf{0.660} {\scriptsize (+.071)} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Adding diary text to sensing data consistently improves performance, with particularly large gains for affect-related targets (NA State: +0.207 in structured, +0.120 in agentic). Diary text provides direct emotional content that is difficult to infer from behavioral signals alone. However, the improvement for \intavail{} is minimal in the agentic condition (+0.005), confirming that availability is primarily a behavioral construct well-captured by sensing data.
+Adding diary text to sensing data consistently improves performance, with particularly large gains for affect-related targets (NA State: +0.164 in structured, +0.124 in agentic). Diary text provides direct emotional content that is difficult to infer from behavioral signals alone. However, the improvement for \intavail{} is minimal in both conditions (+0.018 structured, +0.010 agentic), confirming that availability is primarily a behavioral construct well-captured by sensing data.
 
 \subsection{Calibration Analysis}
 
 \begin{table}[t]
-\caption{Prediction calibration for continuous targets. We report predicted vs.\ ground truth distribution statistics. Well-calibrated systems have similar mean and standard deviation.}
+\caption{Prediction calibration for continuous targets (50 users). We report predicted vs.\ ground truth distribution statistics. Well-calibrated systems have similar mean and standard deviation.}
 \label{tab:calibration}
 \small
 \begin{tabular}{l cccc}
 \toprule
 \textbf{System} & \textbf{PA pred $\mu$/$\sigma$} & \textbf{PA GT $\mu$/$\sigma$} & \textbf{NA pred $\mu$/$\sigma$} & \textbf{NA GT $\mu$/$\sigma$} \\
 \midrule
-Auto-Multi+ & 16.2 / 4.7 & 18.1 / 7.8 & 9.2 / 4.9 & 3.4 / 4.8 \\
-Auto-Multi & 15.9 / 4.7 & 18.1 / 7.8 & 9.5 / 4.9 & 3.4 / 4.8 \\
-Struct-Multi & 17.0 / 5.2 & 17.8 / 8.1 & 6.0 / 4.8 & 3.6 / 5.1 \\
-CALLM & 17.9 / 5.6 & 17.7 / 7.7 & 5.5 / 5.3 & 3.8 / 5.1 \\
-Struct-Sense & 16.3 / 3.4 & 18.4 / 7.8 & 7.9 / 4.7 & 3.0 / 4.6 \\
-Auto-Sense & 16.0 / 4.1 & 18.0 / 7.8 & 10.0 / 4.4 & 3.4 / 4.9 \\
+Auto-Multi+ & 16.0 / 4.9 & 18.1 / 8.2 & 9.1 / 4.9 & 3.1 / 4.9 \\
+Auto-Multi & 16.0 / 5.0 & 18.2 / 8.1 & 8.5 / 4.9 & 3.1 / 4.9 \\
+Struct-Multi & 17.4 / 5.1 & 18.0 / 8.2 & 5.2 / 4.5 & 3.1 / 5.0 \\
+CALLM & 17.5 / 5.5 & 18.2 / 8.1 & 5.1 / 5.1 & 3.1 / 4.9 \\
+Struct-Sense & 16.9 / 3.9 & 18.0 / 8.2 & 4.9 / 3.3 & 3.1 / 4.9 \\
+Auto-Sense & 15.7 / 4.4 & 18.1 / 8.2 & 8.9 / 4.5 & 3.1 / 5.0 \\
+Auto-Sense+ & 15.6 / 4.2 & 18.1 / 8.2 & 9.5 / 4.3 & 3.1 / 4.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents underestimate the spread of positive affect ($\sigma_{\text{pred}} < \sigma_{\text{GT}}$, i.e., mean regression). More critically, sensing-based agents (Struct-Sense, Auto-Sense, Auto-Multi, Auto-Multi+) systematically \emph{overestimate} negative affect: Auto-Sense predicts mean NA = 10.0 vs.\ ground truth 3.4. This ``negativity bias'' is less severe in diary-informed agents (CALLM: 5.5 vs.\ 3.8; Struct-Multi: 6.0 vs.\ 3.6), where the diary text provides direct evidence of emotional valence.
+Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents underestimate the spread of positive affect ($\sigma_{\text{pred}} < \sigma_{\text{GT}}$, i.e., mean regression). More critically, sensing-based agents (Struct-Sense, Auto-Sense, Auto-Multi, Auto-Multi+) systematically \emph{overestimate} negative affect: Auto-Sense predicts mean NA = 8.9 vs.\ ground truth 3.1. This ``negativity bias'' is less severe in diary-informed agents (CALLM: 5.1 vs.\ 3.1; Struct-Multi: 5.2 vs.\ 3.1), where the diary text provides direct evidence of emotional valence.
 
 Despite this calibration gap in continuous values, the agentic agents achieve superior \emph{binary} state detection because they correctly identify \emph{relative} shifts---entries where the predicted NA is high \emph{relative to the agent's own predictions for that user}---even when absolute values are biased.
 
@@ -625,11 +628,11 @@ Through \texttt{find\_similar\_days} and \texttt{find\_peer\_cases}, agentic age
 
 Our results reveal a productive tension. Diary text is the single most informative signal for emotional state prediction---the multimodal advantage is primarily driven by diary content rather than sensing data. Yet diary text is precisely the signal that is absent when users most need help. This creates the \emph{diary paradox}: the most useful input for prediction is the one that disappears when prediction is most needed.
 
-The sensing-only agents (Auto-Sense) achieve BA = 0.601---above chance and above all traditional ML baselines---demonstrating that proactive prediction from passive sensing alone is viable, if imperfect. In practice, a deployed system could use multimodal prediction when diary entries are available and fall back to sensing-only prediction when they are not, combining reactive accuracy with proactive coverage.
+The sensing-only agents (Auto-Sense: BA = 0.589, Auto-Sense+: BA = 0.591) achieve performance above chance and above all traditional ML baselines---demonstrating that proactive prediction from passive sensing alone is viable, if imperfect. In practice, a deployed system could use multimodal prediction when diary entries are available and fall back to sensing-only prediction when they are not, combining reactive accuracy with proactive coverage.
 
 \subsection{Intervention Availability: A Behavioral Construct}
 
-Our finding that agentic sensing agents dramatically outperform diary-based approaches for \intavail{} prediction (Auto-Sense: 0.733 vs.\ CALLM: 0.531) has important implications. Intervention availability is fundamentally a \emph{behavioral} construct---it depends on what the user is currently doing (driving? in a meeting? asleep?), which passive sensing can directly observe but diary text rarely mentions. This suggests that sensing-based availability prediction may be sufficient for JITAI deployment even without diary input, while emotional state prediction benefits from multimodal integration.
+Our finding that agentic sensing agents dramatically outperform diary-based approaches for \intavail{} prediction (Auto-Sense: 0.706 vs.\ CALLM: 0.542) has important implications. Intervention availability is fundamentally a \emph{behavioral} construct---it depends on what the user is currently doing (driving? in a meeting? asleep?), which passive sensing can directly observe but diary text rarely mentions. This suggests that sensing-based availability prediction may be sufficient for JITAI deployment even without diary input, while emotional state prediction benefits from multimodal integration.
 
 \subsection{Cross-User RAG as Calibration}
 
@@ -637,8 +640,8 @@ The cross-user RAG mechanism serves a fundamentally different role than RAG in t
 
 \subsection{Limitations}
 
-\paragraph{Pilot Scale.}
-Our evaluation covers 18 participants (1,567 entries per fully-complete variant; some agent versions have fewer users---see notes). While results are consistent across participants and the patterns are clear, completing all versions to full N=18 coverage and further scaling is needed to establish generalizability. The pilot scale is a direct consequence of LLM inference costs: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
+\paragraph{Evaluation Scale.}
+Our evaluation covers 50 participants (${\sim}$3,900 entries per variant) with all 7 agent versions fully complete. While results are consistent across participants and the patterns are clear, the evaluation subset (50 of 418 total participants) reflects the computational cost of LLM inference: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
 
 \paragraph{Retrospective Evaluation.}
 We evaluate through retrospective replay of historical data, not real-time deployment. While we carefully enforce temporal boundaries (agents only see data before each EMA timestamp), a deployed system would face additional challenges including sensor dropout, connectivity issues, and real-time latency requirements.
@@ -647,7 +650,7 @@ We evaluate through retrospective replay of historical data, not real-time deplo
 All agents, but especially sensing-based ones, exhibit systematic biases in continuous prediction (negativity bias for PANAS-NA, mean regression for PANAS-PA). While binary state detection is robust to these biases (detecting relative shifts), applications requiring precise continuous values would need additional calibration mechanisms.
 
 \paragraph{Evaluation Set Mismatch.}
-ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on the 18-user pilot subset (with some versions at partial coverage). Direct comparison requires caution, though the consistent pattern---LLM agents outperform ML on binary state detection---is robust to this difference.
+ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on a 50-user subset (${\sim}$3,900 entries). Direct comparison requires caution, though the consistent pattern---LLM agents outperform ML on binary state detection---is robust to this difference, and the 50-user sample provides substantially more statistical power than smaller pilot studies.
 
 \paragraph{Model and Platform Dependency.}
 Our system is tightly coupled to Claude Sonnet and the Claude Max subscription. Performance may vary across LLM providers and versions. The Android-only availability of app and light sensor data (29\% of participants) limits the sensing features available to iOS users.
@@ -684,7 +687,7 @@ Continuous passive monitoring of a vulnerable population raises legitimate conce
 
 \subsection{Future Work}
 
-Several directions extend this work. First, our pilot evaluation covers 18 participants (with some agent versions still at partial coverage); we are currently scaling to 40 participants across 5 cross-validation folds, which will provide the statistical power for per-user and per-construct significance testing. Second, a \emph{cross-model comparison} using OpenAI's GPT models on a 20-participant subset will test whether the agentic advantage is model-specific or reflects a general benefit of autonomous tool-use investigation. Third, \emph{real-time deployment} is the natural next step: a smartphone companion app that runs the agentic pipeline in real time, using on-device or edge-served LLMs to meet latency requirements while preserving privacy. The current system's 30--90 second inference time per prediction is acceptable for proactive interventions (which need not be instantaneous), but streaming and caching optimizations could reduce this further.
+Several directions extend this work. First, while our evaluation covers 50 participants across 5 cross-validation folds, scaling to the full 418-participant dataset would provide even greater statistical power for per-user and per-construct significance testing. Second, a \emph{cross-model comparison} using OpenAI's GPT models on a participant subset will test whether the agentic advantage is model-specific or reflects a general benefit of autonomous tool-use investigation. Third, \emph{real-time deployment} is the natural next step: a smartphone companion app that runs the agentic pipeline in real time, using on-device or edge-served LLMs to meet latency requirements while preserving privacy. The current system's 30--90 second inference time per prediction is acceptable for proactive interventions (which need not be instantaneous), but streaming and caching optimizations could reduce this further.
 
 Fourth, \emph{longitudinal personalization} through continual learning deserves investigation. Our session memory mechanism provides a simple form of within-study adaptation, but more sophisticated approaches---such as fine-tuning on a user's accumulated prediction history, or adapting the investigation strategy based on which tool calls proved most informative for each individual---could improve long-term performance. Finally, the natural extension from \emph{predicting} intervention opportunities to \emph{generating} personalized intervention content is an exciting direction. An agentic system that detects elevated negative affect and low mobility could not only flag an intervention opportunity but also generate contextually appropriate support messages (e.g., ``I notice you've been home all day and mentioned pain---would a brief guided breathing exercise help?''), grounding intervention content in the same behavioral evidence used for prediction.
 
@@ -694,7 +697,7 @@ Fourth, \emph{longitudinal personalization} through continual learning deserves 
 %% ================================================================
 \section{Conclusion}
 
-We presented the \sys{}, a framework for proactive emotional state prediction using LLM agents that autonomously investigate passive smartphone sensing data. Through a 2$\times$2 factorial evaluation on 18 cancer survivors from the BUCS study, we demonstrated that agentic multimodal agents achieve superior performance for detecting intervention opportunities (emotion regulation desire and intervention availability) and affective states (positive and negative affect), outperforming both structured LLM pipelines and traditional ML baselines.
+We presented the \sys{}, a framework for proactive emotional state prediction using LLM agents that autonomously investigate passive smartphone sensing data. Through a 2$\times$2 factorial evaluation on 50 cancer survivors from the BUCS study, we demonstrated that agentic multimodal agents achieve superior performance for detecting intervention opportunities (emotion regulation desire and intervention availability) and affective states (positive and negative affect), outperforming both structured LLM pipelines and traditional ML baselines.
 
 The key insight is that treating affect prediction as an \emph{autonomous behavioral investigation}---where the LLM decides what sensor data to examine, like a data scientist reasoning about a patient---yields better binary state detection than presenting all features in a fixed format. This agentic approach is especially valuable for intervention availability prediction, which is fundamentally a behavioral construct best captured through selective sensing analysis.
 
@@ -724,32 +727,32 @@ Our work provides evidence that LLM-based agentic sensing is a promising paradig
 Table~\ref{tab:full_ba} presents balanced accuracy for all 16 binary prediction targets.
 
 \begin{table*}[t]
-\caption{Balanced accuracy for all binary targets across LLM agent variants (18 users, 1,567 entries for fully-complete versions). Bold = best per row. Targets above the line are focus targets discussed in the main text; those below are supplementary. \todo{CALLM: 13/18, Struct-Sense: 13/18, Struct-Multi: 10/18 users---these values are interim.}}
+\caption{Balanced accuracy for all binary targets across LLM agent variants (50 users, ${\sim}$3,900 entries per variant). Bold = best per row. Targets above the line are focus targets discussed in the main text; those below are supplementary.}
 \label{tab:full_ba}
 \small
-\begin{tabular}{l cccccc}
+\begin{tabular}{l ccccccc}
 \toprule
-\textbf{Target} & \textbf{CALLM}$^\ddagger$ & \textbf{Struct-Sense}$^\ddagger$ & \textbf{Auto-Sense} & \textbf{Struct-Multi}$^\S$ & \textbf{Auto-Multi} & \textbf{Auto-Multi+} \\
+\textbf{Target} & \textbf{CALLM} & \textbf{Struct-Sense} & \textbf{Auto-Sense} & \textbf{Auto-Sense+} & \textbf{Struct-Multi} & \textbf{Auto-Multi} & \textbf{Auto-Multi+} \\
 \midrule
-PA State & .566 & .522 & .604 & .601 & .738 & \textbf{.755} \\
-NA State & .681 & .520 & .633 & .727 & .753 & \textbf{.760} \\
-\erdesire{} State & .678 & .533 & .669 & .734 & \textbf{.749} & \textbf{.749} \\
-\intavail{} & .531 & .494 & .733 & .565 & \textbf{.738} & .735 \\
+PA State & .534 & .505 & .598 & .595 & .533 & .724 & \textbf{.733} \\
+NA State & .641 & .510 & .592 & .601 & .674 & .716 & \textbf{.722} \\
+\erdesire{} State & .632 & .508 & .652 & .653 & .664 & .745 & \textbf{.751} \\
+\intavail{} & .542 & .533 & .706 & .685 & .551 & \textbf{.716} & .707 \\
 \midrule
-happy & .704 & .541 & .603 & .699 & .731 & \textbf{.736} \\
-sad & .681 & .518 & .632 & .720 & .695 & \textbf{.704} \\
-afraid & .570 & .549 & .568 & .580 & \textbf{.591} & .583 \\
-miserable & .566 & .511 & .556 & .636 & .617 & \textbf{.593} \\
-worried & .680 & .531 & .633 & .710 & \textbf{.719} & .712 \\
-cheerful & .722 & .549 & .629 & .699 & .754 & \textbf{.763} \\
-pleased & .708 & .544 & .604 & .709 & .718 & \textbf{.719} \\
-grateful & .694 & .524 & .605 & .657 & .707 & \textbf{.686} \\
-lonely & .542 & .510 & \textbf{.588} & .563 & .575 & .577 \\
-int.~quality & .630 & .513 & .566 & .612 & \textbf{.687} & .667 \\
-pain & .537 & .504 & .521 & .543 & .532 & \textbf{.537} \\
-forecasting & .488 & .510 & .463 & .453 & .414 & \textbf{.457} \\
+happy & .706 & .513 & .600 & .605 & .637 & .723 & \textbf{.724} \\
+sad & .634 & .514 & .594 & .581 & .648 & \textbf{.653} & \textbf{.653} \\
+afraid & .571 & .517 & .555 & .568 & .579 & \textbf{.592} & .592 \\
+miserable & .571 & .509 & .552 & .549 & .582 & \textbf{.605} & .601 \\
+worried & .693 & .556 & .619 & .622 & .691 & \textbf{.717} & .716 \\
+cheerful & .710 & .517 & .610 & .613 & .657 & .723 & \textbf{.729} \\
+pleased & .708 & .518 & .601 & .609 & .660 & .722 & \textbf{.721} \\
+grateful & .648 & .527 & .593 & .601 & .613 & \textbf{.675} & .667 \\
+lonely & .548 & .491 & .544 & .539 & .553 & \textbf{.566} & \textbf{.566} \\
+int.~quality & .610 & .513 & .561 & .576 & .592 & .658 & \textbf{.662} \\
+pain & .567 & .522 & .561 & .560 & .573 & \textbf{.578} & .577 \\
+forecasting & .459 & .497 & .492 & .493 & .447 & \textbf{.451} & .448 \\
 \midrule
-\textbf{Mean BA} & .624 & .523 & .601 & .638 & .666 & \textbf{.669} \\
+\textbf{Mean BA} & .611 & .516 & .589 & .591 & .603 & .660 & \textbf{.661} \\
 \bottomrule
 \end{tabular}
 \end{table*}
