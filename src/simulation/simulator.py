@@ -264,6 +264,80 @@ def _update_session_memory(
     return path.read_text(encoding="utf-8")
 
 
+def _generate_behavioral_profile(sid: int, train_df: pd.DataFrame) -> str:
+    """Generate a behavioral + receptivity profile from training data.
+
+    Summarizes the user's typical patterns so the agent can calibrate
+    predictions from entry #1 instead of learning from scratch.
+    """
+    user = train_df[train_df["Study_ID"] == sid]
+    if user.empty:
+        return ""
+
+    parts: list[str] = []
+    parts.append("## Behavioral & Receptivity Profile (from prior observations)\n")
+
+    # --- Receptivity patterns ---
+    er = user["ER_desire"].dropna()
+    avail = user["INT_availability"].dropna().astype(str).str.lower().str.strip()
+
+    if len(er) >= 3:
+        high_pct = (er >= 7).sum() / len(er) * 100
+        low_pct = (er <= 2).sum() / len(er) * 100
+        avail_pct = (avail == "yes").sum() / len(avail) * 100 if len(avail) else 0
+        parts.append(f"ER_desire: mean={er.mean():.1f}, median={er.median():.0f} "
+                     f"(high≥7: {high_pct:.0f}%, low≤2: {low_pct:.0f}%)")
+        parts.append(f"Intervention availability: {avail_pct:.0f}% yes")
+
+    # --- Emotional base rates ---
+    for col, label in [
+        ("Individual_level_PA_State", "Elevated PA"),
+        ("Individual_level_NA_State", "Elevated NA"),
+    ]:
+        if col in user.columns:
+            vals = user[col].dropna()
+            if len(vals) >= 3:
+                rate = vals.astype(bool).sum() / len(vals) * 100
+                parts.append(f"{label}: {rate:.0f}% of entries")
+
+    # --- Time-of-day patterns ---
+    try:
+        ts = pd.to_datetime(user["timestamp_local"])
+        for slot_name, hour_range in [("Morning <12", (0, 12)),
+                                       ("Afternoon 12-17", (12, 17)),
+                                       ("Evening ≥17", (17, 24))]:
+            mask = (ts.dt.hour >= hour_range[0]) & (ts.dt.hour < hour_range[1])
+            slot = user[mask]
+            if len(slot) >= 2:
+                er_slot = slot["ER_desire"].dropna()
+                avail_slot = slot["INT_availability"].dropna().astype(str).str.lower()
+                if len(er_slot) >= 2:
+                    parts.append(f"{slot_name}: avg ER={er_slot.mean():.1f}, "
+                                 f"avail={(avail_slot == 'yes').sum() / max(len(avail_slot),1) * 100:.0f}% "
+                                 f"(n={len(er_slot)})")
+    except Exception:
+        pass
+
+    # --- Diary theme hints (top emotion drivers) ---
+    diaries = user["emotion_driver"].dropna().astype(str)
+    diaries = diaries[diaries.str.lower() != "nan"]
+    if len(diaries) >= 5:
+        # Find words that correlate with high vs low ER
+        high_er_diaries = diaries[user["ER_desire"] >= 7]
+        low_er_diaries = diaries[user["ER_desire"] <= 2]
+        if len(high_er_diaries) >= 2:
+            parts.append(f"High-ER diary themes (n={len(high_er_diaries)}): "
+                         f'"{high_er_diaries.iloc[0][:60]}"; '
+                         f'"{high_er_diaries.iloc[1][:60]}"')
+        if len(low_er_diaries) >= 2:
+            parts.append(f"Low-ER diary themes (n={len(low_er_diaries)}): "
+                         f'"{low_er_diaries.iloc[0][:60]}"; '
+                         f'"{low_er_diaries.iloc[1][:60]}"')
+
+    parts.append("")  # blank line before EMA history
+    return "\n".join(parts)
+
+
 def _ema_slot(timestamp_str: str) -> str:
     """Classify an EMA timestamp into morning/afternoon/evening."""
     try:
@@ -529,10 +603,18 @@ class PilotSimulator:
                     session_memory = session_memory_path.read_text(encoding="utf-8")
                     logger.info(f"  Session memory: loaded {len(session_memory.splitlines())} lines")
                 else:
+                    # Generate behavioral profile from training data
+                    profile = ""
+                    if self._train_df is not None:
+                        profile = _generate_behavioral_profile(sid, self._train_df)
+                        if profile:
+                            logger.info(f"  Generated behavioral profile ({len(profile)} chars)")
+
                     session_memory_path.write_text(
                         f"# Session Memory — Participant {pid_str}\n\n"
                         "Each entry records: what I investigated, what I predicted, what actually happened, and my reflection.\n"
                         "Use these reflections to calibrate predictions and improve investigation strategy.\n\n"
+                        f"{profile}"
                         "## EMA History (accumulated chronologically)\n\n",
                         encoding="utf-8",
                     )

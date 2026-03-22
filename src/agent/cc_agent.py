@@ -323,7 +323,9 @@ class AgenticCCAgent:
         if self.mode in ("sensing_only", "multimodal"):
             prompt = (
                 'STEP 0: Use the ToolSearch tool with query "select:mcp__sensing__get_daily_summary,mcp__sensing__get_behavioral_timeline,mcp__sensing__query_sensing,mcp__sensing__compare_to_baseline,mcp__sensing__find_similar_days,mcp__sensing__find_peer_cases,mcp__sensing__get_receptivity_history,mcp__sensing__query_raw_events" '
-                "to load the MCP sensing tool schemas. You MUST do this before you can call any sensing tool.\n\n"
+                "to load the MCP sensing tool schemas. You MUST do this before you can call any sensing tool. "
+                "If ToolSearch returns no results on the first attempt, try again — the tools may need a moment to initialize. "
+                "Do NOT skip tool usage or declare tools unavailable without retrying at least twice.\n\n"
                 + raw_prompt
             )
         else:
@@ -506,14 +508,30 @@ class AgenticCCAgent:
                     with open(mcp_config_path) as _mcf:
                         logger.debug(f"{tag} MCP content: {_mcf.read()[:300]}")
 
-                    result = subprocess.run(
+                    # Use Popen with delayed prompt delivery so the MCP
+                    # server has time to start and register tools before
+                    # claude processes the prompt (fixes tool discovery
+                    # race condition that caused ~59% failure rate).
+                    proc = subprocess.Popen(
                         cmd,
-                        input=prompt,
-                        capture_output=True,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
                         text=True,
-                        timeout=600,
                         env=env,
                         cwd=str(PROJECT_ROOT),
+                    )
+                    time.sleep(2)  # allow MCP server to initialize
+                    try:
+                        stdout, stderr = proc.communicate(
+                            input=prompt, timeout=598,
+                        )
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()
+                        raise
+                    result = subprocess.CompletedProcess(
+                        cmd, proc.returncode, stdout, stderr,
                     )
                     # Log stderr for MCP connection issues
                     if result.stderr:
@@ -799,7 +817,18 @@ class AgenticCCAgent:
 
         session_section = ""
         if session_memory and session_memory.strip():
-            trimmed = session_memory[-6000:] if len(session_memory) > 6000 else session_memory
+            # Preserve behavioral profile at top, trim only EMA history
+            history_marker = "## EMA History"
+            marker_pos = session_memory.find(history_marker)
+            if marker_pos > 0 and len(session_memory) > 8000:
+                profile_part = session_memory[:marker_pos]
+                history_part = session_memory[marker_pos:]
+                max_history = 8000 - len(profile_part)
+                trimmed = profile_part + history_part[-max(max_history, 2000):]
+            elif len(session_memory) > 8000:
+                trimmed = session_memory[-8000:]
+            else:
+                trimmed = session_memory
             session_section = f"\n## Accumulated Session Memory (your prior observations of this person)\n{trimmed}\n"
 
         # Task instructions vary by mode
