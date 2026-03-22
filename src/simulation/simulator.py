@@ -47,7 +47,9 @@ ALL_MODALITY_NAMES = sorted(SENSING_COLUMNS.keys())
 
 REFLECTION_PROMPT = """You are reflecting on a just-completed emotional state prediction for a cancer survivor.
 
-Write a 1-2 sentence reflection that captures the single most important calibration lesson for next time. Be specific about THIS person's patterns. No headers, no JSON.
+The only ground-truth feedback you receive is whether the person was RECEPTIVE to intervention (had desire for emotion regulation AND was available). You do NOT know their actual emotional scores.
+
+Write a 1-2 sentence reflection on what your prediction + the receptivity outcome tells you about this person's patterns. Be specific about THIS person. No headers, no JSON.
 
 ## Investigated
 {investigation_summary}
@@ -55,7 +57,7 @@ Write a 1-2 sentence reflection that captures the single most important calibrat
 ## Predicted
 {prediction_summary}
 
-## Actual
+## Outcome
 {actual_outcome}"""
 
 
@@ -121,35 +123,34 @@ def _build_prediction_summary(pred: dict) -> str:
     return ", ".join(parts)
 
 
-def _build_actual_outcome(ema_row) -> str:
-    """Summarize the actual EMA outcome for reflection.
+def _is_receptive(ema_row) -> bool | None:
+    """Determine receptivity from ground truth.
 
-    Only includes information a deployed JITAI system would observe:
-    ER_desire, INT_availability, and diary text. NEVER includes PANAS scores
-    or Individual_level_* labels — those are prediction targets and including
-    them would constitute data leakage into future predictions.
+    Receptive = ER_desire_State is True AND INT_availability is "yes".
+    This is the ONLY ground-truth signal the agent is allowed to see.
+    Actual EMA values (PANAS, ER_desire numeric, individual emotions)
+    are NEVER exposed to avoid data leakage.
     """
-    er = ema_row.get("ER_desire")
+    er_state = ema_row.get("Individual_level_ER_desire_State")
     avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
-    try:
-        er_val = float(er) if er is not None and str(er) != "nan" else None
-    except (ValueError, TypeError):
-        er_val = None
+    if er_state is None or pd.isna(er_state):
+        return None
+    return bool(er_state) and avail in ("yes", "1", "true")
 
-    er_high = (er_val is not None) and (er_val >= 5)
-    is_avail = avail in ("yes", "1", "true")
-    receptive = er_high and is_avail
-    rec_str = "RECEPTIVE" if receptive else "NOT receptive"
 
-    er_str = f"{er_val:.0f}" if er_val is not None else "?"
+def _build_actual_outcome(ema_row) -> str:
+    """Summarize the actual outcome as receptivity only (no EMA leakage).
 
-    diary = str(ema_row.get("emotion_driver", "") or "").strip()
-    diary_str = f'Diary: "{diary[:150]}"' if diary and diary.lower() != "nan" else "No diary"
-
-    return (
-        f"ER_desire={er_str}, INT_availability={avail} → {rec_str}\n"
-        f"{diary_str}"
-    )
+    A deployed JITAI system only observes whether the user accepted an
+    intervention (receptive) or not. It NEVER sees the actual emotional
+    state scores — those are what we are predicting.
+    """
+    receptive = _is_receptive(ema_row)
+    if receptive is None:
+        rec_str = "unknown"
+    else:
+        rec_str = "RECEPTIVE (desire + available)" if receptive else "NOT receptive"
+    return f"Outcome: {rec_str}"
 
 
 _REFLECTION_CLIENT = None
@@ -234,27 +235,23 @@ def _update_session_memory(
     prediction = _build_prediction_summary(pred)
     actual = _build_actual_outcome(ema_row)
 
-    # Generate reflection via LLM
+    # Generate reflection via LLM (only sees receptivity, not EMA scores)
     reflection = _generate_reflection(pred, ema_row, model=model)
 
-    # Compact format: ~300-500 chars per entry, so 4-6 fit in 2000 chars
-    er = ema_row.get("ER_desire")
-    avail = str(ema_row.get("INT_availability", "") or "").lower().strip()
-    try:
-        er_val = float(er) if er is not None and str(er) != "nan" else None
-    except (ValueError, TypeError):
-        er_val = None
-    er_str = f"{er_val:.0f}" if er_val is not None else "?"
+    # Receptivity-only feedback (no ground truth EMA leakage)
+    receptive = _is_receptive(ema_row)
+    if receptive is None:
+        outcome_str = "unknown"
+    else:
+        outcome_str = "RECEPTIVE" if receptive else "not receptive"
+
     pred_er = pred.get("ER_desire", "?")
     pred_avail = pred.get("INT_availability", "?")
-
-    diary = str(ema_row.get("emotion_driver", "") or "").strip()
-    diary_bit = f' | "{diary[:80]}"' if diary and diary.lower() != "nan" else ""
 
     entry = (
         f"- **{ts}**: {investigation}\n"
         f"  Pred: ER={pred_er}, avail={pred_avail}, conf={pred.get('confidence', '?')}\n"
-        f"  Actual: ER={er_str}, avail={avail}{diary_bit}\n"
+        f"  Outcome: {outcome_str}\n"
         f"  Lesson: {reflection}\n\n"
     )
 
@@ -277,17 +274,20 @@ def _generate_behavioral_profile(sid: int, train_df: pd.DataFrame) -> str:
     parts: list[str] = []
     parts.append("## Behavioral & Receptivity Profile (from prior observations)\n")
 
-    # --- Receptivity patterns ---
-    er = user["ER_desire"].dropna()
+    # --- Receptivity patterns (binary: desire_state AND availability) ---
+    er_state = user.get("Individual_level_ER_desire_State")
     avail = user["INT_availability"].dropna().astype(str).str.lower().str.strip()
 
-    if len(er) >= 3:
-        high_pct = (er >= 7).sum() / len(er) * 100
-        low_pct = (er <= 2).sum() / len(er) * 100
-        avail_pct = (avail == "yes").sum() / len(avail) * 100 if len(avail) else 0
-        parts.append(f"ER_desire: mean={er.mean():.1f}, median={er.median():.0f} "
-                     f"(high≥7: {high_pct:.0f}%, low≤2: {low_pct:.0f}%)")
-        parts.append(f"Intervention availability: {avail_pct:.0f}% yes")
+    if er_state is not None and len(er_state.dropna()) >= 3:
+        desire = er_state.dropna().astype(bool)
+        available = avail == "yes"
+        # Receptive = desire + available
+        receptive = desire & available.reindex(desire.index, fill_value=False)
+        receptive_pct = receptive.sum() / len(receptive) * 100
+        desire_pct = desire.sum() / len(desire) * 100
+        avail_pct = (avail == "yes").sum() / max(len(avail), 1) * 100
+        parts.append(f"Receptive (desire + available): {receptive_pct:.0f}% of entries")
+        parts.append(f"Has ER desire: {desire_pct:.0f}% | Available: {avail_pct:.0f}%")
 
     # --- Emotional base rates ---
     for col, label in [
@@ -300,7 +300,7 @@ def _generate_behavioral_profile(sid: int, train_df: pd.DataFrame) -> str:
                 rate = vals.astype(bool).sum() / len(vals) * 100
                 parts.append(f"{label}: {rate:.0f}% of entries")
 
-    # --- Time-of-day patterns ---
+    # --- Time-of-day receptivity patterns ---
     try:
         ts = pd.to_datetime(user["timestamp_local"])
         for slot_name, hour_range in [("Morning <12", (0, 12)),
@@ -308,31 +308,32 @@ def _generate_behavioral_profile(sid: int, train_df: pd.DataFrame) -> str:
                                        ("Evening ≥17", (17, 24))]:
             mask = (ts.dt.hour >= hour_range[0]) & (ts.dt.hour < hour_range[1])
             slot = user[mask]
-            if len(slot) >= 2:
-                er_slot = slot["ER_desire"].dropna()
+            if len(slot) >= 3 and "Individual_level_ER_desire_State" in slot.columns:
+                desire = slot["Individual_level_ER_desire_State"].dropna().astype(bool)
                 avail_slot = slot["INT_availability"].dropna().astype(str).str.lower()
-                if len(er_slot) >= 2:
-                    parts.append(f"{slot_name}: avg ER={er_slot.mean():.1f}, "
-                                 f"avail={(avail_slot == 'yes').sum() / max(len(avail_slot),1) * 100:.0f}% "
-                                 f"(n={len(er_slot)})")
+                receptive = desire & (avail_slot == "yes").reindex(desire.index, fill_value=False)
+                rec_pct = receptive.sum() / max(len(receptive), 1) * 100
+                parts.append(f"{slot_name}: receptive {rec_pct:.0f}% (n={len(slot)})")
     except Exception:
         pass
 
-    # --- Diary theme hints (top emotion drivers) ---
+    # --- Diary theme hints (receptive vs not receptive) ---
     diaries = user["emotion_driver"].dropna().astype(str)
     diaries = diaries[diaries.str.lower() != "nan"]
-    if len(diaries) >= 5:
-        # Find words that correlate with high vs low ER
-        high_er_diaries = diaries[user["ER_desire"] >= 7]
-        low_er_diaries = diaries[user["ER_desire"] <= 2]
-        if len(high_er_diaries) >= 2:
-            parts.append(f"High-ER diary themes (n={len(high_er_diaries)}): "
-                         f'"{high_er_diaries.iloc[0][:60]}"; '
-                         f'"{high_er_diaries.iloc[1][:60]}"')
-        if len(low_er_diaries) >= 2:
-            parts.append(f"Low-ER diary themes (n={len(low_er_diaries)}): "
-                         f'"{low_er_diaries.iloc[0][:60]}"; '
-                         f'"{low_er_diaries.iloc[1][:60]}"')
+    if len(diaries) >= 5 and "Individual_level_ER_desire_State" in user.columns:
+        desire = user["Individual_level_ER_desire_State"].fillna(False).astype(bool)
+        avail_bool = user["INT_availability"].fillna("").astype(str).str.lower() == "yes"
+        receptive_mask = desire & avail_bool
+        rec_diaries = diaries[receptive_mask.reindex(diaries.index, fill_value=False)]
+        not_rec_diaries = diaries[~receptive_mask.reindex(diaries.index, fill_value=True)]
+        if len(rec_diaries) >= 2:
+            parts.append(f"When receptive (n={len(rec_diaries)}): "
+                         f'"{rec_diaries.iloc[0][:60]}"; '
+                         f'"{rec_diaries.iloc[1][:60]}"')
+        if len(not_rec_diaries) >= 2:
+            parts.append(f"When not receptive (n={len(not_rec_diaries)}): "
+                         f'"{not_rec_diaries.iloc[0][:60]}"; '
+                         f'"{not_rec_diaries.iloc[1][:60]}"')
 
     parts.append("")  # blank line before EMA history
     return "\n".join(parts)
