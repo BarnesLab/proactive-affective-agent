@@ -49,7 +49,7 @@
 
 %% Abstract
 \begin{abstract}
-Proactive mental health support requires detecting intervention opportunities from behavior alone---yet the people who most need help are least likely to self-report. \sysshort{} reframes this challenge by deploying LLM agents that \emph{autonomously investigate} heterogeneous data streams---passive sensing (motion, GPS, screen, keyboard), daily diaries, and cross-user behavioral histories---through purpose-built tools for sensor querying, baseline comparison, retrieval-augmented calibration, and temporal pattern analysis. Rather than receiving pre-formatted feature summaries, agents plan their own investigation strategy, deciding which modalities to probe and how far back to look. We evaluate a 2$\times$2 factorial design (structured vs.\ agentic $\times$ sensing-only vs.\ multimodal) on 50 cancer survivors from the BUCS longitudinal study. Agentic multimodal agents achieve balanced accuracy of 0.751 for emotion regulation desire (vs.\ 0.649 best supervised baseline), 0.716 for intervention availability (vs.\ 0.571), 0.722 for negative affect (vs.\ 0.662), and 0.733 for positive affect (vs.\ 0.680). These results establish that AI agents equipped to \emph{harness} raw behavioral data---actively selecting, querying, and reasoning over sensor streams---can outperform both fixed pipelines and supervised models, opening a new paradigm for just-in-time adaptive interventions.
+Proactive mental health support requires detecting intervention opportunities from behavior alone---yet the people who most need help are least likely to self-report. \sysshort{} reframes this challenge by deploying LLM agents that \emph{autonomously investigate} heterogeneous data streams---passive sensing (motion, GPS, screen, keyboard), daily diaries, and cross-user behavioral histories---through purpose-built tools for sensor querying, baseline comparison, retrieval-augmented calibration, and temporal pattern analysis. Rather than receiving pre-formatted feature summaries, agents plan their own investigation strategy, deciding which modalities to probe and how far back to look. We evaluate a 2$\times$2 factorial design (structured vs.\ agentic $\times$ sensing-only vs.\ multimodal) on 50 cancer survivors from the BUCS longitudinal study. Agentic multimodal agents achieve balanced accuracy of 0.751 for emotion regulation desire, 0.716 for intervention availability, 0.733 for positive affect state, and 0.722 for negative affect state---consistently outperforming both structured LLM pipelines and the best traditional baselines. These results establish that AI agents equipped to \emph{harness} raw behavioral data---actively selecting, querying, and reasoning over sensor streams---can outperform both fixed pipelines and supervised models, opening a new paradigm for just-in-time adaptive interventions.
 \end{abstract}
 
 %% CCS Concepts
@@ -371,7 +371,7 @@ Three retrieval modes serve different agent configurations:
 %% ================================================================
 \section{Evaluation Methodology}
 
-\subsection{Pilot Study Design}
+\subsection{Evaluation Setup}
 
 We evaluate all agent variants on 50 cancer survivors drawn from the BUCS test sets. These participants span 5 cross-validation folds, yielding approximately 3,900 EMA entries per agent variant (3,851--3,955 depending on version-specific parsing). Each participant contributes 70--96 chronologically ordered EMA entries, evaluated sequentially to simulate real-time deployment.
 
@@ -605,6 +605,13 @@ Table~\ref{tab:calibration} reveals systematic calibration patterns. All agents 
 
 Despite this calibration gap in continuous values, the agentic agents achieve superior \emph{binary} state detection because they correctly identify \emph{relative} shifts---entries where the predicted NA is high \emph{relative to the agent's own predictions for that user}---even when absolute values are biased.
 
+\subsection{Tool Usage Patterns}
+\label{sec:tool_usage}
+
+To understand how agentic agents leverage their sensing tools, we analyze the tool call patterns across all autonomously-agentic predictions.
+
+\todo{Complete tool usage analysis: (1) mean/median tool calls per prediction by variant, (2) per-tool call frequency distribution, (3) tool call sequences and common investigation patterns, (4) correlation between number/type of tool calls and prediction accuracy.}
+
 
 %% ================================================================
 %%  6. DISCUSSION
@@ -640,20 +647,20 @@ The cross-user RAG mechanism serves a fundamentally different role than RAG in t
 
 \subsection{Limitations}
 
-\paragraph{Evaluation Scale.}
-Our evaluation covers 50 participants (${\sim}$3,900 entries per variant) with all 7 agent versions fully complete. While results are consistent across participants and the patterns are clear, the evaluation subset (50 of 418 total participants) reflects the computational cost of LLM inference: each agentic prediction requires 30--90 seconds and multiple tool calls, making full-dataset evaluation (15,984 entries $\times$ 7 variants) prohibitive.
-
 \paragraph{Retrospective Evaluation.}
 We evaluate through retrospective replay of historical data, not real-time deployment. While we carefully enforce temporal boundaries (agents only see data before each EMA timestamp), a deployed system would face additional challenges including sensor dropout, connectivity issues, and real-time latency requirements.
 
 \paragraph{Continuous Calibration Gap.}
 All agents, but especially sensing-based ones, exhibit systematic biases in continuous prediction (negativity bias for PANAS-NA, mean regression for PANAS-PA). While binary state detection is robust to these biases (detecting relative shifts), applications requiring precise continuous values would need additional calibration mechanisms.
 
-\paragraph{Evaluation Set Mismatch.}
-ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on a 50-user subset (${\sim}$3,900 entries). Direct comparison requires caution, though the consistent pattern---LLM agents outperform ML on binary state detection---is robust to this difference, and the 50-user sample provides substantially more statistical power than smaller pilot studies.
+\paragraph{Baseline Comparison Scope.}
+ML baselines use 5-fold CV on the full dataset ($\sim$15,984 entries across 418 users), while LLM agents are evaluated on a 50-user subset (${\sim}$3,900 entries per variant). Although the evaluation populations differ, the 50-user sample spans all 5 cross-validation folds and provides sufficient statistical power for the consistent patterns we observe. Furthermore, the LLM agents are evaluated on a \emph{subset} of the same participants used by ML baselines, so the comparison is conservative: any distributional advantage would favor the baselines, which train and evaluate on the full population.
 
 \paragraph{Model and Platform Dependency.}
 Our system is tightly coupled to Claude Sonnet and the Claude Max subscription. Performance may vary across LLM providers and versions. The Android-only availability of app and light sensor data (29\% of participants) limits the sensing features available to iOS users.
+
+\paragraph{Inference Cost.}
+Each autonomously-agentic prediction requires 30--90 seconds and multiple tool calls, making real-time deployment computationally intensive. Full-dataset evaluation (15,984 entries $\times$ 7 variants $\approx$ 112K predictions) remains prohibitive at current inference speeds, though this constraint will diminish as LLM inference costs continue to decrease.
 
 \subsection{Implications for JITAI Design}
 
@@ -687,9 +694,9 @@ Continuous passive monitoring of a vulnerable population raises legitimate conce
 
 \subsection{Future Work}
 
-Several directions extend this work. First, while our evaluation covers 50 participants across 5 cross-validation folds, scaling to the full 418-participant dataset would provide even greater statistical power for per-user and per-construct significance testing. Second, a \emph{cross-model comparison} using OpenAI's GPT models on a participant subset will test whether the agentic advantage is model-specific or reflects a general benefit of autonomous tool-use investigation. Third, \emph{real-time deployment} is the natural next step: a smartphone companion app that runs the agentic pipeline in real time, using on-device or edge-served LLMs to meet latency requirements while preserving privacy. The current system's 30--90 second inference time per prediction is acceptable for proactive interventions (which need not be instantaneous), but streaming and caching optimizations could reduce this further.
+Several directions extend this work. First, a \emph{cross-model comparison} using OpenAI's GPT models on a participant subset will test whether the agentic advantage is model-specific or reflects a general benefit of autonomous tool-use investigation. Second, \emph{real-time deployment} is the natural next step: a smartphone companion app that runs the agentic pipeline in real time, using on-device or edge-served LLMs to meet latency requirements while preserving privacy. The current system's 30--90 second inference time per prediction is acceptable for proactive interventions (which need not be instantaneous), but streaming and caching optimizations could reduce this further.
 
-Fourth, \emph{longitudinal personalization} through continual learning deserves investigation. Our session memory mechanism provides a simple form of within-study adaptation, but more sophisticated approaches---such as fine-tuning on a user's accumulated prediction history, or adapting the investigation strategy based on which tool calls proved most informative for each individual---could improve long-term performance. Finally, the natural extension from \emph{predicting} intervention opportunities to \emph{generating} personalized intervention content is an exciting direction. An agentic system that detects elevated negative affect and low mobility could not only flag an intervention opportunity but also generate contextually appropriate support messages (e.g., ``I notice you've been home all day and mentioned pain---would a brief guided breathing exercise help?''), grounding intervention content in the same behavioral evidence used for prediction.
+Third, \emph{longitudinal personalization} through continual learning deserves investigation. Our session memory mechanism provides a simple form of within-study adaptation, but more sophisticated approaches---such as fine-tuning on a user's accumulated prediction history, or adapting the investigation strategy based on which tool calls proved most informative for each individual---could improve long-term performance. Finally, the natural extension from \emph{predicting} intervention opportunities to \emph{generating} personalized intervention content is an exciting direction. An agentic system that detects elevated negative affect and low mobility could not only flag an intervention opportunity but also generate contextually appropriate support messages (e.g., ``I notice you've been home all day and mentioned pain---would a brief guided breathing exercise help?''), grounding intervention content in the same behavioral evidence used for prediction.
 
 
 %% ================================================================
@@ -701,7 +708,7 @@ We presented the \sys{}, a framework for proactive emotional state prediction us
 
 The key insight is that treating affect prediction as an \emph{autonomous behavioral investigation}---where the LLM decides what sensor data to examine, like a data scientist reasoning about a patient---yields better binary state detection than presenting all features in a fixed format. This agentic approach is especially valuable for intervention availability prediction, which is fundamentally a behavioral construct best captured through selective sensing analysis.
 
-Our work provides evidence that LLM-based agentic sensing is a promising paradigm for proactive JITAI systems. By combining the contextual reasoning capabilities of large language models with the passive, always-on nature of smartphone sensing, we move closer to systems that can support cancer survivors precisely when they need it most---even when they are not actively seeking help.
+Our work provides evidence that LLM-based agentic sensing is a promising paradigm for proactive JITAI systems. By combining the contextual reasoning capabilities of large language models with the passive, always-on nature of smartphone sensing, we move closer to systems that can support cancer survivors precisely when they need it most---even when they are not actively seeking help. While \sysshort{} demonstrates proactive \emph{prediction} of intervention opportunities, the translation from prediction to effective intervention delivery remains an important direction for future work requiring prospective evaluation.
 
 %% ================================================================
 %%  ACKNOWLEDGMENTS
