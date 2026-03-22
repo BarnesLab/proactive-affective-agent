@@ -64,19 +64,17 @@ MAIN_BINARY_TARGETS = [
 ]
 
 
+PILOT_50_USERS = [
+    24, 25, 40, 41, 43, 60, 61, 71, 75, 82, 83, 86, 89, 95, 98, 99, 103,
+    119, 140, 164, 169, 187, 189, 211, 232, 242, 257, 258, 260, 275, 299,
+    310, 320, 335, 338, 351, 361, 362, 363, 392, 399, 403, 437, 455, 458,
+    464, 499, 503, 505, 513,
+]
+
+
 def get_50_user_ids() -> list[int]:
-    """Extract the 50 evaluation user IDs from checkpoint filenames."""
-    user_ids = set()
-    for f in CHECKPOINT_DIR.glob("*_user*_checkpoint.json"):
-        name = f.stem  # e.g. "v2_user43_checkpoint"
-        parts = name.split("_user")
-        if len(parts) >= 2:
-            uid_str = parts[1].split("_")[0]
-            try:
-                user_ids.add(int(uid_str))
-            except ValueError:
-                pass
-    return sorted(user_ids)
+    """Return the 50 evaluation user IDs (hardcoded for portability)."""
+    return PILOT_50_USERS
 
 
 def coerce_binary(arr) -> np.ndarray:
