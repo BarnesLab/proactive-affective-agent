@@ -281,13 +281,23 @@ def _generate_behavioral_profile(sid: int, train_df: pd.DataFrame) -> str:
     if er_state is not None and len(er_state.dropna()) >= 3:
         desire = er_state.dropna().astype(bool)
         available = avail == "yes"
-        # Receptive = desire + available
-        receptive = desire & available.reindex(desire.index, fill_value=False)
+        avail_aligned = available.reindex(desire.index, fill_value=False)
+        receptive = desire & avail_aligned
+        not_receptive = ~receptive
+        # Breakdown of "not receptive" reasons
+        no_desire = ~desire
+        no_avail_but_desire = desire & ~avail_aligned
+
         receptive_pct = receptive.sum() / len(receptive) * 100
         desire_pct = desire.sum() / len(desire) * 100
         avail_pct = (avail == "yes").sum() / max(len(avail), 1) * 100
         parts.append(f"Receptive (desire + available): {receptive_pct:.0f}% of entries")
-        parts.append(f"Has ER desire: {desire_pct:.0f}% | Available: {avail_pct:.0f}%")
+        parts.append(f"Available for intervention: {avail_pct:.0f}% | Has ER desire: {desire_pct:.0f}%")
+        # Show that "not receptive" is mostly no-desire, not unavailability
+        if not_receptive.sum() > 0:
+            no_desire_pct = no_desire.sum() / not_receptive.sum() * 100
+            parts.append(f"When NOT receptive: {no_desire_pct:.0f}% due to no desire, "
+                         f"{100 - no_desire_pct:.0f}% due to unavailability")
 
     # --- Emotional base rates ---
     for col, label in [
@@ -613,8 +623,11 @@ class PilotSimulator:
 
                     session_memory_path.write_text(
                         f"# Session Memory — Participant {pid_str}\n\n"
-                        "Each entry records: what I investigated, what I predicted, what actually happened, and my reflection.\n"
-                        "Use these reflections to calibrate predictions and improve investigation strategy.\n\n"
+                        "After each prediction, you receive a single ground-truth signal: **receptivity**.\n"
+                        "Receptive = the person BOTH had desire for emotion regulation AND was available.\n"
+                        "NOT receptive = EITHER no desire OR not available (you cannot tell which).\n"
+                        "IMPORTANT: most 'not receptive' outcomes are due to lack of desire, not unavailability. "
+                        "This person is typically available — do not over-predict unavailability from 'not receptive' signals.\n\n"
                         f"{profile}"
                         "## EMA History (accumulated chronologically)\n\n",
                         encoding="utf-8",
