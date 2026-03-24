@@ -35,3 +35,7 @@ test_logs/
 
 # Paper draft (Overleaf only)
 draft/
+
+# Personal/temporary files
+health.md
+paper_results_table.md
