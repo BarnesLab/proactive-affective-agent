@@ -12,7 +12,6 @@ from src.agent.cc_agent import (
     SYSTEM_PROMPT_MULTIMODAL,
     SYSTEM_PROMPT_SENSING_ONLY,
 )
-from src.agent.openai_agent import OPENAI_SENSING_TOOLS
 from src.sense.query_tools import SensingQueryEngine
 
 
@@ -132,6 +131,3 @@ class TestAgenticTimelineWiring:
         ]
         assert all("get_behavioral_timeline" in prompt for prompt in prompts)
 
-    def test_openai_tool_inventory_includes_behavioral_timeline(self):
-        tool_names = {tool["function"]["name"] for tool in OPENAI_SENSING_TOOLS}
-        assert "get_behavioral_timeline" in tool_names

@@ -32,7 +32,6 @@ from src.evaluation.metrics import compute_all
 from src.evaluation.reporter import Reporter
 from src.remember.retriever import MultiModalRetriever, TFIDFRetriever
 from src.think.llm_client import ClaudeCodeClient
-from src.think.openai_client import OpenAIClient
 from src.utils.mappings import SENSING_COLUMNS
 
 logger = logging.getLogger(__name__)
@@ -191,17 +190,8 @@ def _generate_reflection(pred: dict, ema_row, model: str = "haiku") -> str:
     )
 
     try:
-        if str(model).startswith("gpt-"):
-            client = OpenAIClient(
-                model=model,
-                timeout=120,
-                max_retries=2,
-                delay_between_calls=0.5,
-            )
-            text = client.generate(prompt=prompt)
-        else:
-            client = _get_reflection_client()
-            text = client.generate(prompt=prompt)
+        client = _get_reflection_client()
+        text = client.generate(prompt=prompt)
         if not isinstance(text, str):
             raise TypeError("Reflection client returned non-string output")
         if not text.strip():
@@ -546,26 +536,13 @@ class PilotSimulator:
 
         per_user_metrics = {}
 
-        is_gpt = version.startswith("gpt-")
-        base_version = version[4:] if is_gpt else version
-        if is_gpt and base_version not in ("callm", "v1", "v2", "v3", "v4", "v5", "v6"):
-            raise ValueError(
-                f"Unsupported GPT version '{version}'. "
-                "Supported: gpt-callm, gpt-v1, gpt-v2, gpt-v3, gpt-v4, gpt-v5, gpt-v6."
-            )
+        base_version = version
 
-        if is_gpt:
-            llm_client = OpenAIClient(
-                model=self.model,
-                dry_run=self.dry_run,
-                delay_between_calls=self.delay,
-            )
-        else:
-            llm_client = ClaudeCodeClient(
-                model=self.model,
-                dry_run=self.dry_run,
-                delay_between_calls=self.delay,
-            )
+        llm_client = ClaudeCodeClient(
+            model=self.model,
+            dry_run=self.dry_run,
+            delay_between_calls=self.delay,
+        )
 
         # Session memory directory (for V2/V4 agentic agents)
         memory_dir = self.output_dir / "memory"

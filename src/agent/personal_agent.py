@@ -83,34 +83,18 @@ class PersonalAgent:
                     f"{self.base_version.upper()} requires filtered_data_dir (path to data/processed/filtered/). "
                     f"Pass filtered_data_dir= when constructing PersonalAgent."
                 )
-            if version.startswith("gpt-"):
-                from src.agent.openai_agent import AgenticOpenAIAgent
-                self._agentic = AgenticOpenAIAgent(
-                    study_id=study_id,
-                    profile=self.profile,
-                    memory_doc=memory_doc,
-                    processed_dir=processed_dir,
-                    ema_df=ema_df if ema_df is not None else query_engine,
-                    model=agentic_model,
-                    max_turns=agentic_max_turns,
-                    mode=mode,
-                    filtered_data_dir=filtered_data_dir,
-                    peer_db_path=peer_db_path,
-                    dry_run=getattr(llm_client, "dry_run", False),
-                )
-            else:
-                from src.agent.cc_agent import AgenticCCAgent
-                self._agentic = AgenticCCAgent(
-                    study_id=study_id,
-                    profile=self.profile,
-                    memory_doc=memory_doc,
-                    processed_dir=processed_dir,
-                    model=agentic_model,
-                    max_turns=agentic_max_turns,
-                    mode=mode,
-                    filtered_data_dir=filtered_data_dir,
-                    peer_db_path=peer_db_path,
-                )
+            from src.agent.cc_agent import AgenticCCAgent
+            self._agentic = AgenticCCAgent(
+                study_id=study_id,
+                profile=self.profile,
+                memory_doc=memory_doc,
+                processed_dir=processed_dir,
+                model=agentic_model,
+                max_turns=agentic_max_turns,
+                mode=mode,
+                filtered_data_dir=filtered_data_dir,
+                peer_db_path=peer_db_path,
+            )
         elif self.base_version == "v3":
             mm_retriever = retriever if isinstance(retriever, MultiModalRetriever) else None
             self._v3 = StructuredFullWorkflow(

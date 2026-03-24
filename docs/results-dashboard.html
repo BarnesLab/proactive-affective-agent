@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PULSE — Results Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #f0883e;
+    --red: #f85149;
+    --purple: #d2a8ff;
+    --pink: #f778ba;
+    --cyan: #56d4dd;
+    --yellow: #e3b341;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #1a1f2b 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 48px 0 40px;
+  }
+  header h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  header h1 span { color: var(--accent); }
+  header .subtitle {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 800px;
+  }
+  header .venue {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .header-stats {
+    display: flex;
+    gap: 32px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+  }
+  .header-stat {
+    text-align: center;
+  }
+  .header-stat .value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--green);
+  }
+  .header-stat .label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Navigation */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  nav ul {
+    list-style: none;
+    display: flex;
+    gap: 0;
+    max-width: 1200px;
+    margin: 0 auto;
+    overflow-x: auto;
+  }
+  nav a {
+    display: block;
+    padding: 12px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  nav a:hover, nav a.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Sections */
+  section {
+    padding: 48px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  section:last-child { border-bottom: none; }
+
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin-bottom: 24px;
+    color: var(--text);
+  }
+  h2 .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-left: 8px;
+    font-weight: 500;
+  }
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 24px 0 12px;
+    color: var(--text);
+  }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  /* Design Matrix */
+  .design-matrix {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 0;
+    margin: 24px 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .design-matrix .cell {
+    padding: 16px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  .design-matrix .cell:nth-child(3n) { border-right: none; }
+  .design-matrix .cell:nth-last-child(-n+3) { border-bottom: none; }
+  .design-matrix .header {
+    background: var(--surface2);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .design-matrix .label {
+    background: var(--surface2);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+  }
+  .version-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-right: 6px;
+  }
+  .v-callm { background: rgba(249,117,131,0.15); color: #f97583; }
+  .v-v1 { background: rgba(121,192,255,0.15); color: #79c0ff; }
+  .v-v2 { background: rgba(210,168,255,0.15); color: #d2a8ff; }
+  .v-v3 { background: rgba(63,185,80,0.15); color: #3fb950; }
+  .v-v4 { background: rgba(240,136,62,0.15); color: #f0883e; }
+  .v-v5 { background: rgba(86,212,221,0.15); color: #56d4dd; }
+  .v-v6 { background: rgba(247,120,186,0.15); color: #f778ba; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--surface2);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  td { color: var(--text); }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+  .best { color: var(--green); font-weight: 700; }
+  .baseline { color: var(--text-muted); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Hypothesis cards */
+  .hypothesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+  }
+  .hypothesis .status {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .status-supported { background: rgba(63,185,80,0.15); color: var(--green); }
+  .status-partial { background: rgba(227,179,65,0.15); color: var(--yellow); }
+  .hypothesis h4 { font-size: 1rem; margin-bottom: 6px; }
+  .hypothesis .evidence { color: var(--text-muted); font-size: 0.9rem; }
+
+  /* Agent trace */
+  .trace {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .trace-header {
+    padding: 16px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .trace-step {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .trace-step:last-child { border-bottom: none; }
+  .trace-tool {
+    display: inline-block;
+    background: rgba(210,168,255,0.12);
+    color: var(--purple);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.8rem;
+    margin-bottom: 6px;
+  }
+  .trace-thought {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9rem;
+    margin-top: 4px;
+  }
+  .trace-result {
+    background: var(--bg);
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-top: 8px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .trace-belief {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--orange);
+    font-size: 0.85rem;
+    color: var(--orange);
+  }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .arch-row {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .arch-box {
+    flex: 1;
+    min-width: 160px;
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    text-align: center;
+    position: relative;
+  }
+  .arch-box .box-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+  }
+  .arch-box .box-detail {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .arch-sensing { background: rgba(86,212,221,0.08); border-color: var(--cyan); }
+  .arch-agent { background: rgba(210,168,255,0.08); border-color: var(--purple); }
+  .arch-predict { background: rgba(240,136,62,0.08); border-color: var(--orange); }
+  .arch-intervene { background: rgba(63,185,80,0.08); border-color: var(--green); }
+  .arch-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    width: 32px;
+  }
+
+  /* Chart containers */
+  .chart-container {
+    position: relative;
+    height: 350px;
+    margin: 16px 0;
+  }
+  .chart-container-sm {
+    position: relative;
+    height: 280px;
+    margin: 16px 0;
+  }
+
+  /* Key finding callout */
+  .callout {
+    background: rgba(88,166,255,0.06);
+    border: 1px solid rgba(88,166,255,0.2);
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--accent); }
+
+  /* Footer */
+  footer {
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    header h1 { font-size: 1.6rem; }
+    .card-grid { grid-template-columns: 1fr; }
+    .design-matrix { font-size: 0.8rem; }
+    .arch-row { flex-direction: column; }
+    .arch-arrow { transform: rotate(90deg); width: auto; }
+    nav a { padding: 10px 14px; font-size: 0.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header>
+  <div class="container">
+    <h1><span>PULSE</span> — Results Dashboard</h1>
+    <div class="subtitle">
+      Agentic Sensing for Proactive Intervention in Cancer Survivorship.<br>
+      LLM agents autonomously investigate passive mobile sensing data to predict emotional states and intervention receptivity.
+    </div>
+    <span class="venue">IMWUT 2026 (under review)</span>
+    <div class="header-stats">
+      <div class="header-stat">
+        <div class="value">0.669</div>
+        <div class="label">Best Balanced Accuracy (V6)</div>
+      </div>
+      <div class="header-stat">
+        <div class="value">7</div>
+        <div class="label">Agent Versions Evaluated</div>
+      </div>
+      <div class="header-stat">
+        <div class="value">418</div>
+        <div class="label">Study Participants</div>
+      </div>
+      <div class="header-stat">
+        <div class="value">8</div>
+        <div class="label">Sensing Modalities</div>
+      </div>
+      <div class="header-stat">
+        <div class="value">~15K</div>
+        <div class="label">EMA Entries</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ NAV ============ -->
+<nav>
+  <ul>
+    <li><a href="#findings" class="active">Key Findings</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#per-target">Per-Target</a></li>
+    <li><a href="#hypotheses">Hypotheses</a></li>
+    <li><a href="#trace">Agent Trace</a></li>
+    <li><a href="#data">Data</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+<!-- ============ KEY FINDINGS ============ -->
+<section id="findings">
+  <h2>Key Findings</h2>
+  <div class="card-grid">
+    <div class="card">
+      <h3 style="color:var(--green)">Agentic &gt; Structured</h3>
+      <p>Agents that autonomously query sensor data via tool-use (<span class="version-tag v-v4">V4</span> <span class="version-tag v-v6">V6</span>) consistently outperform structured pipeline agents (<span class="version-tag v-v1">V1</span> <span class="version-tag v-v3">V3</span>) that receive pre-formatted summaries.</p>
+      <p style="margin-top:8px;color:var(--text-muted)">V4 BA=0.666 vs V3 BA=0.607 (+9.7%)<br>V2 BA=0.598 vs V1 BA=0.521 (+14.8%)</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--orange)">LLM Agents Beat ML Baselines</h3>
+      <p>The best agentic system (<span class="version-tag v-v6">V6</span> BA=0.669) outperforms all traditional ML and text baselines, including MiniLM sentence embeddings (BA=0.629) and combined RF (BA=0.620).</p>
+      <p style="margin-top:8px;color:var(--text-muted)">Traditional sensing-only ML near chance (BA ~0.50).<br>LLM reasoning provides 33% relative improvement.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--purple)">Sensing Augments Diary</h3>
+      <p>Adding passive sensing to diary text significantly improves prediction. <span class="version-tag v-v6">V6</span> (sensing+diary) outperforms <span class="version-tag v-callm">CALLM</span> (diary-only, CHI 2025) by +6.9% BA.</p>
+      <p style="margin-top:8px;color:var(--text-muted)">Behavioral signals (mobility, screen time, activity) carry complementary information beyond self-report.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--cyan)">Proactive Prediction Works</h3>
+      <p>Sensing-only agents (<span class="version-tag v-v2">V2</span> BA=0.598, <span class="version-tag v-v5">V5</span> BA=0.601) predict well above chance without any diary entry, enabling intervention for participants who skip self-report.</p>
+      <p style="margin-top:8px;color:var(--text-muted)">Feasible JITAI deployment: no user burden required.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture">
+  <h2>Architecture: 2×2 Design Space</h2>
+  <p style="color:var(--text-muted);margin-bottom:20px">
+    The core research question: does <strong style="color:var(--text)">agentic investigation</strong> (autonomous tool-use) outperform <strong style="color:var(--text)">structured pipelines</strong> (fixed pre-formatted summaries)? Tested across two data conditions.
+  </p>
+
+  <div class="design-matrix">
+    <div class="cell header"></div>
+    <div class="cell header">Structured (fixed pipeline)</div>
+    <div class="cell header">Agentic (autonomous tool-use)</div>
+    <div class="cell label">Sensing-only</div>
+    <div class="cell"><span class="version-tag v-v1">V1</span> Fixed 5-step pipeline<br><span style="color:var(--text-muted);font-size:0.85rem">BA: 0.521</span></div>
+    <div class="cell"><span class="version-tag v-v2">V2</span> Detective loop<br><span style="color:var(--text-muted);font-size:0.85rem">BA: 0.598</span></div>
+    <div class="cell label">Multimodal (diary + sensing)</div>
+    <div class="cell"><span class="version-tag v-v3">V3</span> Multimodal RAG<br><span style="color:var(--text-muted);font-size:0.85rem">BA: 0.607</span></div>
+    <div class="cell"><span class="version-tag v-v4">V4</span> Full agentic <span style="font-size:0.75rem;color:var(--orange)">KEY</span><br><span style="color:var(--text-muted);font-size:0.85rem">BA: 0.666</span></div>
+  </div>
+
+  <p style="color:var(--text-muted);font-size:0.9rem;margin-top:8px">
+    Plus: <span class="version-tag v-v5">V5</span> (V2+filtered, BA: 0.601), <span class="version-tag v-v6">V6</span> (V4+filtered, <strong style="color:var(--green)">BA: 0.669 BEST</strong>), <span class="version-tag v-callm">CALLM</span> (diary-only baseline, BA: 0.626).
+  </p>
+
+  <h3>Agentic Investigation Pipeline</h3>
+  <div class="arch-diagram">
+    <div class="arch-row">
+      <div class="arch-box arch-sensing">
+        <div class="box-title">Passive Sensing</div>
+        <div class="box-detail">GPS, accelerometer, screen, keyboard, music, light, sleep</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-sensing">
+        <div class="box-title">Hourly Feature Store</div>
+        <div class="box-detail">114 GB raw → 2 GB Parquet<br>8 modalities × hourly bins</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-agent">
+        <div class="box-title">LLM Agent (Claude)</div>
+        <div class="box-detail">Autonomous tool-use queries<br>15+ sensing tools via Anthropic SDK</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-predict">
+        <div class="box-title">Prediction</div>
+        <div class="box-detail">PANAS Pos/Neg, ER desire<br>12 binary affect states</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-intervene">
+        <div class="box-title">Receptivity</div>
+        <div class="box-detail">Desire ∧ Availability<br>= Intervene or Wait</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Key insight:</strong> The agentic agent decides <em>what to look at</em>, not just <em>what to predict</em>. It queries selective signals (e.g., "check GPS baseline for this user" vs. "check music listening hours") and builds explicit belief-update traces, like a behavioral data scientist detective.
+  </div>
+</section>
+
+<!-- ============ RESULTS ============ -->
+<section id="results">
+  <h2>Main Results <span class="badge" style="background:rgba(63,185,80,0.15);color:var(--green)">18 users, all Claude Sonnet</span></h2>
+
+  <div class="card">
+    <div class="chart-container">
+      <canvas id="mainChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>System</th>
+          <th>Input</th>
+          <th>Method</th>
+          <th style="text-align:right">Users</th>
+          <th style="text-align:right">Entries</th>
+          <th style="text-align:right">Mean BA ↑</th>
+          <th style="text-align:right">Mean F1 ↑</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="7" style="color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;padding:8px 14px;background:var(--surface2)">Traditional ML Baselines (5-fold CV, 399 users)</td></tr>
+        <tr class="baseline"><td>RF</td><td>Sensing</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.501</td><td class="num">0.365</td></tr>
+        <tr class="baseline"><td>XGBoost</td><td>Sensing</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.502</td><td class="num">0.391</td></tr>
+        <tr class="baseline"><td>Logistic</td><td>Sensing</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.500</td><td class="num">0.302</td></tr>
+        <tr class="baseline"><td>MLP</td><td>Sensing</td><td>4-fold CV</td><td class="num">399</td><td class="num">~12,800</td><td class="num">0.507</td><td class="num">0.440</td></tr>
+        <tr><td colspan="7" style="color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;padding:8px 14px;background:var(--surface2)">Text Baselines (Diary, 5-fold CV)</td></tr>
+        <tr class="baseline"><td>TF-IDF + SVM</td><td>Diary</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.613</td><td class="num">0.570</td></tr>
+        <tr class="baseline"><td>BoW + SVM</td><td>Diary</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.607</td><td class="num">0.561</td></tr>
+        <tr class="baseline"><td>MiniLM</td><td>Diary embeddings</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.629</td><td class="num">0.588</td></tr>
+        <tr><td colspan="7" style="color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;padding:8px 14px;background:var(--surface2)">Combined Baselines (Sensing + Diary)</td></tr>
+        <tr class="baseline"><td>Combined RF</td><td>Sensing + diary</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.620</td><td class="num">0.568</td></tr>
+        <tr class="baseline"><td>Combined Logistic</td><td>Sensing + diary</td><td>5-fold CV</td><td class="num">399</td><td class="num">~15,984</td><td class="num">0.615</td><td class="num">0.575</td></tr>
+        <tr><td colspan="7" style="color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.04em;padding:8px 14px;background:var(--surface2)">LLM Agent Systems (18-user pilot)</td></tr>
+        <tr><td><span class="version-tag v-callm">CALLM</span></td><td>Diary + TF-IDF RAG</td><td>Pilot (13/18)</td><td class="num">13</td><td class="num">1,137</td><td class="num">0.626</td><td class="num">0.618</td></tr>
+        <tr><td><span class="version-tag v-v1">V1</span> Structured</td><td>Sensing only</td><td>Pilot (13/18)</td><td class="num">13</td><td class="num">1,131</td><td class="num">0.521</td><td class="num">0.453</td></tr>
+        <tr><td><span class="version-tag v-v2">V2</span> Agentic</td><td>Sensing only</td><td>Pilot (18/18)</td><td class="num">18</td><td class="num">1,567</td><td class="num">0.598</td><td class="num">0.591</td></tr>
+        <tr><td><span class="version-tag v-v3">V3</span> Struct+Diary</td><td>Sensing + diary</td><td>Pilot (10/18)</td><td class="num">10</td><td class="num">862</td><td class="num">0.607</td><td class="num">0.590</td></tr>
+        <tr><td><span class="version-tag v-v4">V4</span> Agent+Diary</td><td>Sensing + diary</td><td>Pilot (18/18)</td><td class="num">18</td><td class="num">1,567</td><td class="num best">0.666</td><td class="num best">0.661</td></tr>
+        <tr><td><span class="version-tag v-v5">V5</span> Filtered</td><td>Sensing only (filtered)</td><td>Pilot (18/18)</td><td class="num">18</td><td class="num">1,567</td><td class="num">0.601</td><td class="num">0.596</td></tr>
+        <tr><td><span class="version-tag v-v6">V6</span> Filtered+Diary</td><td>Sensing + diary (filtered)</td><td>Pilot (18/18)</td><td class="num">18</td><td class="num">1,567</td><td class="num best">0.669</td><td class="num best">0.664</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <strong>Ranking by Mean BA:</strong> V6 (0.669) &gt; V4 (0.666) &gt; MiniLM (0.629) &gt; CALLM (0.626) &gt; Combined RF (0.620) &gt; TF-IDF (0.613) &gt; V3 (0.607) &gt; V5 (0.601) &gt; V2 (0.598) &gt; V1 (0.521) &gt; ML (~0.50)
+  </div>
+</section>
+
+<!-- ============ PER-TARGET ============ -->
+<section id="per-target">
+  <h2>Per-Target Balanced Accuracy</h2>
+
+  <div class="card">
+    <div class="chart-container">
+      <canvas id="targetChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>Target</th>
+          <th style="text-align:right"><span class="version-tag v-callm">CALLM</span></th>
+          <th style="text-align:right"><span class="version-tag v-v1">V1</span></th>
+          <th style="text-align:right"><span class="version-tag v-v2">V2</span></th>
+          <th style="text-align:right"><span class="version-tag v-v3">V3</span></th>
+          <th style="text-align:right"><span class="version-tag v-v4">V4</span></th>
+          <th style="text-align:right"><span class="version-tag v-v5">V5</span></th>
+          <th style="text-align:right"><span class="version-tag v-v6">V6</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>happy</td><td class="num">.723</td><td class="num">.532</td><td class="num">.620</td><td class="num">.646</td><td class="num">.727</td><td class="num">.631</td><td class="num best">.735</td></tr>
+        <tr><td>PA_State</td><td class="num">.544</td><td class="num">.520</td><td class="num">.607</td><td class="num">.572</td><td class="num">.719</td><td class="num">.604</td><td class="num best">.731</td></tr>
+        <tr><td>NA_State</td><td class="num">.666</td><td class="num">.521</td><td class="num">.616</td><td class="num">.686</td><td class="num">.750</td><td class="num">.637</td><td class="num best">.760</td></tr>
+        <tr><td>sad</td><td class="num">.650</td><td class="num">.513</td><td class="num">.603</td><td class="num">.657</td><td class="num">.681</td><td class="num">.601</td><td class="num best">.688</td></tr>
+        <tr><td>worried</td><td class="num">.677</td><td class="num">.547</td><td class="num">.605</td><td class="num">.659</td><td class="num">.696</td><td class="num">.611</td><td class="num best">.712</td></tr>
+        <tr><td>INT_avail</td><td class="num">.560</td><td class="num">.513</td><td class="num best">.738</td><td class="num">.530</td><td class="num">.733</td><td class="num">.712</td><td class="num">.733</td></tr>
+        <tr><td>ER_desire</td><td class="num">.644</td><td class="num">.518</td><td class="num">.660</td><td class="num">.683</td><td class="num best">.749</td><td class="num">.649</td><td class="num best">.749</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--border)"><td>Mean BA</td><td class="num">.626</td><td class="num">.521</td><td class="num">.598</td><td class="num">.607</td><td class="num">.666</td><td class="num">.601</td><td class="num best">.669</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ HYPOTHESES ============ -->
+<section id="hypotheses">
+  <h2>Hypothesis Evaluation</h2>
+
+  <div class="hypothesis">
+    <div class="status status-supported">Supported</div>
+    <h4>H1: Sensing data enhances diary-based prediction</h4>
+    <div class="evidence">V4 (sensing+diary, BA=0.666) and V6 (BA=0.669) both outperform CALLM (diary-only, BA=0.626). Passive behavioral signals carry complementary information beyond self-report text.</div>
+  </div>
+
+  <div class="hypothesis">
+    <div class="status status-supported">Supported</div>
+    <h4>H2: LLM agents outperform traditional ML baselines</h4>
+    <div class="evidence">V6 BA=0.669 exceeds MiniLM (0.629), Combined RF (0.620), and all sensing-only ML baselines (~0.50). The LLM's contextual reasoning over heterogeneous sensor streams provides substantial lift.</div>
+  </div>
+
+  <div class="hypothesis">
+    <div class="status status-partial">Partially Supported</div>
+    <h4>H3: Passive sensing alone enables meaningful prediction</h4>
+    <div class="evidence">V2 BA=0.598 and V5 BA=0.601 — significantly above chance (0.50) but below multimodal agents. Sensing-only prediction is feasible but diary text provides substantial additional signal.</div>
+  </div>
+
+  <div class="hypothesis">
+    <div class="status status-supported">Supported</div>
+    <h4>H4: Agentic investigation outperforms structured pipelines</h4>
+    <div class="evidence">Consistent across both data conditions. Sensing-only: V2 BA=0.598 &gt; V1 BA=0.521 (+14.8%). Multimodal: V4 BA=0.666 &gt; V3 BA=0.607 (+9.7%). Selective, evidence-driven querying beats unconditional feature dumps.</div>
+  </div>
+
+  <div class="hypothesis">
+    <div class="status status-supported">Supported</div>
+    <h4>H5: Diary text adds value beyond sensing</h4>
+    <div class="evidence">V4 BA=0.666 &gt; V2 BA=0.598 (+11.4%). V6 BA=0.669 &gt; V5 BA=0.601 (+11.3%). Diary entries provide emotional context that passive sensing cannot fully capture.</div>
+  </div>
+</section>
+
+<!-- ============ AGENT TRACE ============ -->
+<section id="trace">
+  <h2>Example: Agentic Investigation Trace</h2>
+  <p style="color:var(--text-muted);margin-bottom:16px">How V4/V6 agents reason about a real participant. The agent autonomously decides which sensing data to query, building up evidence like a behavioral data scientist.</p>
+
+  <div class="trace">
+    <div class="trace-header">
+      <strong>Participant 071</strong> — 2024-01-15, 2:00 PM EMA<br>
+      <span style="color:var(--text-muted)">62-year-old female, breast cancer stage II, 4 years post-treatment. PHQ-8 = 8 (mild depression).</span>
+    </div>
+
+    <div class="trace-step">
+      <div class="trace-thought">"I need to figure out this person's emotional state around 2pm today. She has mild depression and is not very extraverted. Let me start with a big-picture look."</div>
+      <div class="trace-tool">get_daily_summary(date="2024-01-15")</div>
+      <div class="trace-result">GPS: stayed home all day, 0 km travel. Screen: 3.4h total (high).<br>Motion: 98% stationary. Keyboard: 12 words typed (very low). Music: no listening.</div>
+      <div class="trace-belief">Belief update: She barely moved, barely typed, barely left home. Need to check if this is unusual for her.</div>
+    </div>
+
+    <div class="trace-step">
+      <div class="trace-thought">"The home confinement and inactivity stand out. Let me check if this is unusual — maybe she works from home and this is normal."</div>
+      <div class="trace-tool">compare_to_baseline(metric="gps_at_home_pct", lookback_days=14)</div>
+      <div class="trace-result">14-day baseline: typically home 52% of the time. Today: 100%.<br>Percentile: 97th. z-score: +2.8. Extremely unusual for this participant.</div>
+      <div class="trace-belief">Belief update: Strong anomaly signal — much more confined than usual, not just "she works from home."</div>
+    </div>
+
+    <div class="trace-step">
+      <div class="trace-thought">"97th percentile home confinement is a red flag. Paired with low keyboard use and no music — possible social withdrawal. Let me check similar past patterns."</div>
+      <div class="trace-tool">find_similar_days(top_k=3)</div>
+      <div class="trace-result">
+        2024-01-08: (home all day, high screen, no music) → PANAS_Neg=5, ER_desire=6<br>
+        2023-12-22: (home, holiday) → PANAS_Neg=3, ER_desire=2<br>
+        2024-01-02: (home, low GPS) → PANAS_Neg=5, ER_desire=5
+      </div>
+      <div class="trace-belief">Belief update: The 2024-01-08 match (same pattern as today) showed the highest negative affect. Concerning.</div>
+    </div>
+
+    <div class="trace-step">
+      <div class="trace-thought">"Let me check recent receptivity — she rejected yesterday, which may signal intervention fatigue."</div>
+      <div class="trace-tool">get_receptivity_history(n=7)</div>
+      <div class="trace-result">Last 7 days: 4 accepted, 2 rejected.<br>Yesterday 2pm slot: rejected (low ER_desire).<br>Monday pattern: often has lower affect on Mondays.</div>
+      <div class="trace-belief">Belief update: Yesterday's rejection + Monday pattern + behavioral anomaly converge. Elevated NA likely, plus intervention fatigue.</div>
+    </div>
+
+    <div class="trace-step" style="background:rgba(63,185,80,0.04)">
+      <div style="font-weight:600;color:var(--green);margin-bottom:8px">Final Prediction</div>
+      <div style="font-family:monospace;font-size:0.85rem;line-height:1.6">
+        PANAS_Neg = 5 (elevated, 69th personal percentile)<br>
+        ER_desire = 5 (moderate)<br>
+        NA_State = True<br>
+        Availability = Yes (but with caution — suggest lighter intervention)
+      </div>
+      <div style="margin-top:10px;color:var(--text-muted);font-size:0.85rem">
+        <strong>Reasoning:</strong> Extreme home confinement (97th pct), very low typing, behavioral match to a past high-NA day (2024-01-08), plus yesterday's rejection → elevated negative affect. Recommend lower-intensity contact.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DATA ============ -->
+<section id="data">
+  <h2>Dataset: BUCS Cancer Survivorship Study</h2>
+  <div class="card-grid">
+    <div class="card">
+      <h3>Participants</h3>
+      <div style="font-size:2rem;font-weight:700;color:var(--accent)">418</div>
+      <p style="color:var(--text-muted)">297 iOS, 121 Android<br>~5-week study period per participant</p>
+    </div>
+    <div class="card">
+      <h3>EMA Protocol</h3>
+      <div style="font-size:2rem;font-weight:700;color:var(--accent)">3×/day</div>
+      <p style="color:var(--text-muted)">8–10am, 1–3pm, 7–9pm<br>~15,000+ total entries</p>
+    </div>
+    <div class="card">
+      <h3>Sensing Modalities</h3>
+      <div style="font-size:2rem;font-weight:700;color:var(--accent)">8</div>
+      <p style="color:var(--text-muted)">Accelerometer, GPS, motion activity,<br>screen time, keyboard, music, light, sleep</p>
+    </div>
+    <div class="card">
+      <h3>Data Scale</h3>
+      <div style="font-size:2rem;font-weight:700;color:var(--accent)">114 GB</div>
+      <p style="color:var(--text-muted)">Raw sensor data → 2 GB processed Parquet<br>Hourly feature aggregation</p>
+    </div>
+  </div>
+
+  <h3>Prediction Targets</h3>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Category</th><th>Targets</th><th>Type</th></tr></thead>
+      <tbody>
+        <tr><td>Affect (continuous)</td><td>PANAS Positive, PANAS Negative, ER Desire</td><td>Numeric (0–30 / 0–10)</td></tr>
+        <tr><td>Affect (binary)</td><td>PA_State, NA_State, happy, sad, afraid, miserable, worried, cheerful, pleased, grateful, lonely</td><td>Individual-level thresholds</td></tr>
+        <tr><td>Clinical</td><td>interactions_quality, pain, forecasting, ER_desire_State</td><td>Binary</td></tr>
+        <tr><td>Intervention</td><td>INT_availability (receptivity proxy)</td><td>Binary</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Missing Data Taxonomy</h3>
+  <div class="card">
+    <table>
+      <thead><tr><th>Class</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td style="color:var(--green)">OBSERVED</td><td>Data present and valid</td><td>Normal sensor reading</td></tr>
+        <tr><td style="color:var(--orange)">STRUCTURAL_MISSING</td><td>Platform doesn't support this sensor</td><td>No app-level data on iOS</td></tr>
+        <tr><td style="color:var(--red)">DEVICE_MISSING</td><td>Phone off / not carried (coverage &lt; 5%)</td><td>Phone left at home</td></tr>
+        <tr><td style="color:var(--yellow)">PARTICIPANT_MISSING</td><td>Phone on, sensor active, but no activity</td><td>Zero keyboard input</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="container">
+    <p>PULSE: Agentic Sensing for Proactive Intervention in Cancer Survivorship</p>
+    <p style="margin-top:4px">IMWUT 2026 (under review) &middot; <a href="https://github.com/barneslab/proactive-affective-agent">GitHub</a></p>
+  </div>
+</footer>
+
+<!-- ============ CHARTS ============ -->
+<script>
+const colors = {
+  callm: '#f97583', v1: '#79c0ff', v2: '#d2a8ff', v3: '#3fb950',
+  v4: '#f0883e', v5: '#56d4dd', v6: '#f778ba',
+  rf: '#484f58', xgb: '#484f58', mlp: '#484f58',
+  tfidf: '#6e7681', bow: '#6e7681', minilm: '#6e7681',
+  combrf: '#8b949e', comblog: '#8b949e'
+};
+
+// Main BA comparison chart
+new Chart(document.getElementById('mainChart'), {
+  type: 'bar',
+  data: {
+    labels: ['RF', 'XGBoost', 'Logistic', 'MLP', 'TF-IDF', 'BoW', 'MiniLM', 'Comb. RF', 'Comb. Log.', 'CALLM', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'],
+    datasets: [{
+      label: 'Mean Balanced Accuracy',
+      data: [0.501, 0.502, 0.500, 0.507, 0.613, 0.607, 0.629, 0.620, 0.615, 0.626, 0.521, 0.598, 0.607, 0.666, 0.601, 0.669],
+      backgroundColor: [
+        colors.rf, colors.xgb, colors.rf, colors.mlp,
+        colors.tfidf, colors.bow, colors.minilm,
+        colors.combrf, colors.comblog,
+        colors.callm, colors.v1, colors.v2, colors.v3, colors.v4, colors.v5, colors.v6
+      ],
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      title: {
+        display: true,
+        text: 'Balanced Accuracy Across All Systems',
+        color: '#e6edf3',
+        font: { size: 14, weight: '600' }
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `BA: ${ctx.parsed.y.toFixed(3)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#8b949e', font: { size: 11 } },
+        grid: { display: false }
+      },
+      y: {
+        min: 0.4,
+        max: 0.72,
+        ticks: { color: '#8b949e', callback: v => v.toFixed(2) },
+        grid: { color: 'rgba(48,54,61,0.6)' },
+        title: { display: true, text: 'Balanced Accuracy', color: '#8b949e' }
+      }
+    }
+  }
+});
+
+// Per-target radar chart
+new Chart(document.getElementById('targetChart'), {
+  type: 'radar',
+  data: {
+    labels: ['happy', 'PA_State', 'NA_State', 'sad', 'worried', 'INT_avail', 'ER_desire'],
+    datasets: [
+      {
+        label: 'V6 (Best)',
+        data: [0.735, 0.731, 0.760, 0.688, 0.712, 0.733, 0.749],
+        borderColor: colors.v6,
+        backgroundColor: colors.v6 + '22',
+        pointBackgroundColor: colors.v6,
+        borderWidth: 2,
+      },
+      {
+        label: 'V4',
+        data: [0.727, 0.719, 0.750, 0.681, 0.696, 0.733, 0.749],
+        borderColor: colors.v4,
+        backgroundColor: colors.v4 + '15',
+        pointBackgroundColor: colors.v4,
+        borderWidth: 2,
+      },
+      {
+        label: 'CALLM',
+        data: [0.723, 0.544, 0.666, 0.650, 0.677, 0.560, 0.644],
+        borderColor: colors.callm,
+        backgroundColor: colors.callm + '10',
+        pointBackgroundColor: colors.callm,
+        borderWidth: 1.5,
+        borderDash: [4, 4],
+      },
+      {
+        label: 'V1 (Weakest)',
+        data: [0.532, 0.520, 0.521, 0.513, 0.547, 0.513, 0.518],
+        borderColor: colors.v1,
+        backgroundColor: colors.v1 + '08',
+        pointBackgroundColor: colors.v1,
+        borderWidth: 1,
+        borderDash: [2, 2],
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      title: {
+        display: true,
+        text: 'Per-Target Balanced Accuracy — Key Systems',
+        color: '#e6edf3',
+        font: { size: 14, weight: '600' }
+      },
+      legend: {
+        labels: { color: '#8b949e', usePointStyle: true, padding: 16 }
+      }
+    },
+    scales: {
+      r: {
+        min: 0.45,
+        max: 0.80,
+        ticks: { color: '#8b949e', backdropColor: 'transparent', stepSize: 0.05 },
+        grid: { color: 'rgba(48,54,61,0.5)' },
+        pointLabels: { color: '#e6edf3', font: { size: 12 } },
+        angleLines: { color: 'rgba(48,54,61,0.5)' }
+      }
+    }
+  }
+});
+
+// Smooth scroll for nav
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const id = a.getAttribute('href').slice(1);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('nav a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+  });
+});
+
+// Update active nav on scroll
+const sections = document.querySelectorAll('section');
+const navLinks = document.querySelectorAll('nav a');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+});
+</script>
+
+</body>
+</html>
