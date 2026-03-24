@@ -22,20 +22,32 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/
 
-# Data (top-level data directory, not src/data/)
+# Data & outputs
 /data/
-
-# Outputs
 outputs/
 
 # Logs
 *.log
 test_logs/
 
-# Paper draft (Overleaf only)
+# Paper draft (Overleaf-managed)
 draft/
 
-# Personal/temporary files
+# Process artifacts & experiment infra
+.nojekyll
+CODEX_BRIEFING.md
+PROGRESS.md
+PROJECT_CONTROL.md
 health.md
 paper_results_table.md
+update_pyproject.py
+uv.lock
+write-paper-test/
+scripts/archive/
+docs/PROGRESS.md
+docs/plan.html
+docs/advisor-sync-architecture.html
+docs/data-filtering-plan.md
+docs/timeline-viz.html
