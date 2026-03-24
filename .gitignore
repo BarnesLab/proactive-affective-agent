@@ -35,6 +35,9 @@ test_logs/
 # Paper draft (Overleaf-managed)
 draft/
 
+# Agent harness (local only)
+CLAUDE.md
+
 # Process artifacts & experiment infra
 .nojekyll
 CODEX_BRIEFING.md
@@ -46,6 +49,16 @@ update_pyproject.py
 uv.lock
 write-paper-test/
 scripts/archive/
+scripts/tmp_*
+scripts/slot_watcher.sh
+scripts/sync_overleaf.py
+scripts/test_tool_logging.sh
+scripts/results_dashboard.py
+scripts/reviewer_analyses.py
+scripts/v4_rerun_*
+scripts/run_gpt*
+scripts/run_titan_baselines.py
+scripts/queue_runner_gpt.py
 docs/PROGRESS.md
 docs/plan.html
 docs/advisor-sync-architecture.html
