@@ -536,11 +536,25 @@ def run_transformer(fold_data_list):
 
 
 # ---------------------------------------------------------------------------
-# 5. Personalized Online (receptivity-only feedback)
+# 5. Personalized Context (fair: mirrors LLM agent's information access)
 # ---------------------------------------------------------------------------
 
 def run_personalized(fold_data_list):
-    """Online personalization: updates model only when BOTH ER_desire=1 AND INT_avail=1."""
+    """Personalized model mirroring the LLM agent's information access.
+
+    The LLM agent accumulates understanding of a user's behavioral distribution
+    via session memory + compare_to_baseline tool, but NEVER sees ground truth
+    EMA outcomes. This ML personalization is designed to be information-equivalent:
+
+    For each user, chronologically:
+    - Accumulate per-user behavioral statistics (running mean/std of features)
+    - Compute z-score deviations: current entry vs. personal baseline
+    - Track past receptivity signals (ER_desire, INT_avail) as input features
+    - NO online weight updates with ground truth labels
+
+    This tests whether a fair ML model with the same personalization information
+    can match the LLM agent's performance.
+    """
     try:
         from xgboost import XGBClassifier
     except ImportError:
@@ -552,21 +566,77 @@ def run_personalized(fold_data_list):
     for fold_idx, (X_tr_3d, X_te_3d, y_tr, y_te, test_df, mask) in enumerate(fold_data_list):
         X_train_flat = sequence_to_flat_stats(X_tr_3d)
         X_test_flat = sequence_to_flat_stats(X_te_3d)
-        scaler = StandardScaler()
-        X_train_flat = scaler.fit_transform(X_train_flat)
-        X_test_flat = scaler.transform(X_test_flat)
+        n_base = X_train_flat.shape[1]
 
-        # Get receptivity signals for test set
-        er_desire = coerce_binary(y_te["Individual_level_ER_desire_State"].values)
-        int_avail = coerce_binary(y_te["INT_availability"].values)
+        # Population baseline from training data
+        pop_mean = np.nanmean(X_train_flat, axis=0)
+        pop_std = np.nanstd(X_train_flat, axis=0) + 1e-8
 
-        # Sort test entries by user then time for chronological processing
-        test_50_mask = test_df["Study_ID"].isin(PILOT_50_USERS).values
+        # Training: augment with z-score deviation from population
+        X_train_dev = (X_train_flat - pop_mean) / pop_std
+        # Add dummy receptivity history (population rates)
+        train_recept = np.tile([0.35, 0.64, 0.5, 0.2], (len(X_train_flat), 1)).astype(np.float32)
+        X_train_aug = np.hstack([X_train_flat, X_train_dev, train_recept])
+
+        # Test: process each user chronologically to build personal baseline
+        er_vals = coerce_binary(y_te["Individual_level_ER_desire_State"].values)
+        int_vals = coerce_binary(y_te["INT_availability"].values)
+
+        ts_col = "timestamp_local" if "timestamp_local" in test_df.columns else "date_local"
         test_order = test_df.copy()
         test_order["_idx"] = range(len(test_order))
-        test_50_rows = test_order[test_50_mask].sort_values(
-            ["Study_ID", "date_local"]
-        )
+        test_order = test_order.sort_values(["Study_ID", ts_col]).reset_index(drop=True)
+
+        X_test_aug = np.zeros((len(test_df), n_base * 2 + 4), dtype=np.float32)
+        user_hist = {}  # uid -> list of past feature vectors
+        user_recept = {}  # uid -> {"er": [], "int": []}
+
+        for _, row in test_order.iterrows():
+            idx = int(row["_idx"])
+            uid = int(row["Study_ID"])
+            x_cur = X_test_flat[idx]
+
+            if uid not in user_hist:
+                user_hist[uid] = []
+                user_recept[uid] = {"er": [], "int": []}
+
+            # Personal deviation (or population if <3 past entries)
+            past = user_hist[uid]
+            if len(past) >= 3:
+                p_mean = np.nanmean(past, axis=0)
+                p_std = np.nanstd(past, axis=0) + 1e-8
+                dev = (x_cur - p_mean) / p_std
+            else:
+                dev = (x_cur - pop_mean) / pop_std
+
+            # Receptivity history features
+            rh = user_recept[uid]
+            n_past = len(rh["er"])
+            if n_past > 0:
+                recent = min(10, n_past)
+                r_er = [v for v in rh["er"][-recent:] if not np.isnan(v)]
+                r_int = [v for v in rh["int"][-recent:] if not np.isnan(v)]
+                er_rate = np.mean(r_er) if r_er else 0.5
+                int_rate = np.mean(r_int) if r_int else 0.5
+                both = sum(1 for e, i in zip(rh["er"][-recent:], rh["int"][-recent:])
+                           if e == 1.0 and i == 1.0)
+                recept_feat = [er_rate, int_rate, min(n_past / 20.0, 1.0), both / max(recent, 1)]
+            else:
+                recept_feat = [0.5, 0.5, 0.0, 0.25]
+
+            X_test_aug[idx] = np.concatenate([x_cur, dev, recept_feat])
+
+            # Update observable history (no ground truth)
+            user_hist[uid].append(x_cur.copy())
+            rh["er"].append(er_vals[idx])
+            rh["int"].append(int_vals[idx])
+
+        # Scale
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train_aug)
+        X_test_scaled = scaler.transform(X_test_aug)
+
+        eval_mask = mask
 
         for target in BINARY_TARGETS:
             y_tr_arr = coerce_binary(y_tr[target].values)
@@ -578,60 +648,18 @@ def run_personalized(fold_data_list):
             y_tr_int = y_tr_arr[tr_mask].astype(int)
             spw = (len(y_tr_int) - y_tr_int.sum()) / max(y_tr_int.sum(), 1)
 
-            # Train global model
-            global_clf = XGBClassifier(
+            clf = XGBClassifier(
                 n_estimators=200, max_depth=6, learning_rate=0.1,
                 scale_pos_weight=spw, eval_metric="logloss",
                 verbosity=0, random_state=42, n_jobs=min(2, MAX_JOBS),
             )
-            global_clf.fit(X_train_flat[tr_mask], y_tr_int)
+            clf.fit(X_train_scaled[tr_mask], y_tr_int)
+            preds = clf.predict(X_test_scaled)
 
-            # Chronological per-user processing
-            user_buffers = {}
-            user_models = {}
+            predictions[target]["y_true"].extend(y_te_arr[eval_mask].tolist())
+            predictions[target]["y_pred"].extend(preds[eval_mask].tolist())
 
-            for _, row in test_50_rows.iterrows():
-                idx = int(row["_idx"])
-                uid = int(row["Study_ID"])
-                x = X_test_flat[idx:idx+1]
-
-                # Predict
-                clf = user_models.get(uid, global_clf)
-                pred = clf.predict(x)[0]
-
-                predictions[target]["y_true"].append(y_te_arr[idx])
-                predictions[target]["y_pred"].append(float(pred))
-
-                # Feedback only if receptive
-                if er_desire[idx] == 1.0 and int_avail[idx] == 1.0:
-                    true_val = y_te_arr[idx]
-                    if not np.isnan(true_val):
-                        if uid not in user_buffers:
-                            user_buffers[uid] = {"X": [], "y": []}
-                        user_buffers[uid]["X"].append(X_test_flat[idx])
-                        user_buffers[uid]["y"].append(int(true_val))
-
-                        if len(user_buffers[uid]["y"]) >= 5:
-                            buf_X = np.array(user_buffers[uid]["X"])
-                            buf_y = np.array(user_buffers[uid]["y"])
-                            if len(set(buf_y)) >= 2:
-                                # Global subset + user buffer
-                                rng = np.random.RandomState(42)
-                                n_g = min(500, tr_mask.sum())
-                                g_idx = rng.choice(tr_mask.sum(), n_g, replace=False)
-                                X_comb = np.vstack([X_train_flat[tr_mask][g_idx], buf_X])
-                                y_comb = np.concatenate([y_tr_int[g_idx], buf_y])
-
-                                p_clf = XGBClassifier(
-                                    n_estimators=100, max_depth=4, learning_rate=0.1,
-                                    scale_pos_weight=spw, eval_metric="logloss",
-                                    verbosity=0, random_state=42, n_jobs=min(2, MAX_JOBS),
-                                )
-                                p_clf.fit(X_comb, y_comb)
-                                user_models[uid] = p_clf
-
-        logger.info(f"  [Personalized] Fold {fold_idx+1}/5 done, "
-                     f"{len(user_models)} users personalized")
+        logger.info(f"  [Personalized] Fold {fold_idx+1}/5 done")
 
     return _aggregate_predictions(predictions)
 

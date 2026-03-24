@@ -59,8 +59,25 @@ scripts/v4_rerun_*
 scripts/run_gpt*
 scripts/run_titan_baselines.py
 scripts/queue_runner_gpt.py
+scripts/queue_runner.py
+scripts/run_agentic_pilot.py
+scripts/run_simulation.py
+scripts/run_dl_baselines.py
+scripts/run_ml_baselines_new.py
+scripts/sonnet_watcher.sh
+scripts/sonnet_watcher_v2.py
+scripts/auto_progress.py
+scripts/clean_checkpoints.py
+scripts/progress_dashboard.py
+scripts/generate_dashboard.py
+scripts/per_user_stats.py
+scripts/evaluate_learning_curve.py
 docs/PROGRESS.md
 docs/plan.html
 docs/advisor-sync-architecture.html
 docs/data-filtering-plan.md
 docs/timeline-viz.html
+
+# OpenAI/GPT experiment files (not core research)
+src/agent/openai_agent.py
+src/think/openai_client.py
