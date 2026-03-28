@@ -287,6 +287,9 @@ class AgenticCCAgent:
         # Peer database path for cross-user search
         self.peer_db_path = peer_db_path
 
+        # Probe data availability for this user (used in system prompt)
+        self._data_availability = self._probe_data_availability()
+
         # Detect Python binary with mcp + pandas
         self.python_bin = self._find_python()
 
@@ -336,6 +339,10 @@ class AgenticCCAgent:
             "filtered_sensing": SYSTEM_PROMPT_FILTERED_SENSING,
             "filtered_multimodal": SYSTEM_PROMPT_FILTERED_MULTIMODAL,
         }[self.mode]
+
+        # Inject data availability so the agent knows which modalities to query
+        if self._data_availability:
+            system_prompt = system_prompt + "\n\n" + self._data_availability
 
         tag = f"[{self._version.upper()}]"
         logger.info(f"{tag} User {self.study_id} | {ema_date} {ema_slot} | launching claude --print ({self.mode})")
@@ -1041,6 +1048,35 @@ Date: {ema_date}
                 return "evening"
         except Exception:
             return "unknown"
+
+    def _probe_data_availability(self) -> str:
+        """Check which sensing modalities have data for this user."""
+        pid = str(self.study_id).zfill(3)
+        hourly_dir = self.processed_dir
+        modalities = {
+            "gps": "gps", "motion": "motion", "screen": "screen",
+            "keyboard": "keyinput", "music": "mus", "light": "light",
+        }
+        hourly_yes, hourly_no = [], []
+        for mod, disk in modalities.items():
+            path = hourly_dir / disk / f"{pid}_{disk}_hourly.parquet"
+            (hourly_yes if path.exists() else hourly_no).append(mod)
+
+        events_dir = hourly_dir.parent / "events"
+        events_yes, events_no = [], []
+        for mod in ["screen", "app", "motion", "keyboard", "music"]:
+            path = events_dir / f"{mod}_events" / f"{pid}_{mod}_events.parquet"
+            (events_yes if path.exists() else events_no).append(mod)
+
+        lines = [f"## Data Availability for User {self.study_id}"]
+        lines.append(f"Available hourly sensing: {', '.join(hourly_yes) if hourly_yes else 'none'}")
+        if hourly_no:
+            lines.append(f"NOT available hourly: {', '.join(hourly_no)}")
+        lines.append(f"Available raw events: {', '.join(events_yes) if events_yes else 'none'}")
+        if events_no:
+            lines.append(f"NOT available events: {', '.join(events_no)}")
+        lines.append("Do NOT query unavailable modalities — they will return empty results.")
+        return "\n".join(lines)
 
     def _find_python(self) -> str:
         """Find a Python binary that has mcp + pandas installed."""

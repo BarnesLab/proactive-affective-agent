@@ -204,6 +204,12 @@ def _load_peer_db() -> None:
 _load_peer_db()
 
 # ---------------------------------------------------------------------------
+# Probe data availability for this user
+# ---------------------------------------------------------------------------
+
+_data_availability_text = _engine.format_data_availability(_study_id)
+
+# ---------------------------------------------------------------------------
 # Build MCP server
 # ---------------------------------------------------------------------------
 
@@ -213,7 +219,8 @@ mcp = FastMCP(
         "You have access to passive smartphone sensing data for a cancer survivor. "
         "Use these tools to investigate behavioral patterns before making an emotional "
         "state prediction. Data is automatically restricted to before the EMA timestamp. "
-        "You can also search for similar cases from OTHER participants using find_peer_cases."
+        "You can also search for similar cases from OTHER participants using find_peer_cases.\n\n"
+        + _data_availability_text
     ),
 )
 
@@ -228,7 +235,7 @@ def query_sensing(
     """Query passive sensing data for a specific modality and time window.
 
     Args:
-        modality: Sensor type — accelerometer, gps, motion, screen, keyboard, music, light
+        modality: Sensor type — gps, motion, screen, keyboard, music, light
         hours_before_ema: How many hours before the EMA to look back (1-48)
         hours_duration: Duration of window in hours (default 1, max 24)
         granularity: hourly or daily
@@ -297,13 +304,17 @@ def get_behavioral_timeline(date: str = "", segment_hours: int = 3) -> str:
 
 
 @mcp.tool()
-def compare_to_baseline(modality: str, feature: str, current_value: float) -> str:
-    """Compare a current sensor reading to this person's personal historical baseline.
+def compare_to_baseline(modality: str, feature: str, current_value: float = None, hours_before_ema: int = 1) -> str:
+    """Compare a sensor reading to this person's personal historical baseline.
+
+    You can either provide current_value directly, or omit it to have the tool
+    automatically fetch the value from the specified time window.
 
     Args:
         modality: Sensor modality name
         feature: Feature name (e.g., screen_on_min, gps_distance_km, motion_walking_min)
-        current_value: The value to compare against the personal baseline
+        current_value: The value to compare (optional — auto-fetched if omitted)
+        hours_before_ema: Hours before EMA to fetch value from (default 1, used when current_value is omitted)
     """
     result = _engine.call_tool(
         tool_name="compare_to_baseline",
@@ -311,6 +322,7 @@ def compare_to_baseline(modality: str, feature: str, current_value: float) -> st
             "modality": modality,
             "feature": feature,
             "current_value": current_value,
+            "hours_before_ema": hours_before_ema,
         },
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
@@ -321,7 +333,10 @@ def compare_to_baseline(modality: str, feature: str, current_value: float) -> st
 
 @mcp.tool()
 def get_receptivity_history(lookback_days: int = 14) -> str:
-    """Retrieve this person's past intervention receptivity and mood patterns.
+    """Retrieve this person's past intervention receptivity and availability patterns.
+
+    Returns ER_desire scores and INT_availability. Does NOT include PANAS or
+    emotion scores (to prevent label leakage).
 
     Args:
         lookback_days: How many days of history to retrieve (default 14, max 30)

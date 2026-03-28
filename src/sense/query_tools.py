@@ -53,7 +53,7 @@ SENSING_TOOLS: list[dict] = [
                 "modality": {
                     "type": "string",
                     "enum": [
-                        "accelerometer", "gps", "motion",
+                        "gps", "motion",
                         "screen", "keyboard", "music", "light",
                     ],
                     "description": "Which sensor modality to query",
@@ -137,8 +137,10 @@ SENSING_TOOLS: list[dict] = [
     {
         "name": "compare_to_baseline",
         "description": (
-            "Compare a current sensor reading to this person's personal historical "
-            "baseline. Use this to detect anomalies."
+            "Compare a sensor reading to this person's personal historical baseline. "
+            "Use this to detect anomalies. You can either provide a current_value directly, "
+            "or specify hours_before_ema to have the tool automatically fetch the value "
+            "from the data for that time window."
         ),
         "input_schema": {
             "type": "object",
@@ -151,18 +153,32 @@ SENSING_TOOLS: list[dict] = [
                         "motion_walking_min)"
                     ),
                 },
-                "current_value": {"type": "number"},
+                "current_value": {
+                    "type": "number",
+                    "description": (
+                        "The value to compare. If omitted, the tool auto-fetches "
+                        "the value from hours_before_ema window."
+                    ),
+                },
+                "hours_before_ema": {
+                    "type": "integer",
+                    "description": (
+                        "Hours before EMA to fetch the value from (default 1). "
+                        "Only used when current_value is not provided."
+                    ),
+                    "default": 1,
+                },
             },
-            "required": ["modality", "feature", "current_value"],
+            "required": ["modality", "feature"],
         },
     },
     {
         "name": "get_receptivity_history",
         "description": (
-            "Retrieve this person's past intervention receptivity and mood patterns. "
-            "In real-world JITAI deployment only intervention accept/reject is known; "
-            "this tool returns that signal plus aggregate mood trends for context. "
-            "Use this to understand their emotional baseline and availability patterns."
+            "Retrieve this person's past intervention receptivity and availability patterns. "
+            "Returns ER_desire scores and INT_availability over past days. "
+            "Does NOT include PANAS or emotion scores (to prevent label leakage). "
+            "Use this to understand their intervention receptivity baseline."
         ),
         "input_schema": {
             "type": "object",
@@ -183,8 +199,9 @@ SENSING_TOOLS: list[dict] = [
     {
         "name": "find_similar_days",
         "description": (
-            "Find past days with similar behavioral patterns and show what this "
-            "person's mood was on those days. Useful for analog-based prediction."
+            "Find past days with similar behavioral patterns and show this person's "
+            "receptivity (ER_desire, availability) on those days. "
+            "Useful for analog-based prediction calibration."
         ),
         "input_schema": {
             "type": "object",
@@ -393,6 +410,20 @@ def _format_screen_row(row: pd.Series) -> str:
         if col in row.index and pd.notna(row[col]):
             parts.append(f"{float(row[col]):.0f} sessions")
             break
+    # App category breakdown (available in screen hourly parquet)
+    app_categories = [
+        ("app_social_min", "social"),
+        ("app_comm_min", "communication"),
+        ("app_entertainment_min", "entertainment"),
+        ("app_productivity_min", "productivity"),
+        ("app_health_min", "health"),
+    ]
+    app_parts: list[str] = []
+    for col, label in app_categories:
+        if col in row.index and pd.notna(row[col]) and float(row[col]) > 0:
+            app_parts.append(f"{label} {float(row[col]):.0f}min")
+    if app_parts:
+        parts.append(f"apps: {', '.join(app_parts)}")
     return ", ".join(parts) if parts else "screen data present"
 
 
@@ -480,7 +511,7 @@ class SensingQueryEngine:
     """
 
     MODALITIES = [
-        "accelerometer", "gps", "motion",
+        "gps", "motion",
         "screen", "keyboard", "music", "light",
     ]
 
@@ -510,6 +541,47 @@ class SensingQueryEngine:
                 self._ema_df["timestamp_local"] = (
                     self._ema_df["timestamp_local"].dt.tz_localize(None)
                 )
+
+    def get_data_availability(self, study_id: int) -> dict[str, dict[str, bool]]:
+        """Probe which modalities and event types have data for a given user.
+
+        Returns:
+            Dict with 'hourly' and 'events' keys, each mapping modality name to bool.
+        """
+        pid = str(study_id).zfill(3)
+
+        hourly_avail = {}
+        for mod in self.MODALITIES:
+            disk_name = self._MODALITY_DIR_ALIAS.get(mod, mod)
+            path = self.processed_dir / disk_name / f"{pid}_{disk_name}_hourly.parquet"
+            hourly_avail[mod] = path.exists()
+
+        events_dir = self.processed_dir.parent / "events"
+        event_modalities = ["screen", "app", "motion", "keyboard", "music"]
+        events_avail = {}
+        for mod in event_modalities:
+            path = events_dir / f"{mod}_events" / f"{pid}_{mod}_events.parquet"
+            events_avail[mod] = path.exists()
+
+        return {"hourly": hourly_avail, "events": events_avail}
+
+    def format_data_availability(self, study_id: int) -> str:
+        """Return a human-readable data availability summary for this user."""
+        avail = self.get_data_availability(study_id)
+        hourly_yes = [m for m, v in avail["hourly"].items() if v]
+        hourly_no = [m for m, v in avail["hourly"].items() if not v]
+        events_yes = [m for m, v in avail["events"].items() if v]
+        events_no = [m for m, v in avail["events"].items() if not v]
+
+        lines = [f"## Data Availability for User {study_id}"]
+        lines.append(f"Available hourly sensing: {', '.join(hourly_yes) if hourly_yes else 'none'}")
+        if hourly_no:
+            lines.append(f"NOT available hourly: {', '.join(hourly_no)}")
+        lines.append(f"Available raw events: {', '.join(events_yes) if events_yes else 'none'}")
+        if events_no:
+            lines.append(f"NOT available events: {', '.join(events_no)}")
+        lines.append("Do NOT query modalities listed as NOT available — they will return empty results.")
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Internal data loading
@@ -1077,24 +1149,46 @@ class SensingQueryEngine:
         study_id: int,
         modality: str,
         feature: str,
-        current_value: float,
+        current_value: float | None,
         ema_timestamp: str | datetime,
+        hours_before_ema: int = 1,
     ) -> str:
         """Compare a current feature value to this participant's personal baseline.
 
         Baseline is stratified by time-of-day (morning/afternoon/evening/night).
+        If current_value is None, auto-fetches from the data using hours_before_ema.
 
         Args:
             study_id: Participant's Study_ID.
             modality: Sensor modality.
             feature: Column/feature name (e.g. "screen_on_min").
-            current_value: The observed value to compare.
+            current_value: The observed value to compare. If None, auto-fetched.
             ema_timestamp: The EMA timestamp (determines time-of-day).
+            hours_before_ema: Hours before EMA to fetch value (used when current_value is None).
 
         Returns:
             Natural language comparison string.
         """
         ema_dt = _normalize_ts(ema_timestamp)
+
+        # Auto-fetch current_value if not provided
+        if current_value is None:
+            window_start = ema_dt - timedelta(hours=hours_before_ema)
+            window_end = ema_dt
+            df = self._get_window(study_id, modality, window_start, window_end)
+            if df.empty or feature not in df.columns:
+                return (
+                    f"[Baseline Comparison: {feature}]\n"
+                    f"Could not auto-fetch value: no {modality} data for {feature} "
+                    f"in the {hours_before_ema}h window before EMA."
+                )
+            val = df[feature].mean(skipna=True)
+            if pd.isna(val):
+                return (
+                    f"[Baseline Comparison: {feature}]\n"
+                    f"Could not auto-fetch value: {feature} is all NaN in window."
+                )
+            current_value = float(val)
         tod = _time_of_day(ema_dt.hour)
         header = f"[Baseline Comparison: {feature}]"
 
@@ -1680,12 +1774,15 @@ class SensingQueryEngine:
                     segment_hours=tool_input.get("segment_hours", 3),
                 )
             if tool_name == "compare_to_baseline":
+                raw_val = tool_input.get("current_value")
+                current_value = float(raw_val) if raw_val is not None else None
                 return self.compare_to_baseline(
                     study_id=study_id,
                     modality=tool_input["modality"],
                     feature=tool_input["feature"],
-                    current_value=float(tool_input["current_value"]),
+                    current_value=current_value,
                     ema_timestamp=ema_timestamp,
+                    hours_before_ema=int(tool_input.get("hours_before_ema", 1)),
                 )
             if tool_name == "get_receptivity_history":
                 return self.get_receptivity_history(
