@@ -240,8 +240,6 @@ def query_sensing(
         hours_duration: Duration of window in hours (default 1, max 24)
         granularity: hourly or daily
     """
-    with open("/tmp/mcp_PROOF.txt", "a") as _pf:
-        _pf.write(f"query_sensing ENTERED at {_time.strftime('%H:%M:%S')}\n")
     result = _engine.call_tool(
         tool_name="query_sensing",
         tool_input={
@@ -253,8 +251,6 @@ def query_sensing(
         study_id=_study_id,
         ema_timestamp=_ema_timestamp,
     )
-    with open("/tmp/mcp_PROOF.txt", "a") as _pf:
-        _pf.write(f"query_sensing RETURNED at {_time.strftime('%H:%M:%S')}\n")
     _log_tool_call("query_sensing", {"modality": modality, "hours_before_ema": hours_before_ema, "hours_duration": hours_duration}, result)
     return result
 
@@ -267,8 +263,6 @@ def get_daily_summary(date: str = "", lookback_days: int = 0) -> str:
         date: Date in YYYY-MM-DD format (defaults to EMA date)
         lookback_days: Also return summaries for N prior days (0-7, default 0)
     """
-    with open("/tmp/mcp_PROOF.txt", "a") as _pf:
-        _pf.write(f"get_daily_summary ENTERED at {_time.strftime('%H:%M:%S')}\n")
     result = _engine.call_tool(
         tool_name="get_daily_summary",
         tool_input={

@@ -469,6 +469,21 @@ class PilotSimulator:
             logger.info(f"Peer database already exists: {peer_db_path}")
             return str(peer_db_path)
 
+        # Use a lock file to prevent race condition when multiple workers
+        # start simultaneously and all try to build the peer database.
+        lock_path = peer_db_path.with_suffix(".lock")
+        import fcntl
+        try:
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            # Re-check after acquiring lock (another worker may have built it)
+            if peer_db_path.exists():
+                lock_fd.close()
+                logger.info(f"Peer database built by another worker: {peer_db_path}")
+                return str(peer_db_path)
+        except Exception as e:
+            logger.warning(f"Could not acquire peer db lock: {e}; building anyway")
+
         train = self._train_df.copy()
 
         # Merge with filtered sensing data (by Study_ID + date_local)
@@ -512,9 +527,18 @@ class PilotSimulator:
                     n_with_sensing = train[train["screen_total_min"].notna()].shape[0]
                     logger.info(f"Peer DB: merged sensing for {n_with_sensing}/{len(train)} entries")
 
-        # Save
-        train.to_parquet(peer_db_path, index=False)
+        # Save (atomic: write to tmp then rename)
+        tmp_peer = peer_db_path.with_suffix(".parquet.tmp")
+        train.to_parquet(tmp_peer, index=False)
+        tmp_peer.rename(peer_db_path)
         logger.info(f"Built peer database: {len(train)} entries -> {peer_db_path}")
+
+        # Release lock
+        try:
+            lock_fd.close()
+        except Exception:
+            pass
+
         return str(peer_db_path)
 
     def run_version(self, version: str) -> dict[str, Any]:
@@ -676,7 +700,11 @@ class PilotSimulator:
                     except Exception as e:
                         logger.error(f"  Error predicting: {e}")
                         pred = {"_error": str(e)}
-                        break
+                        # Do NOT checkpoint this entry — skip it so it can be
+                        # retried on the next run instead of silently producing
+                        # an empty prediction that looks "complete".
+                        logger.warning(f"  Skipping entry {i} for user {sid} — will retry on next run")
+                        continue
                 elapsed = time.monotonic() - t0
 
                 # Extract ground truth
@@ -869,7 +897,9 @@ class PilotSimulator:
         # Per-user checkpoint to support parallel user processing
         suffix = f"_user{current_user}" if current_user is not None else ""
         path = checkpoint_dir / f"{version}{suffix}_checkpoint.json"
-        with open(path, "w") as f:
+        # Atomic write: write to temp file then rename to prevent corruption
+        tmp_path = path.with_suffix(".json.tmp")
+        with open(tmp_path, "w") as f:
             json.dump({
                 "version": version,
                 "n_entries": len(predictions),
@@ -879,6 +909,7 @@ class PilotSimulator:
                 "ground_truths": ground_truths,
                 "metadata": metadata,
             }, f, default=str)
+        tmp_path.rename(path)
 
     def _load_checkpoint(self, version: str, selected_users: set[int] | None = None) -> tuple:
         """Load checkpoint for resume. Returns (preds, gts, meta, resume_user, resume_entry).
