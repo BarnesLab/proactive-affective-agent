@@ -34,7 +34,7 @@ CHECKPOINT_DIR = PILOT_DIR / "checkpoints"
 RATE_LIMIT_LOG = PILOT_DIR / ".rate_limit_events.jsonl"
 LOG_DIR = PILOT_DIR / "queue_logs"
 
-ALL_VERSIONS = ["CALLM", "v1", "v2", "v3", "v4", "v5", "v6"]
+ALL_VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 AGENTIC_VERSIONS = {"v2", "v4", "v5", "v6"}  # set for fast lookup
 # All 50 users (matches evaluate_pilot.py PRIMARY_USERS + remaining)
 USERS = [24, 25, 40, 41, 43, 60, 61, 71, 75, 82, 83, 86, 89, 95, 98, 99,

@@ -544,7 +544,7 @@ class AgenticCCAgent:
                         env=env,
                         cwd=str(PROJECT_ROOT),
                     )
-                    time.sleep(2)  # allow MCP server to initialize
+                    time.sleep(5)  # allow MCP server to initialize (loads pandas, EMA data, peer db)
                     try:
                         stdout, stderr = proc.communicate(
                             input=prompt, timeout=598,

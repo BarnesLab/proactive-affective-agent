@@ -29,9 +29,11 @@ from src.utils.mappings import BINARY_STATE_TARGETS, CONTINUOUS_TARGETS
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Primary evaluation set: 18 users with clean complete V2/V4/V5/V6
-# Updated 2026-03-17
-PRIMARY_USERS = [24, 43, 71, 119, 164, 232, 242, 258, 275, 310, 338, 362, 399, 403, 437, 458, 505, 513]
+# Full 50-user evaluation set (all pilot users)
+PRIMARY_USERS = [24, 25, 40, 41, 43, 60, 61, 71, 75, 82, 83, 86, 89, 95, 98, 99,
+                 103, 119, 140, 164, 169, 187, 189, 211, 232, 242, 257, 258, 260,
+                 275, 299, 310, 320, 335, 338, 351, 361, 362, 363, 392, 399, 403,
+                 437, 455, 458, 464, 499, 503, 505, 513]
 PILOT_USERS = PRIMARY_USERS  # backward compat
 VERSIONS = ["callm", "v1", "v2", "v3", "v4", "v5", "v6"]
 
