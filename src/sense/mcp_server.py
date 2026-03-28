@@ -403,13 +403,15 @@ def query_raw_events(
 def find_peer_cases(
     search_mode: str = "text",
     query_text: str = "",
-    top_k: int = 5,
+    top_k: int = 10,
 ) -> str:
     """Search OTHER participants' past EMA entries to find similar cases WITH ground truth outcomes.
 
     This lets you see how other cancer survivors with similar experiences/behaviors actually felt,
     providing calibration anchors for your prediction. Results include their actual PANAS scores,
-    ER desire, and binary emotional states.
+    ER desire, and binary emotional states. Use this to calibrate your numeric predictions —
+    the distribution of actual scores across similar peers is often more informative than
+    reasoning from behavioral signals alone.
 
     Two search modes:
     - "text": Search by diary text similarity (TF-IDF). Use when diary text is available.
@@ -420,12 +422,12 @@ def find_peer_cases(
     Args:
         search_mode: "text" (search by diary similarity) or "sensing" (search by behavioral fingerprint)
         query_text: Diary text to search for (required for text mode, ignored for sensing mode)
-        top_k: Number of similar cases to return (default 5, max 10)
+        top_k: Number of similar cases to return (default 10, max 20)
     """
     if _peer_db is None:
         return "Peer database not available."
 
-    top_k = min(max(top_k, 1), 10)
+    top_k = min(max(top_k, 1), 20)
 
     if search_mode == "text":
         result = _peer_search_text(query_text, top_k)
