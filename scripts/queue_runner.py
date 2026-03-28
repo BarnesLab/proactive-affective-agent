@@ -247,7 +247,14 @@ def main():
     parser.add_argument("--clean", action="store_true", help="Clean checkpoints before running")
     parser.add_argument("--dry-run", action="store_true", help="Show tasks without running")
     parser.add_argument("--workers", type=int, default=5, help="Number of parallel workers (default: 5)")
+    parser.add_argument("--versions", type=str, default="", help="Comma-separated versions to run (default: all)")
     args = parser.parse_args()
+
+    # Filter versions if specified
+    if args.versions:
+        global ALL_VERSIONS
+        ALL_VERSIONS = [v.strip() for v in args.versions.split(",")]
+        logger.info(f"Filtering to versions: {ALL_VERSIONS}")
 
     # Step 1: Optionally clean checkpoints
     if args.clean:
