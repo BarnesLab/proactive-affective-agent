@@ -102,6 +102,14 @@ Be efficient: focus your tool calls on the most informative signals given the di
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
+CRITICAL — Receptivity Definition:
+Receptivity is NOT a single dimension. A person is RECEPTIVE only when BOTH conditions are met:
+1. ER_desire is elevated (Individual_level_ER_desire_State = true) — they WANT emotion regulation support
+2. INT_availability = "yes" — they are AVAILABLE to receive it
+Low receptivity can mean different things: someone may WANT help but be unavailable (busy, driving), or be AVAILABLE but not wanting help (feeling fine). These are very different situations with different behavioral signatures. Always predict ER_desire and INT_availability independently based on their distinct signals.
+
+In a real-world deployment, the only passive feedback you would receive is whether the user took action on an offered intervention — which happens only when BOTH desire AND availability are true. Your session memory reflects this: outcome "RECEPTIVE" means both were true, "not receptive" means at least one was false, but you do NOT know which one failed.
+
 Your final prediction MUST be in valid JSON enclosed in ```json ... ``` fences:
 
 {PREDICTION_SCHEMA}"""
@@ -133,6 +141,14 @@ Investigation strategy:
 7. Use find_similar_days to reason analogically from past behavioral-emotional pairings
 8. Use find_peer_cases (search_mode="sensing") to find OTHER participants with similar behavioral patterns — their actual EMA outcomes serve as calibration anchors
 9. Synthesize all evidence into a coherent prediction
+
+CRITICAL — Receptivity Definition:
+Receptivity is NOT a single dimension. A person is RECEPTIVE only when BOTH conditions are met:
+1. ER_desire is elevated (Individual_level_ER_desire_State = true) — they WANT emotion regulation support
+2. INT_availability = "yes" — they are AVAILABLE to receive it
+Low receptivity can mean different things: someone may WANT help but be unavailable (busy, driving), or be AVAILABLE but not wanting help (feeling fine). These are very different situations with different behavioral signatures. Always predict ER_desire and INT_availability independently based on their distinct signals.
+
+In a real-world deployment, the only passive feedback you would receive is whether the user took action on an offered intervention — which happens only when BOTH desire AND availability are true. Your session memory reflects this: outcome "RECEPTIVE" means both were true, "not receptive" means at least one was false, but you do NOT know which one failed.
 
 Be a rigorous analyst. Only claim signals you actually see in the data. If data is missing, say so explicitly and adjust your confidence downward. Do not hallucinate patterns.
 
@@ -824,19 +840,10 @@ class AgenticCCAgent:
 
         session_section = ""
         if session_memory and session_memory.strip():
-            # Preserve behavioral profile at top, trim only EMA history
-            history_marker = "## EMA History"
-            marker_pos = session_memory.find(history_marker)
-            if marker_pos > 0 and len(session_memory) > 8000:
-                profile_part = session_memory[:marker_pos]
-                history_part = session_memory[marker_pos:]
-                max_history = 8000 - len(profile_part)
-                trimmed = profile_part + history_part[-max(max_history, 2000):]
-            elif len(session_memory) > 8000:
-                trimmed = session_memory[-8000:]
-            else:
-                trimmed = session_memory
-            session_section = f"\n## Accumulated Session Memory (your prior observations of this person)\n{trimmed}\n"
+            # Pass full session memory — no truncation. The agent benefits from
+            # its complete history of reflections and tool-use patterns for this
+            # user. Claude's context window is large enough to handle this.
+            session_section = f"\n## Accumulated Session Memory (your prior observations of this person)\n{session_memory}\n"
 
         # Task instructions vary by mode
         if self.mode == "multimodal":
