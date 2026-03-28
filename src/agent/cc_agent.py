@@ -531,10 +531,13 @@ class AgenticCCAgent:
                     with open(mcp_config_path) as _mcf:
                         logger.debug(f"{tag} MCP content: {_mcf.read()[:300]}")
 
-                    # Use Popen with delayed prompt delivery so the MCP
-                    # server has time to start and register tools before
-                    # claude processes the prompt (fixes tool discovery
-                    # race condition that caused ~59% failure rate).
+                    # Send prompt immediately via stdin — no delay.
+                    # Claude CLI has a 3s stdin timeout, so we cannot sleep
+                    # before writing. The MCP server starts in parallel and
+                    # will be ready by the time Claude processes the prompt
+                    # and makes its first tool call (~2-5s after launch).
+                    # The ToolSearch retry logic (in the prompt) handles the
+                    # rare case where tools aren't ready on the first attempt.
                     proc = subprocess.Popen(
                         cmd,
                         stdin=subprocess.PIPE,
@@ -544,7 +547,6 @@ class AgenticCCAgent:
                         env=env,
                         cwd=str(PROJECT_ROOT),
                     )
-                    time.sleep(5)  # allow MCP server to initialize (loads pandas, EMA data, peer db)
                     try:
                         stdout, stderr = proc.communicate(
                             input=prompt, timeout=598,
