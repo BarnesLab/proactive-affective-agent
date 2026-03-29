@@ -436,8 +436,9 @@ class AgenticCCAgent:
     _TRANSIENT_RETRIES = 3
     _TRANSIENT_BACKOFF = [2, 4, 8]  # seconds
     _PATIENT_WAIT = 300  # 5 minutes — slow retry after fast retries exhausted
-    _HOURLY_WAIT = 10800  # 3 hours — 5h rolling limit needs ~5h to reset
-    _HOURLY_MAX_RETRIES = 999  # effectively unlimited — wait until limit resets
+    _HOURLY_WAIT = 300  # 5 minutes — poll frequently, limit resets on its own
+    _HOURLY_MAX_RETRIES = 288  # 288 x 5min = 24h max wait before giving up
+    _MAX_TOTAL_WAIT = 86400  # 24 hours — abort if still limited after this
     _TIMEOUT_RETRIES = 3
     _TIMEOUT_BACKOFF = [10, 20, 40]
 
@@ -574,31 +575,31 @@ class AgenticCCAgent:
                     limit_type = classify_error(stderr_text, result.returncode, result.stdout)
                     stderr_preview = stderr_text[:300] if stderr_text else "(empty)"
 
-                    if limit_type == RateLimitType.WEEKLY:
-                        weekly_wait = 43200  # 12 hours — weekly reset, wait overnight
-                        msg = (
-                            f"[proactive-affective-agent] Weekly rate limit hit\n"
-                            f"Version: {self._version.upper()}, User: {self.study_id}\n"
-                            f"Waiting {weekly_wait // 60}min and retrying (user may switch accounts)."
-                        )
-                        send_telegram(msg, dedup_key="weekly_agentic", dedup_ttl=7200)
-                        logger.warning(f"{tag} Weekly rate limit. Waiting {weekly_wait}s...")
-                        time.sleep(weekly_wait)
-                        continue
-
-                    if limit_type == RateLimitType.HOURLY:
+                    if limit_type in (RateLimitType.WEEKLY, RateLimitType.HOURLY):
                         hourly_attempts += 1
-                        self._log_rate_limit_event("hourly")
+                        total_waited = hourly_attempts * self._HOURLY_WAIT
+                        limit_label = "weekly" if limit_type == RateLimitType.WEEKLY else "hourly"
+                        self._log_rate_limit_event(limit_label)
+
+                        if total_waited >= self._MAX_TOTAL_WAIT:
+                            logger.error(
+                                f"{tag} Rate limit ({limit_label}) still active after "
+                                f"{total_waited//3600}h. Aborting this entry."
+                            )
+                            raise RateLimitError(
+                                f"{limit_label} rate limit exceeded 24h wait"
+                            )
+
                         if not _notified_hourly:
                             send_telegram(
-                                f"[proactive-affective-agent] Rate limit hit — waiting 30min\n"
+                                f"[proactive-affective-agent] {limit_label} rate limit hit\n"
                                 f"Version: {self._version.upper()}, User: {self.study_id}\n"
-                                f"Will keep retrying (no fallback)."
+                                f"Polling every 5min (will wait up to 24h)."
                             )
                             _notified_hourly = True
                         logger.warning(
-                            f"{tag} Hourly rate limit (attempt {hourly_attempts}). "
-                            f"Waiting {self._HOURLY_WAIT}s..."
+                            f"{tag} {limit_label} rate limit (attempt {hourly_attempts}, "
+                            f"waited {total_waited//60}min so far). Retrying in 5min..."
                         )
                         time.sleep(self._HOURLY_WAIT)
                         continue
